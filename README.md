@@ -141,13 +141,15 @@ Upuaut/
 
 ## 🗺️ Scope & Roadmap (Continuously Updated)
 
-### Phase 1: Foundations & Scaffolding 🟡 (In Progress)
+### Phase 1: Foundations & Scaffolding 🟢 (Completed)
 - [x] Architecture & Tech Stack consensus.
 - [x] Repository initialization & comprehensive `.gitignore`.
 - [x] Technical specification & documentation (`README.md`).
-- [ ] Solution scaffolding (`Upuaut.sln` + project split).
-- [ ] Desktop host setup (WPF Blazor Hybrid with .NET 10 & Microsoft Fluent UI).
-- [ ] Dark Egyptian theme scaffolding (Obsidian `#0C0D10`, Sand `#E6C687`, Lapis `#1E3A8A`, Gold `#D4AF37`).
+- [x] MIT License added.
+- [x] Solution scaffolding (`Upuaut.sln` + clean 6-project modular split).
+- [x] Desktop host setup (WPF Blazor Hybrid with .NET 10 & Microsoft Fluent UI v5).
+- [x] Dark Egyptian theme scaffolding (Obsidian `#090A0D`, Sand `#E6C687`, Lapis `#1E3A8A`, Gold `#D4AF37`).
+- [x] Remote repository created and pushed (`https://github.com/indoctrinatedrecluse/Upuaut`).
 
 ### Phase 2: The Chronicles (Windows Logs & ETW) ⚪
 - [ ] Live and historical Windows Event Log reader with XPath search.
