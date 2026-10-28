@@ -16,4 +16,5 @@ public record LogRecord
     public string? Keywords { get; init; }
     public string? RawXml { get; init; }
     public bool IsRealTimeEtw { get; init; }
+    public LogExplanation? Explanation { get; init; }
 }

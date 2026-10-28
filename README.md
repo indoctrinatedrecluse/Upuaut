@@ -151,10 +151,17 @@ Upuaut/
 - [x] Dark Egyptian theme scaffolding (Obsidian `#090A0D`, Sand `#E6C687`, Lapis `#1E3A8A`, Gold `#D4AF37`).
 - [x] Remote repository created and pushed (`https://github.com/indoctrinatedrecluse/Upuaut`).
 
-### Phase 2: The Chronicles (Windows Logs & ETW) ⚪
-- [ ] Live and historical Windows Event Log reader with XPath search.
+### Phase 2: The Chronicles (Windows Logs & The Oracle) 🟡 (In Progress)
+- [x] Historical and live Windows Event Log engine (`System.Diagnostics.Eventing.Reader`) with optimized XPath generation.
+- [x] Friendly Human-Readable Error Explanation Engine (*The Oracle*) decoding cryptic Windows events, DCOM warnings, BSOD BugChecks, and 150+ NTSTATUS/HRESULT codes.
+- [x] Multi-level filtration (Critical, Error, Warning, Info), Channel selector, and Time-range filters.
+- [x] Benign noise suppression toggle (e.g. DCOM 10016) to surface only real issues.
+- [x] Full-text search across messages, providers, Event IDs, and error codes.
+- [x] Real-time event watcher (`EventLogWatcher`) for live log streaming.
+- [x] Theme-appropriate application icon (`upuaut.ico` and `upuaut.png`).
+- [x] Unified PowerShell bootstrapper script (`run.ps1`) with elevation support.
+- [x] Comprehensive test suite (`tests/Upuaut.Tests`) verifying log parsing and explanation accuracy.
 - [ ] Real-time ETW session listener for kernel/network providers.
-- [ ] High-performance virtualized log table with instant search and severity filtering.
 
 ### Phase 3: The Scout (On-Demand Packet Sniffing) ⚪
 - [ ] Adapter enumeration and capture session management.

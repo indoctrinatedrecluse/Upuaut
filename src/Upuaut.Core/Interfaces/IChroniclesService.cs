@@ -5,13 +5,10 @@ namespace Upuaut.Core.Interfaces;
 public interface IChroniclesService
 {
     bool IsLiveTracing { get; }
-    Task<IReadOnlyList<LogRecord>> QueryEventLogsAsync(
-        string channelName = "System",
-        int maxCount = 500,
-        LogSeverityLevel? minLevel = null,
-        CancellationToken cancellationToken = default);
-
-    Task StartLiveTraceAsync(CancellationToken cancellationToken = default);
-    Task StopLiveTraceAsync();
+    IReadOnlyList<string> GetAvailableChannels();
+    Task<IReadOnlyList<LogRecord>> QueryEventLogsAsync(LogFilterOptions filter, CancellationToken cancellationToken = default);
+    Task StartLiveStreamAsync(string channelName, HashSet<LogSeverityLevel> levels, CancellationToken cancellationToken = default);
+    Task StopLiveStreamAsync();
     event EventHandler<LogRecord>? LogReceived;
+    event EventHandler<string>? StatusChanged;
 }

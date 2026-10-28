@@ -1,48 +1,503 @@
 @page "/chronicles"
 @namespace Upuaut.UI.Pages
+@inject IChroniclesService ChroniclesService
+@implements IDisposable
 
 <PageTitle>Upuaut — The Duat Chronicles</PageTitle>
 
-<div class="page-container">
-    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
-                📜 The Duat Chronicles
+<div class="chronicles-container">
+    <!-- Top Filter Header -->
+    <div class="chronicles-header">
+        <div class="header-titles">
+            <h1 class="header-main-title">
+                <span class="gold-accent">📜</span> The Duat Chronicles
             </h1>
-            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
-                Windows Event Log &amp; Kernel ETW Telemetry Stream
+            <span class="header-sub-title">
+                Windows Event Log Triage &amp; Human-Readable Diagnostics
             </span>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; align-items: center;">
-            <FluentSelect TOption="string" TValue="string" @bind-Value="_selectedChannel" Items="@_availableChannels" />
-            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.ArrowClockwise())">
+        <div class="header-actions-bar">
+            <!-- Channel Selector -->
+            <div class="filter-group">
+                <span class="filter-label">Channel:</span>
+                <select class="upuaut-select" @bind="_filter.Channel" @bind:after="OnChannelChanged">
+                    @foreach (var ch in _availableChannels)
+                    {
+                        <option value="@ch">@ch</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Time Range -->
+            <div class="filter-group">
+                <span class="filter-label">Time:</span>
+                <select class="upuaut-select" @bind="_filter.TimeRange" @bind:after="TriggerQueryAsync">
+                    <option value="@LogTimeRange.LastHour">Last 1 Hour</option>
+                    <option value="@LogTimeRange.Last24Hours">Last 24 Hours</option>
+                    <option value="@LogTimeRange.Last7Days">Last 7 Days</option>
+                    <option value="@LogTimeRange.Last30Days">Last 30 Days</option>
+                    <option value="@LogTimeRange.AllTime">All Time</option>
+                </select>
+            </div>
+
+            <!-- Query Button -->
+            <FluentButton Appearance="ButtonAppearance.Primary"
+                          IconStart="@(new Icons.Regular.Size16.ArrowClockwise())"
+                          Loading="@_isLoading"
+                          OnClick="TriggerQueryAsync">
                 Query Logs
+            </FluentButton>
+
+            <!-- Live Stream Button -->
+            <FluentButton Appearance="@(_isLiveStreaming ? ButtonAppearance.Primary : ButtonAppearance.Outline)"
+                          IconStart="@(new Icons.Regular.Size20.Radar())"
+                          OnClick="ToggleLiveStreamAsync">
+                @(_isLiveStreaming ? "Live: Active" : "Start Live Stream")
             </FluentButton>
         </div>
     </div>
 
-    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">EVENT STREAM</span>
-            <span class="badge-chip">0 Records Loaded</span>
+    <!-- Secondary Filter & Search Ribbon -->
+    <div class="filter-ribbon">
+        <!-- Level Checkbox Pills -->
+        <div class="level-pills">
+            <span class="filter-label" style="margin-right: 0.25rem;">Severity:</span>
+            <button class="pill-btn @(_filter.Levels.Contains(LogSeverityLevel.Critical) ? "pill-critical-active" : "")"
+                    @onclick="@(() => ToggleLevel(LogSeverityLevel.Critical))">
+                <span class="pill-dot red-dot"></span> Critical
+            </button>
+            <button class="pill-btn @(_filter.Levels.Contains(LogSeverityLevel.Error) ? "pill-error-active" : "")"
+                    @onclick="@(() => ToggleLevel(LogSeverityLevel.Error))">
+                <span class="pill-dot orange-dot"></span> Error
+            </button>
+            <button class="pill-btn @(_filter.Levels.Contains(LogSeverityLevel.Warning) ? "pill-warning-active" : "")"
+                    @onclick="@(() => ToggleLevel(LogSeverityLevel.Warning))">
+                <span class="pill-dot yellow-dot"></span> Warning
+            </button>
+            <button class="pill-btn @(_filter.Levels.Contains(LogSeverityLevel.Information) ? "pill-info-active" : "")"
+                    @onclick="@(() => ToggleLevel(LogSeverityLevel.Information))">
+                <span class="pill-dot blue-dot"></span> Info
+            </button>
         </div>
 
-        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
-            <FluentIcon Value="@(new Icons.Regular.Size24.DocumentBulletListMultiple())" />
-            <span>Select a channel and query to inspect system and application events.</span>
+        <!-- Benign Noise Filter Switch -->
+        <div class="noise-filter-switch">
+            <label class="switch-container">
+                <input type="checkbox" @bind="_hideBenignNoise" />
+                <span class="switch-label">Hide Benign Noise (e.g. DCOM 10016)</span>
+            </label>
         </div>
-    </FluentCard>
+
+        <!-- Search Bar -->
+        <div class="search-box-container">
+            <span class="search-icon">🔍</span>
+            <input type="text"
+                   class="upuaut-search-input"
+                   placeholder="Search message, provider, Event ID, error code (0x...)"
+                   value="@_filter.SearchText"
+                   @oninput="OnSearchInput" />
+        </div>
+    </div>
+
+    <!-- KPI Summary Row -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <span class="kpi-title">TOTAL DISPLAYED</span>
+            <span class="kpi-value">@FilteredLogs.Count</span>
+            <span class="kpi-sub">Retrieved from @_filter.Channel</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #EF4444;">CRITICAL ISSUES</span>
+            <span class="kpi-value" style="color: #EF4444;">@_criticalCount</span>
+            <span class="kpi-sub">Kernel / Hardware faults</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #F97316;">ERRORS</span>
+            <span class="kpi-value" style="color: #F97316;">@_errorCount</span>
+            <span class="kpi-sub">App crashes, service failures</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #EAB308;">WARNINGS</span>
+            <span class="kpi-value" style="color: #EAB308;">@_warningCount</span>
+            <span class="kpi-sub">Timeouts &amp; telemetry notices</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #10B981;">NOISE FILTERED</span>
+            <span class="kpi-value" style="color: #10B981;">@_benignFilteredCount</span>
+            <span class="kpi-sub">Suppressed harmless events</span>
+        </div>
+    </div>
+
+    <!-- Status message bar if any -->
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <div class="status-banner">
+            <span class="gold-accent">ℹ</span> @_statusMessage
+        </div>
+    }
+
+    <!-- Split Master-Detail Workspace -->
+    <div class="workspace-split">
+        <!-- Left: Log Records Table -->
+        <div class="logs-table-pane">
+            @if (_isLoading)
+            {
+                <div class="loading-state">
+                    <FluentSpinner Style="width: 48px; height: 48px;" />
+                    <span>Consulting the Duat Chronicles...</span>
+                </div>
+            }
+            else if (FilteredLogs.Count == 0)
+            {
+                <div class="empty-state">
+                    <span style="font-size: 2rem;">🐺</span>
+                    <span style="font-weight: 600; color: var(--upuaut-sand);">No Matching Events Found</span>
+                    <span style="font-size: 0.85rem; color: var(--upuaut-text-dim);">
+                        The selected channel and filter parameters returned zero records.
+                    </span>
+                </div>
+            }
+            else
+            {
+                <div class="table-scroll-container">
+                    <table class="upuaut-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 85px;">Severity</th>
+                                <th style="width: 140px;">Time</th>
+                                <th style="width: 80px;">Event ID</th>
+                                <th style="width: 180px;">Provider</th>
+                                <th>Plain English Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in FilteredLogs)
+                            {
+                                var isSelected = _selectedLog?.RecordId == log.RecordId;
+                                <tr class="log-row @(isSelected ? "row-selected" : "")"
+                                    @onclick="@(() => SelectLog(log))">
+                                    <td>
+                                        <span class="severity-badge @GetSeverityClass(log.Level)">
+                                            @log.Level.ToString()
+                                        </span>
+                                    </td>
+                                    <td class="mono-text">@log.Timestamp.ToString("HH:mm:ss.fff")</td>
+                                    <td class="mono-text gold-accent">@log.EventId</td>
+                                    <td class="provider-cell" title="@log.ProviderName">@log.ProviderName</td>
+                                    <td class="summary-cell">
+                                        <div class="summary-preview">
+                                            @if (log.Explanation != null && log.Explanation.IsCuratedKnowledge)
+                                            {
+                                                <span class="oracle-tag">✦ ORACLE</span>
+                                            }
+                                            @(log.Explanation?.Summary ?? log.Message)
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <!-- Right: The Oracle / Inspection Drawer -->
+        <div class="oracle-pane">
+            @if (_selectedLog != null)
+            {
+                <div class="oracle-card">
+                    <div class="oracle-header">
+                        <div class="oracle-title-row">
+                            <span class="oracle-badge">
+                                <span class="gold-accent">✦</span> THE ORACLE EXPLANATION
+                            </span>
+                            <span class="triage-badge @GetTriageClass(_selectedLog.Explanation?.TriageRating)">
+                                @(_selectedLog.Explanation?.TriageRating.ToString() ?? "Standard")
+                            </span>
+                        </div>
+
+                        <h2 class="oracle-headline">
+                            @(_selectedLog.Explanation?.Summary ?? "Windows Event Record")
+                        </h2>
+
+                        @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.DecodedStatusCode))
+                        {
+                            <div class="status-code-chip">
+                                <span class="gold-accent">Decoded Code:</span>
+                                <code>@_selectedLog.Explanation.DecodedStatusCode</code>
+                                <span style="color: var(--upuaut-text-muted);">— @_selectedLog.Explanation.StatusMeaning</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="oracle-body">
+                        <!-- Probable Causes -->
+                        @if (_selectedLog.Explanation?.ProbableCauses.Count > 0)
+                        {
+                            <div class="section-block">
+                                <h4 class="section-title">Probable Causes</h4>
+                                <ul class="bullet-list">
+                                    @foreach (var cause in _selectedLog.Explanation.ProbableCauses)
+                                    {
+                                        <li>@cause</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <!-- Recommended Actions -->
+                        @if (_selectedLog.Explanation?.RecommendedActions.Count > 0)
+                        {
+                            <div class="section-block">
+                                <h4 class="section-title" style="color: #10B981;">Recommended Remediation</h4>
+                                <ul class="bullet-list checklist">
+                                    @foreach (var action in _selectedLog.Explanation.RecommendedActions)
+                                    {
+                                        <li>@action</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+
+                        <!-- Technical Metadata Grid -->
+                        <div class="section-block">
+                            <h4 class="section-title">Technical Coordinates</h4>
+                            <div class="tech-grid">
+                                <div class="tech-item">
+                                    <span class="tech-key">Event ID</span>
+                                    <span class="tech-val mono-text gold-accent">@_selectedLog.EventId</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">Provider</span>
+                                    <span class="tech-val">@_selectedLog.ProviderName</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">Timestamp (UTC)</span>
+                                    <span class="tech-val mono-text">@_selectedLog.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">Channel</span>
+                                    <span class="tech-val">@_selectedLog.Channel</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">Process ID</span>
+                                    <span class="tech-val mono-text">@(_selectedLog.ProcessId?.ToString() ?? "N/A")</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">Computer</span>
+                                    <span class="tech-val">@(_selectedLog.ComputerName ?? "LocalHost")</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Original Windows Message -->
+                        <div class="section-block">
+                            <h4 class="section-title">Raw Windows Event Message</h4>
+                            <pre class="raw-box">@_selectedLog.Message</pre>
+                        </div>
+
+                        <!-- Raw XML (Collapsible) -->
+                        @if (!string.IsNullOrEmpty(_selectedLog.RawXml))
+                        {
+                            <details class="section-block xml-details">
+                                <summary class="section-title" style="cursor: pointer;">
+                                    View Full Event XML Payload
+                                </summary>
+                                <pre class="raw-box xml-box">@_selectedLog.RawXml</pre>
+                            </details>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="oracle-placeholder">
+                    <FluentIcon Value="@(new Icons.Regular.Size24.DocumentBulletListMultiple())" />
+                    <span style="font-weight: 600; color: var(--upuaut-sand);">Select an Event to Consult the Oracle</span>
+                    <span style="font-size: 0.8rem; color: var(--upuaut-text-dim); text-align: center; max-width: 280px;">
+                        Upuaut decodes status codes, maps known issues, and translates cryptic Windows errors into actionable root causes.
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
 </div>
 
 @code {
-    private string _selectedChannel = "System";
-    private readonly List<string> _availableChannels = new()
+    private LogFilterOptions _filter = new();
+    private List<LogRecord> _allLogs = new();
+    private LogRecord? _selectedLog;
+    private bool _isLoading;
+    private bool _isLiveStreaming;
+    private bool _hideBenignNoise = true;
+    private string _statusMessage = string.Empty;
+    private IReadOnlyList<string> _availableChannels = Array.Empty<string>();
+
+    private int _criticalCount;
+    private int _errorCount;
+    private int _warningCount;
+    private int _benignFilteredCount;
+
+    protected override async Task OnInitializedAsync()
     {
-        "System",
-        "Application",
-        "Security",
-        "Microsoft-Windows-Diagnostics-Networking/Operational",
-        "Microsoft-Windows-DNS-Client/Operational"
+        ChroniclesService.LogReceived += OnLiveLogReceived;
+        ChroniclesService.StatusChanged += OnServiceStatusChanged;
+
+        _availableChannels = ChroniclesService.GetAvailableChannels();
+        await TriggerQueryAsync();
+    }
+
+    private async Task OnChannelChanged()
+    {
+        await TriggerQueryAsync();
+    }
+
+    private void ToggleLevel(LogSeverityLevel level)
+    {
+        if (_filter.Levels.Contains(level))
+        {
+            if (_filter.Levels.Count > 1) // Keep at least one
+            {
+                _filter.Levels.Remove(level);
+            }
+        }
+        else
+        {
+            _filter.Levels.Add(level);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task TriggerQueryAsync()
+    {
+        _isLoading = true;
+        _selectedLog = null;
+        StateHasChanged();
+
+        try
+        {
+            var logs = await ChroniclesService.QueryEventLogsAsync(_filter);
+            _allLogs = logs.ToList();
+            CalculateCounts();
+
+            if (_allLogs.Count > 0)
+            {
+                _selectedLog = FilteredLogs.FirstOrDefault();
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleLiveStreamAsync()
+    {
+        if (_isLiveStreaming)
+        {
+            await ChroniclesService.StopLiveStreamAsync();
+            _isLiveStreaming = false;
+        }
+        else
+        {
+            await ChroniclesService.StartLiveStreamAsync(_filter.Channel, _filter.Levels);
+            _isLiveStreaming = true;
+        }
+    }
+
+    private void OnLiveLogReceived(object? sender, LogRecord log)
+    {
+        InvokeAsync(() =>
+        {
+            _allLogs.Insert(0, log);
+            CalculateCounts();
+            StateHasChanged();
+        });
+    }
+
+    private void OnServiceStatusChanged(object? sender, string status)
+    {
+        InvokeAsync(() =>
+        {
+            _statusMessage = status;
+            StateHasChanged();
+        });
+    }
+
+    private void SelectLog(LogRecord log)
+    {
+        _selectedLog = log;
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _filter.SearchText = e.Value?.ToString();
+        StateHasChanged();
+    }
+
+    private List<LogRecord> FilteredLogs
+    {
+        get
+        {
+            var query = _allLogs.Where(l => _filter.Levels.Contains(l.Level));
+
+            if (_hideBenignNoise)
+            {
+                query = query.Where(l => l.Explanation?.TriageRating != TriageSeverity.BenignNoise);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filter.SearchText))
+            {
+                var s = _filter.SearchText.Trim();
+                query = query.Where(l =>
+                    l.Message.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                    l.ProviderName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                    l.EventId.ToString().Contains(s) ||
+                    (l.Explanation?.Summary.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.Explanation?.DecodedStatusCode?.Contains(s, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            return query.ToList();
+        }
+    }
+
+    private void CalculateCounts()
+    {
+        _criticalCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Critical);
+        _errorCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Error);
+        _warningCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Warning);
+        _benignFilteredCount = _allLogs.Count(l => l.Explanation?.TriageRating == TriageSeverity.BenignNoise);
+    }
+
+    private static string GetSeverityClass(LogSeverityLevel level) => level switch
+    {
+        LogSeverityLevel.Critical => "severity-critical",
+        LogSeverityLevel.Error => "severity-error",
+        LogSeverityLevel.Warning => "severity-warning",
+        LogSeverityLevel.Information => "severity-info",
+        _ => "severity-verbose"
     };
+
+    private static string GetTriageClass(TriageSeverity? severity) => severity switch
+    {
+        TriageSeverity.Critical => "triage-critical",
+        TriageSeverity.High => "triage-high",
+        TriageSeverity.Medium => "triage-medium",
+        TriageSeverity.Low => "triage-low",
+        TriageSeverity.BenignNoise => "triage-benign",
+        _ => "triage-medium"
+    };
+
+    public void Dispose()
+    {
+        ChroniclesService.LogReceived -= OnLiveLogReceived;
+        ChroniclesService.StatusChanged -= OnServiceStatusChanged;
+        if (_isLiveStreaming)
+        {
+            ChroniclesService.StopLiveStreamAsync().GetAwaiter().GetResult();
+        }
+    }
 }
