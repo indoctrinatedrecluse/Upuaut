@@ -1,0 +1,48 @@
+@page "/chronicles"
+@namespace Upuaut.UI.Pages
+
+<PageTitle>Upuaut — The Duat Chronicles</PageTitle>
+
+<div class="page-container">
+    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
+                📜 The Duat Chronicles
+            </h1>
+            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
+                Windows Event Log &amp; Kernel ETW Telemetry Stream
+            </span>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <FluentSelect TOption="string" TValue="string" @bind-Value="_selectedChannel" Items="@_availableChannels" />
+            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.ArrowClockwise())">
+                Query Logs
+            </FluentButton>
+        </div>
+    </div>
+
+    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">EVENT STREAM</span>
+            <span class="badge-chip">0 Records Loaded</span>
+        </div>
+
+        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
+            <FluentIcon Value="@(new Icons.Regular.Size24.DocumentBulletListMultiple())" />
+            <span>Select a channel and query to inspect system and application events.</span>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+    private string _selectedChannel = "System";
+    private readonly List<string> _availableChannels = new()
+    {
+        "System",
+        "Application",
+        "Security",
+        "Microsoft-Windows-Diagnostics-Networking/Operational",
+        "Microsoft-Windows-DNS-Client/Operational"
+    };
+}

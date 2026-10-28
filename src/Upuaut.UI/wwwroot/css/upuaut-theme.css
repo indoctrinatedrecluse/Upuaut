@@ -1,0 +1,250 @@
+:root {
+    --upuaut-obsidian-deep: #090A0D;
+    --upuaut-obsidian: #0F1015;
+    --upuaut-surface: #15171F;
+    --upuaut-surface-raised: #1C1E29;
+    --upuaut-border: #262938;
+    --upuaut-border-subtle: #1F222E;
+    
+    --upuaut-gold: #D4AF37;
+    --upuaut-gold-glow: rgba(212, 175, 55, 0.25);
+    --upuaut-sand: #E6C687;
+    --upuaut-lapis: #2563EB;
+    --upuaut-lapis-dark: #1E3A8A;
+    --upuaut-lapis-glow: rgba(37, 99, 235, 0.2);
+    
+    --upuaut-text: #E5E7EB;
+    --upuaut-text-muted: #9CA3AF;
+    --upuaut-text-dim: #6B7280;
+    
+    --upuaut-danger: #EF4444;
+    --upuaut-warning: #F59E0B;
+    --upuaut-success: #10B981;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background-color: var(--upuaut-obsidian-deep);
+    color: var(--upuaut-text);
+    font-family: 'Segoe UI Variable Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+}
+
+.upuaut-shell {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    background-color: var(--upuaut-obsidian-deep);
+}
+
+.upuaut-sidebar {
+    width: 250px;
+    min-width: 250px;
+    background-color: var(--upuaut-obsidian);
+    border-right: 1px solid var(--upuaut-border-subtle);
+    display: flex;
+    flex-direction: column;
+}
+
+.upuaut-nav {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 1rem 0.75rem;
+}
+
+.brand-section {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem 1.5rem 0.75rem;
+    border-bottom: 1px solid var(--upuaut-border-subtle);
+    margin-bottom: 1rem;
+}
+
+.brand-glyph {
+    font-size: 1.85rem;
+    filter: drop-shadow(0 0 10px var(--upuaut-gold-glow));
+}
+
+.brand-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.brand-name {
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    color: var(--upuaut-sand);
+    text-shadow: 0 0 12px var(--upuaut-gold-glow);
+}
+
+.brand-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--upuaut-text-dim);
+}
+
+.nav-footer {
+    margin-top: auto;
+    padding: 1rem 0.5rem 0.5rem 0.5rem;
+    border-top: 1px solid var(--upuaut-border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--upuaut-text-muted);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--upuaut-success);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.version-label {
+    font-size: 0.65rem;
+    color: var(--upuaut-text-dim);
+    font-family: monospace;
+}
+
+.upuaut-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.upuaut-header {
+    height: 48px;
+    min-height: 48px;
+    background-color: var(--upuaut-obsidian);
+    border-bottom: 1px solid var(--upuaut-border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+}
+
+.header-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.gold-accent {
+    color: var(--upuaut-gold);
+}
+
+.header-realm {
+    color: var(--upuaut-text-muted);
+    font-weight: 500;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.badge-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-family: monospace;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    background-color: var(--upuaut-surface);
+    border: 1px solid var(--upuaut-border);
+    color: var(--upuaut-text-muted);
+}
+
+.chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--upuaut-lapis);
+}
+
+.gold-chip {
+    color: var(--upuaut-gold);
+    border-color: rgba(212, 175, 55, 0.4);
+    background-color: rgba(212, 175, 55, 0.08);
+}
+
+.upuaut-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    background-color: var(--upuaut-obsidian-deep);
+}
+
+/* Common Diagnostic Cards */
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.diag-card {
+    background-color: var(--upuaut-surface);
+    border: 1px solid var(--upuaut-border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.diag-card:hover {
+    border-color: var(--upuaut-gold);
+    box-shadow: 0 0 15px var(--upuaut-gold-glow);
+}
+
+.diag-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.diag-card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--upuaut-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.diag-card-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--upuaut-sand);
+    font-family: 'Segoe UI Variable Display', sans-serif;
+}
+
+.diag-card-sub {
+    font-size: 0.75rem;
+    color: var(--upuaut-text-dim);
+}

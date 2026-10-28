@@ -1,0 +1,38 @@
+@page "/weigher"
+@namespace Upuaut.UI.Pages
+
+<PageTitle>Upuaut — The Scales of Ma'at</PageTitle>
+
+<div class="page-container">
+    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
+                ⚖️ The Scales of Ma'at
+            </h1>
+            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
+                Correlated System Triage &amp; Root Cause Heuristics
+            </span>
+        </div>
+
+        <div>
+            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Sparkle())">
+                Weigh Anomalies
+            </FluentButton>
+        </div>
+    </div>
+
+    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">CORRELATION MATRIX</span>
+            <span class="badge-chip">Window: ± 2500ms</span>
+        </div>
+
+        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
+            <FluentIcon Value="@(new Icons.Regular.Size24.Scales())" />
+            <span>No active anomalies detected across captured network frames and system logs.</span>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+}

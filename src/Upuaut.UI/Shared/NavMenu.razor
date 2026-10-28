@@ -1,0 +1,37 @@
+@namespace Upuaut.UI.Shared
+
+<div class="upuaut-nav">
+    <div class="brand-section">
+        <div class="brand-glyph">🐺</div>
+        <div class="brand-text">
+            <span class="brand-name">UPUAUT</span>
+            <span class="brand-tag">OPENER OF THE WAYS</span>
+        </div>
+    </div>
+
+    <FluentNav Id="upuaut-menu" Width="230px">
+        <FluentNavItem Href="/" Match="NavLinkMatch.All" IconRest="@(new Icons.Regular.Size20.Apps())" IconActive="@(new Icons.Filled.Size20.Apps())">
+            Dashboard
+        </FluentNavItem>
+
+        <FluentNavItem Href="chronicles" IconRest="@(new Icons.Regular.Size20.DocumentBulletListMultiple())" IconActive="@(new Icons.Filled.Size20.DocumentBulletListMultiple())">
+            Chronicles (Logs &amp; ETW)
+        </FluentNavItem>
+
+        <FluentNavItem Href="scout" IconRest="@(new Icons.Regular.Size20.Radar())" IconActive="@(new Icons.Filled.Size20.Radar())">
+            The Scout (Packets)
+        </FluentNavItem>
+
+        <FluentNavItem Href="weigher" IconRest="@(new Icons.Regular.Size20.Scales())" IconActive="@(new Icons.Filled.Size20.Scales())">
+            The Scales (Triage)
+        </FluentNavItem>
+    </FluentNav>
+
+    <div class="nav-footer">
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span class="status-label">In-Process Diagnostics</span>
+        </div>
+        <div class="version-label">v0.1.0-alpha</div>
+    </div>
+</div>

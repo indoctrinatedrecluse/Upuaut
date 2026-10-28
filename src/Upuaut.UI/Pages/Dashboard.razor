@@ -1,0 +1,79 @@
+@page "/"
+@namespace Upuaut.UI.Pages
+
+<PageTitle>Upuaut — Overview</PageTitle>
+
+<div class="page-container">
+    <div class="page-hero" style="margin-bottom: 2rem;">
+        <h1 class="page-title" style="margin: 0; font-size: 1.85rem; color: var(--upuaut-sand); display: flex; align-items: center; gap: 0.5rem;">
+            <span class="gold-accent">✦</span> Opener of the Ways
+        </h1>
+        <p class="page-subtitle" style="color: var(--upuaut-text-muted); font-size: 0.95rem; margin-top: 0.5rem; max-width: 750px;">
+            Windows System Diagnostic &amp; Network Telemetry Console. Scout the kernel, monitor event channels, and trace traffic on-demand.
+        </p>
+    </div>
+
+    <div class="card-grid">
+        <div class="diag-card">
+            <div class="diag-card-header">
+                <span class="diag-card-title">Event Log Status</span>
+                <FluentIcon Value="@(new Icons.Regular.Size20.DocumentBulletListMultiple())" />
+            </div>
+            <div class="diag-card-value">Ready</div>
+            <div class="diag-card-sub">Channels: System, Application, Security &amp; ETW</div>
+        </div>
+
+        <div class="diag-card">
+            <div class="diag-card-header">
+                <span class="diag-card-title">Network Sniffer</span>
+                <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
+            </div>
+            <div class="diag-card-value">Standby</div>
+            <div class="diag-card-sub">Socket-to-Process correlation ready</div>
+        </div>
+
+        <div class="diag-card">
+            <div class="diag-card-header">
+                <span class="diag-card-title">The Scales (Triage)</span>
+                <FluentIcon Value="@(new Icons.Regular.Size20.Scales())" />
+            </div>
+            <div class="diag-card-value">0 Anomalies</div>
+            <div class="diag-card-sub">Real-time correlation window active</div>
+        </div>
+    </div>
+
+    <div class="dashboard-sections" style="display: flex; flex-direction: column; gap: 1rem;">
+        <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
+            <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📜</span> The Duat Chronicles — Quick Launch
+            </h3>
+            <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
+                Triage local Windows Event Logs or launch real-time ETW kernel trace sessions for TCPIP drops, DNS latency, and process spawning.
+            </p>
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="@(() => NavigateTo("chronicles"))">
+                Open Chronicles
+            </FluentButton>
+        </FluentCard>
+
+        <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
+            <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🐺</span> The Scout — On-Demand Packet Capture
+            </h3>
+            <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
+                Capture live traffic with automatic Windows Process ID (PID) and executable name resolution for instant correlation.
+            </p>
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="@(() => NavigateTo("scout"))">
+                Deploy Scout
+            </FluentButton>
+        </FluentCard>
+    </div>
+</div>
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private void NavigateTo(string path)
+    {
+        Nav.NavigateTo(path);
+    }
+}

@@ -1,0 +1,14 @@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div style="padding: 2rem; color: #E6C687;">
+                <h2>Path Not Found</h2>
+                <p>Upuaut has not opened a way to this location.</p>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

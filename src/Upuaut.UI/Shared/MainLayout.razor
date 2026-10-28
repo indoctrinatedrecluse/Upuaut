@@ -1,0 +1,33 @@
+@inherits LayoutComponentBase
+@namespace Upuaut.UI.Shared
+
+<div class="upuaut-shell">
+    <aside class="upuaut-sidebar">
+        <NavMenu />
+    </aside>
+
+    <div class="upuaut-main">
+        <header class="upuaut-header">
+            <div class="header-breadcrumb">
+                <span class="gold-accent">✦</span>
+                <span class="header-realm">Windows System Telemetry</span>
+            </div>
+
+            <div class="header-actions">
+                <div class="badge-chip">
+                    <span class="chip-dot"></span>
+                    <span>.NET 10 CLR</span>
+                </div>
+                <div class="badge-chip gold-chip">
+                    <span>EGY // ACTIVE</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="upuaut-content">
+            @Body
+        </main>
+    </div>
+</div>
+
+<FluentProviders />

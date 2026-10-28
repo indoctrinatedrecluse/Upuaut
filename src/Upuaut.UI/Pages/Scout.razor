@@ -1,0 +1,38 @@
+@page "/scout"
+@namespace Upuaut.UI.Pages
+
+<PageTitle>Upuaut — The Scout</PageTitle>
+
+<div class="page-container">
+    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
+                🐺 The Scout
+            </h1>
+            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
+                On-Demand Packet Sniffing &amp; Process Attribution
+            </span>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Play())">
+                Start Capture
+            </FluentButton>
+        </div>
+    </div>
+
+    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">CAPTURED FRAMES</span>
+            <span class="badge-chip">Buffer: 0 / 50,000</span>
+        </div>
+
+        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
+            <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
+            <span>Capture engine in standby. Select an adapter to commence sniffing.</span>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+}
