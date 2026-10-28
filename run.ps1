@@ -73,7 +73,6 @@ Write-Host ""
 
 $solutionRoot = $PSScriptRoot
 $appProjectPath = Join-Path $solutionRoot "src\Upuaut.App\Upuaut.App.csproj"
-$targetExe = Join-Path $solutionRoot "src\Upuaut.App\bin\$Configuration\net10.0-windows\Upuaut.App.exe"
 
 # Clean if requested
 if ($Clean) {
@@ -100,16 +99,21 @@ if (-not $NoBuild) {
     Write-Host ""
 }
 
+# Find target executable dynamically
+$binDir = Join-Path $solutionRoot "src\Upuaut.App\bin\$Configuration"
+$targetExe = Get-ChildItem -Path $binDir -Filter "Upuaut.App.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+
 # Verify binary exists
-if (-not (Test-Path $targetExe)) {
-    Write-Host "[X] Target executable not found: $targetExe" -ForegroundColor Red
+if (-not $targetExe -or -not (Test-Path $targetExe)) {
+    Write-Host "[X] Target executable not found under: $binDir" -ForegroundColor Red
     Write-Host "    Run without -NoBuild to compile the project first." -ForegroundColor Yellow
     exit 1
 }
 
 # Launch the desktop host
 Write-Host "[*] Launching Upuaut Desktop Host..." -ForegroundColor Yellow
-Start-Process $targetExe
+$appDir = Split-Path -Parent $targetExe
+Start-Process -FilePath $targetExe -WorkingDirectory $appDir
 
 Write-Host "[+] Upuaut is active." -ForegroundColor Green
 Write-Host ""
