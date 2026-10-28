@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\upuaut.ico" />
+    <Resource Include="Assets\upuaut.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Upuaut.Core\Upuaut.Core.csproj" />
     <ProjectReference Include="..\Upuaut.Chronicles\Upuaut.Chronicles.csproj" />
     <ProjectReference Include="..\Upuaut.Scout\Upuaut.Scout.csproj" />

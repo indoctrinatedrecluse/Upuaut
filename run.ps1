@@ -56,13 +56,13 @@ if ($Elevated -and -not $isAdmin) {
 Clear-Host
 Write-Host ""
 Write-Host "   ===================================================================" -ForegroundColor DarkYellow
-Write-Host "     🐺  U P U A U T  ( W E P W A W E T )  -  Opener of the Ways" -ForegroundColor Yellow
+Write-Host "     [UPUAUT] (WEPWAWET)  -  Opener of the Ways" -ForegroundColor Yellow
 Write-Host "         Windows System Triage & Network Diagnostic Console" -ForegroundColor Cyan
 Write-Host "   ===================================================================" -ForegroundColor DarkYellow
 Write-Host ""
 
 if ($isAdmin) {
-    Write-Host "   [✓] Privilege: ADMINISTRATOR (Full access: Security Log + Kernel ETW enabled)" -ForegroundColor Green
+    Write-Host "   [+] Privilege: ADMINISTRATOR (Full access: Security Log + Kernel ETW enabled)" -ForegroundColor Green
 } else {
     Write-Host "   [!] Privilege: STANDARD USER" -ForegroundColor DarkGray
     Write-Host "       (Tip: Pass -Elevated to unlock the Security log and real-time ETW capture)" -ForegroundColor DarkGray
@@ -91,17 +91,18 @@ if (-not $NoBuild) {
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""
-        Write-Host "[x] Build failed with exit code $LASTEXITCODE." -ForegroundColor Red
+        Write-Host "[X] Build failed with exit code $LASTEXITCODE." -ForegroundColor Red
         exit $LASTEXITCODE
     }
 
-    Write-Host "[✓] Build succeeded in $($buildStopwatch.Elapsed.TotalSeconds.ToString('0.00'))s" -ForegroundColor Green
+    $elapsedSec = $buildStopwatch.Elapsed.TotalSeconds.ToString("0.00")
+    Write-Host "[+] Build succeeded in ${elapsedSec}s" -ForegroundColor Green
     Write-Host ""
 }
 
 # Verify binary exists
 if (-not (Test-Path $targetExe)) {
-    Write-Host "[x] Target executable not found: $targetExe" -ForegroundColor Red
+    Write-Host "[X] Target executable not found: $targetExe" -ForegroundColor Red
     Write-Host "    Run without -NoBuild to compile the project first." -ForegroundColor Yellow
     exit 1
 }
@@ -110,5 +111,5 @@ if (-not (Test-Path $targetExe)) {
 Write-Host "[*] Launching Upuaut Desktop Host..." -ForegroundColor Yellow
 Start-Process $targetExe
 
-Write-Host "[✓] Upuaut is active." -ForegroundColor Green
+Write-Host "[+] Upuaut is active." -ForegroundColor Green
 Write-Host ""
