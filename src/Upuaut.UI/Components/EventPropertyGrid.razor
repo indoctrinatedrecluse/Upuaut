@@ -1,0 +1,30 @@
+@namespace Upuaut.UI.Components
+@inject IJSRuntime JSRuntime
+
+<div class="property-grid-container">
+    <div class="property-grid-header">
+        <span class="gold-accent">✦</span>
+        <span>STRUCTURED EVENT DATA FIELDS (@Properties.Count)</span>
+    </div>
+
+    @if (Properties.Count == 0)
+    {
+        <div class="property-empty">No structured EventData properties embedded in this event.</div>
+    }
+    else
+    {
+        <div class="property-grid">
+            @foreach (var (key, value) in Properties)
+            {
+                <div class="prop-card">
+                    <div class="prop-key">@key</div>
+                    <div class="prop-val mono-text" title="@value">@value</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
+}

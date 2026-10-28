@@ -1,0 +1,120 @@
+@namespace Upuaut.UI.Components
+@using Upuaut.Core.Models
+
+<div class="histogram-card">
+    <div class="histogram-header">
+        <div class="histogram-title">
+            <span class="gold-accent">📊</span>
+            <span>EVENT FREQUENCY TIMELINE</span>
+            <span class="histogram-subtitle">(@_buckets.Sum(b => b.Total) total events plotted across @BucketCount intervals)</span>
+        </div>
+        <div class="histogram-legend">
+            <span class="legend-item"><span class="legend-box red-box"></span> Critical</span>
+            <span class="legend-item"><span class="legend-box orange-box"></span> Error</span>
+            <span class="legend-item"><span class="legend-box yellow-box"></span> Warning</span>
+        </div>
+    </div>
+
+    <div class="histogram-bars">
+        @if (_buckets.Count == 0 || _maxCount == 0)
+        {
+            <div class="histogram-empty">No events in active timeframe</div>
+        }
+        else
+        {
+            @foreach (var bucket in _buckets)
+            {
+                var criticalHeight = _maxCount > 0 ? (int)((bucket.Critical / (double)_maxCount) * 44) : 0;
+                var errorHeight = _maxCount > 0 ? (int)((bucket.Error / (double)_maxCount) * 44) : 0;
+                var warningHeight = _maxCount > 0 ? (int)((bucket.Warning / (double)_maxCount) * 44) : 0;
+                var otherHeight = _maxCount > 0 ? (int)((bucket.Other / (double)_maxCount) * 44) : 0;
+
+                <div class="histogram-column" title="@bucket.Label: @bucket.Total events (@bucket.Critical Crit, @bucket.Error Err, @bucket.Warning Warn)">
+                    <div class="bar-stack">
+                        @if (criticalHeight > 0)
+                        {
+                            <div class="bar-seg bar-red" style="height: @(criticalHeight)px;"></div>
+                        }
+                        @if (errorHeight > 0)
+                        {
+                            <div class="bar-seg bar-orange" style="height: @(errorHeight)px;"></div>
+                        }
+                        @if (warningHeight > 0)
+                        {
+                            <div class="bar-seg bar-yellow" style="height: @(warningHeight)px;"></div>
+                        }
+                        @if (otherHeight > 0)
+                        {
+                            <div class="bar-seg bar-blue" style="height: @(otherHeight)px;"></div>
+                        }
+                    </div>
+                    <span class="bar-label">@bucket.ShortTime</span>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<LogRecord> Logs { get; set; } = Array.Empty<LogRecord>();
+    [Parameter] public int BucketCount { get; set; } = 24;
+
+    private record TimeBucket(string Label, string ShortTime, int Critical, int Error, int Warning, int Other)
+    {
+        public int Total => Critical + Error + Warning + Other;
+    }
+
+    private List<TimeBucket> _buckets = new();
+    private int _maxCount = 1;
+
+    protected override void OnParametersSet()
+    {
+        CalculateBuckets();
+    }
+
+    private void CalculateBuckets()
+    {
+        _buckets.Clear();
+        if (Logs.Count == 0) return;
+
+        var minTime = Logs.Min(l => l.Timestamp);
+        var maxTime = Logs.Max(l => l.Timestamp);
+
+        if (minTime == maxTime)
+        {
+            minTime = minTime.AddMinutes(-30);
+            maxTime = maxTime.AddMinutes(30);
+        }
+
+        var totalSpan = maxTime - minTime;
+        var intervalMs = totalSpan.TotalMilliseconds / BucketCount;
+        if (intervalMs <= 0) intervalMs = 60000;
+
+        var tempBuckets = new List<TimeBucket>();
+
+        for (int i = 0; i < BucketCount; i++)
+        {
+            var start = minTime.AddMilliseconds(i * intervalMs);
+            var end = start.AddMilliseconds(intervalMs);
+
+            var inBucket = Logs.Where(l => l.Timestamp >= start && l.Timestamp < end).ToList();
+            var crit = inBucket.Count(l => l.Level == LogSeverityLevel.Critical);
+            var err = inBucket.Count(l => l.Level == LogSeverityLevel.Error);
+            var warn = inBucket.Count(l => l.Level == LogSeverityLevel.Warning);
+            var other = inBucket.Count - (crit + err + warn);
+
+            tempBuckets.Add(new TimeBucket(
+                $"{start:HH:mm} - {end:HH:mm}",
+                start.ToString("HH:mm"),
+                crit,
+                err,
+                warn,
+                other
+            ));
+        }
+
+        _buckets = tempBuckets;
+        _maxCount = _buckets.Count > 0 ? _buckets.Max(b => b.Total) : 1;
+        if (_maxCount == 0) _maxCount = 1;
+    }
+}

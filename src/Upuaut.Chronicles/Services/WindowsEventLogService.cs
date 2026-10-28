@@ -1,6 +1,9 @@
 using System.Diagnostics.Eventing.Reader;
 using System.Text;
+using Upuaut.Chronicles.Analytics;
 using Upuaut.Chronicles.Explorers;
+using Upuaut.Chronicles.Export;
+using Upuaut.Chronicles.Parsers;
 using Upuaut.Core.Interfaces;
 using Upuaut.Core.Models;
 
@@ -9,6 +12,9 @@ namespace Upuaut.Chronicles.Services;
 public class WindowsEventLogService : IChroniclesService, IDisposable
 {
     private readonly LogExplanationEngine _explanationEngine = new();
+    private readonly EventClusterer _clusterer = new();
+    private readonly LogExportService _exportService = new();
+
     private EventLogWatcher? _activeWatcher;
     private bool _isLiveTracing;
 
@@ -38,7 +44,6 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             var session = new EventLogSession();
             var allNames = session.GetLogNames().ToList();
             
-            // Put standard high-value channels at the front
             var result = new List<string>(StandardChannels.Where(c => allNames.Contains(c, StringComparer.OrdinalIgnoreCase)));
             return result.Count > 0 ? result : StandardChannels;
         }
@@ -50,74 +55,121 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
 
     public async Task<IReadOnlyList<LogRecord>> QueryEventLogsAsync(LogFilterOptions filter, CancellationToken cancellationToken = default)
     {
-        return await Task.Run(() =>
+        return await Task.Run<IReadOnlyList<LogRecord>>(() =>
         {
-            var results = new List<LogRecord>();
             var xPath = BuildXPathQuery(filter);
-
             StatusChanged?.Invoke(this, $"Querying '{filter.Channel}' with filter: {xPath}");
 
             try
             {
                 var query = new EventLogQuery(filter.Channel, PathType.LogName, xPath)
                 {
-                    ReverseDirection = true // Most recent first!
+                    ReverseDirection = true
                 };
 
-                using var reader = new EventLogReader(query);
-                long recordIndex = 0;
-
-                while (reader.ReadEvent() is { } record)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    using (record)
-                    {
-                        var logRecord = ConvertEventRecord(record, ++recordIndex);
-
-                        // If free-text search filter is active
-                        if (!string.IsNullOrWhiteSpace(filter.SearchText))
-                        {
-                            var search = filter.SearchText.Trim();
-                            var matchesSearch =
-                                logRecord.Message.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                                logRecord.ProviderName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                                logRecord.EventId.ToString().Contains(search) ||
-                                (logRecord.Explanation?.Summary.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                                (logRecord.RawXml?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
-
-                            if (!matchesSearch)
-                            {
-                                continue;
-                            }
-                        }
-
-                        results.Add(logRecord);
-
-                        if (results.Count >= filter.MaxEvents)
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                StatusChanged?.Invoke(this, $"Retrieved {results.Count} events from '{filter.Channel}'.");
+                return ExecuteReader(query, filter, null, cancellationToken);
             }
             catch (EventLogNotFoundException)
             {
                 StatusChanged?.Invoke(this, $"Channel '{filter.Channel}' not found on this system.");
+                return Array.Empty<LogRecord>();
             }
             catch (UnauthorizedAccessException)
             {
-                StatusChanged?.Invoke(this, $"Access denied reading '{filter.Channel}'. Elevation to Administrator required.");
+                StatusChanged?.Invoke(this, $"Access denied reading '{filter.Channel}'. Administrator elevation required.");
+                return Array.Empty<LogRecord>();
             }
             catch (Exception ex)
             {
                 StatusChanged?.Invoke(this, $"Error querying '{filter.Channel}': {ex.Message}");
+                return Array.Empty<LogRecord>();
+            }
+        }, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<LogRecord>> LoadEvtxFileAsync(string filePath, LogFilterOptions filter, CancellationToken cancellationToken = default)
+    {
+        return await Task.Run<IReadOnlyList<LogRecord>>(() =>
+        {
+            if (!File.Exists(filePath))
+            {
+                StatusChanged?.Invoke(this, $"File not found: {filePath}");
+                return Array.Empty<LogRecord>();
             }
 
-            return results;
+            var xPath = BuildXPathQuery(filter);
+            StatusChanged?.Invoke(this, $"Parsing offline EVTX file '{Path.GetFileName(filePath)}'...");
+
+            try
+            {
+                var query = new EventLogQuery(filePath, PathType.FilePath, xPath)
+                {
+                    ReverseDirection = true
+                };
+
+                return ExecuteReader(query, filter, filePath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke(this, $"Failed to parse EVTX file: {ex.Message}");
+                return Array.Empty<LogRecord>();
+            }
         }, cancellationToken);
+    }
+
+    private List<LogRecord> ExecuteReader(EventLogQuery query, LogFilterOptions filter, string? sourceFile, CancellationToken cancellationToken)
+    {
+        var results = new List<LogRecord>();
+        using var reader = new EventLogReader(query);
+        long recordIndex = 0;
+
+        while (reader.ReadEvent() is { } record)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using (record)
+            {
+                var logRecord = ConvertEventRecord(record, ++recordIndex, sourceFile);
+
+                // Provider Facet Filter
+                if (filter.SelectedProviders != null && filter.SelectedProviders.Count > 0)
+                {
+                    if (!filter.SelectedProviders.Contains(logRecord.ProviderName))
+                    {
+                        continue;
+                    }
+                }
+
+                // Free-text Search
+                if (!string.IsNullOrWhiteSpace(filter.SearchText))
+                {
+                    var search = filter.SearchText.Trim();
+                    var matchesSearch =
+                        logRecord.Message.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        logRecord.ProviderName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        logRecord.EventId.ToString().Contains(search) ||
+                        (logRecord.Explanation?.Summary.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                        (logRecord.Explanation?.DecodedStatusCode?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                        (logRecord.RawXml?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
+
+                    if (!matchesSearch)
+                    {
+                        continue;
+                    }
+                }
+
+                results.Add(logRecord);
+
+                if (results.Count >= filter.MaxEvents)
+                {
+                    break;
+                }
+            }
+        }
+
+        var sourceName = !string.IsNullOrEmpty(sourceFile) ? Path.GetFileName(sourceFile) : filter.Channel;
+        StatusChanged?.Invoke(this, $"Successfully processed {results.Count} events from {sourceName}.");
+        return results;
     }
 
     public Task StartLiveStreamAsync(string channelName, HashSet<LogSeverityLevel> levels, CancellationToken cancellationToken = default)
@@ -141,11 +193,11 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             _activeWatcher.Enabled = true;
 
             _isLiveTracing = true;
-            StatusChanged?.Invoke(this, $"Live stream active on '{channelName}'");
+            StatusChanged?.Invoke(this, $"Live streaming active on '{channelName}'");
         }
         catch (Exception ex)
         {
-            StatusChanged?.Invoke(this, $"Failed to start live stream on '{channelName}': {ex.Message}");
+            StatusChanged?.Invoke(this, $"Failed to start live streaming: {ex.Message}");
         }
 
         return Task.CompletedTask;
@@ -162,8 +214,18 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         }
 
         _isLiveTracing = false;
-        StatusChanged?.Invoke(this, "Live stream stopped.");
+        StatusChanged?.Invoke(this, "Live stream paused.");
         return Task.CompletedTask;
+    }
+
+    public IReadOnlyList<EventCluster> ClusterLogs(IEnumerable<LogRecord> logs)
+    {
+        return _clusterer.Cluster(logs);
+    }
+
+    public string ExportLogs(IEnumerable<LogRecord> logs, LogExportFormat format)
+    {
+        return _exportService.Export(logs, format);
     }
 
     private void OnEventRecordWritten(object? sender, EventRecordWrittenEventArgs e)
@@ -172,16 +234,16 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
 
         try
         {
-            var record = ConvertEventRecord(e.EventRecord, DateTime.UtcNow.Ticks);
+            var record = ConvertEventRecord(e.EventRecord, DateTime.UtcNow.Ticks, null);
             LogReceived?.Invoke(this, record);
         }
         catch
         {
-            // Suppress record parsing errors in live stream
+            // Suppress record conversion exceptions in live stream
         }
     }
 
-    private LogRecord ConvertEventRecord(EventRecord record, long index)
+    private LogRecord ConvertEventRecord(EventRecord record, long index, string? sourceFile)
     {
         string message;
         try
@@ -190,7 +252,6 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         }
         catch
         {
-            // Provider message DLL missing; extract text from properties or XML
             message = ExtractFallbackMessage(record);
         }
 
@@ -201,9 +262,10 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         }
         catch
         {
-            // Ignore XML serialization error
+            // Ignore XML error
         }
 
+        var properties = EventXmlParser.ExtractProperties(rawXml);
         var severity = MapLevel(record.Level);
 
         var log = new LogRecord
@@ -220,10 +282,11 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             ComputerName = record.MachineName,
             TaskCategory = record.TaskDisplayName,
             Keywords = string.Join(", ", record.KeywordsDisplayNames ?? Enumerable.Empty<string>()),
-            RawXml = rawXml
+            RawXml = rawXml,
+            EventData = properties,
+            SourceFile = sourceFile
         };
 
-        // Attach human-readable explanation
         return log with { Explanation = _explanationEngine.Explain(log) };
     }
 
@@ -250,7 +313,7 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
     {
         var conditions = new List<string>();
 
-        // 1. Levels (Critical=1, Error=2, Warning=3, Information=4, Verbose=5)
+        // Levels
         if (filter.Levels.Count > 0 && filter.Levels.Count < 5)
         {
             var levelParts = new List<string>();
@@ -266,7 +329,7 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             }
         }
 
-        // 2. Time Range
+        // Time Range
         if (filter.TimeRange != LogTimeRange.AllTime)
         {
             long ms = filter.TimeRange switch
@@ -281,13 +344,13 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             conditions.Add($"TimeCreated[timediff(@SystemTime) <= {ms}]");
         }
 
-        // 3. Event ID
+        // Event ID
         if (filter.EventId.HasValue)
         {
             conditions.Add($"EventID={filter.EventId.Value}");
         }
 
-        // 4. Provider Name
+        // Provider Name
         if (!string.IsNullOrWhiteSpace(filter.ProviderName))
         {
             conditions.Add($"Provider[@Name='{filter.ProviderName}']");

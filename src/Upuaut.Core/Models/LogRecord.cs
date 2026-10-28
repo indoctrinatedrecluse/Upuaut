@@ -17,4 +17,6 @@ public record LogRecord
     public string? RawXml { get; init; }
     public bool IsRealTimeEtw { get; init; }
     public LogExplanation? Explanation { get; init; }
+    public IReadOnlyDictionary<string, string> EventData { get; init; } = new Dictionary<string, string>();
+    public string? SourceFile { get; init; }
 }

@@ -18,6 +18,11 @@ public class LogExplanationEngine
         { "0xC0000022", ("STATUS_ACCESS_DENIED", "A process attempted an operation without the required security privileges.") },
         { "0xC0000034", ("STATUS_OBJECT_NAME_NOT_FOUND", "The specified object or file was not found.") },
         { "0xC0000043", ("STATUS_SHARING_VIOLATION", "A file cannot be accessed because it is locked by another process.") },
+        { "0xC000006A", ("STATUS_WRONG_PASSWORD", "Logon failure: the specified user password is incorrect.") },
+        { "0xC000006E", ("STATUS_NO_SUCH_USER", "Logon failure: the specified user account does not exist.") },
+        { "0xC000006F", ("STATUS_INVALID_LOGON_HOURS", "Logon failure: user is not permitted to log on at this time.") },
+        { "0xC0000072", ("STATUS_ACCOUNT_DISABLED", "Logon failure: the account is currently disabled.") },
+        { "0xC0000234", ("STATUS_ACCOUNT_LOCKED_OUT", "Logon failure: user account is locked out due to excessive failed attempts.") },
         { "0xC000009A", ("STATUS_INSUFFICIENT_RESOURCES", "System resource exhaustion (pool memory, handles, or threads).") },
         { "0xC0000135", ("STATUS_DLL_NOT_FOUND", "The application failed to launch because a required DLL library could not be located.") },
         { "0xC0000142", ("STATUS_DLL_INIT_FAILED", "The application failed to initialize a required DLL properly.") },
@@ -344,6 +349,120 @@ public class LogExplanationEngine
                     "Reset BIOS/UEFI settings to default clocks and voltages.",
                     "Update motherboard BIOS firmware to the latest stable release.",
                     "Monitor CPU package temperatures under load."
+                }
+            };
+        }
+
+        // Security Event 4625 (Failed Logon)
+        if (log.EventId == 4625 || (log.Channel.Equals("Security", StringComparison.OrdinalIgnoreCase) && log.EventId == 4625))
+        {
+            var subStatusMatch = StatusCodeRegex.Match(log.Message);
+            string subStatusReason = "Authentication failed.";
+            if (subStatusMatch.Success && KnownStatusCodes.TryGetValue(subStatusMatch.Value, out var statusInfo))
+            {
+                subStatusReason = $"{statusInfo.Name}: {statusInfo.Meaning}";
+            }
+
+            return new LogExplanation
+            {
+                Summary = $"A user account failed to log on. Substatus reason: {subStatusReason}",
+                TriageRating = TriageSeverity.High,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "User mistyped their password or username.",
+                    "An automated script or expired mapped drive credential is repeatedly attempting to authenticate.",
+                    "Potential brute-force or password spraying attack targeting local or domain credentials."
+                },
+                RecommendedActions = new[]
+                {
+                    "Inspect the 'Account Name' and 'Source Network Address' fields in the Technical Details below.",
+                    "If the source IP is external or unexpected, check firewall logs and consider blocking the remote host.",
+                    "Check Credential Manager on the source machine for outdated cached credentials."
+                },
+                TechnicalDetails = new[]
+                {
+                    "Event ID: 4625 (Security Audit Failure)",
+                    $"Status: {subStatusReason}"
+                }
+            };
+        }
+
+        // Schannel (TLS / SSL Handshake Fatal Alert)
+        if (log.ProviderName.Contains("Schannel", StringComparison.OrdinalIgnoreCase))
+        {
+            return new LogExplanation
+            {
+                Summary = "A secure TLS/SSL handshake between this computer and a remote host failed.",
+                TriageRating = TriageSeverity.Medium,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Client and server do not share a common cipher suite or TLS protocol version (e.g. legacy TLS 1.0/1.1 disabled on Windows).",
+                    "The remote server's SSL certificate has expired, has an untrusted Root CA, or has a mismatched hostname.",
+                    "Local Windows Schannel registry configurations have disabled required cryptographic algorithms."
+                },
+                RecommendedActions = new[]
+                {
+                    "Verify the validity of the remote server's SSL certificate using an SSL checker or browser.",
+                    "Ensure TLS 1.2 and TLS 1.3 are enabled on both endpoints.",
+                    "Check whether local group policies or security baselines restricted cipher suites."
+                },
+                TechnicalDetails = new[]
+                {
+                    "Subsystem: Microsoft Schannel (Secure Channel SSP)",
+                    $"Event ID: {log.EventId}"
+                }
+            };
+        }
+
+        // NTFS File System Corruption (Event 55)
+        if (log.ProviderName.Contains("Ntfs", StringComparison.OrdinalIgnoreCase) && log.EventId == 55)
+        {
+            return new LogExplanation
+            {
+                Summary = "The file system structure on a disk volume is corrupt and unusable. Self-healing was unable to resolve the inconsistency.",
+                TriageRating = TriageSeverity.Critical,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Improper shutdown or power interruption while the operating system was writing to the Master File Table (MFT).",
+                    "Underlying physical bad sectors on the storage media.",
+                    "Failing storage controller or corrupted disk cache."
+                },
+                RecommendedActions = new[]
+                {
+                    "IMMEDIATE: Run 'chkdsk <DriveLetter>: /f /r' from an elevated Command Prompt.",
+                    "Back up accessible files from the volume before initiating intensive repair operations.",
+                    "Check drive S.M.A.R.T. telemetry using CrystalDiskInfo to ensure disk is not failing physically."
+                },
+                TechnicalDetails = new[]
+                {
+                    "Event ID: 55 (NTFS Volume Corruption)",
+                    "Subsystem: Windows NT File System Driver"
+                }
+            };
+        }
+
+        // User Profile Service (Event 1500, 1509, 1530)
+        if (log.ProviderName.Contains("User Profile Service", StringComparison.OrdinalIgnoreCase))
+        {
+            return new LogExplanation
+            {
+                Summary = "Windows cannot log on with the specified user profile, or background processes leaked registry keys preventing clean unload.",
+                TriageRating = TriageSeverity.Medium,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "The user's NTUSER.DAT registry hive is corrupted or locked by security software / antivirus.",
+                    "Insufficient file permissions on C:\\Users\\<Username> folder.",
+                    "A background application or service failed to release registry handles during logout."
+                },
+                RecommendedActions = new[]
+                {
+                    "Restart the computer and attempt logging in again.",
+                    "Verify disk permissions on the user's directory in C:\\Users.",
+                    "Temporarily exclude NTUSER.DAT from real-time antivirus scans."
                 }
             };
         }

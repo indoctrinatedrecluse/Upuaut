@@ -841,3 +841,362 @@ body, html {
     border-color: var(--upuaut-gold);
     box-shadow: 0 0 10px var(--upuaut-gold-glow);
 }
+
+
+/* ========================================================= */
+/* VIEW MODE SWITCHER & EVTX PROMPT BAR                      */
+/* ========================================================= */
+
+.view-mode-toggle {
+    display: flex;
+    background-color: var(--upuaut-surface);
+    border: 1px solid var(--upuaut-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.mode-btn {
+    background: transparent;
+    border: none;
+    color: var(--upuaut-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.15s ease;
+}
+
+.mode-btn:hover {
+    color: var(--upuaut-sand);
+}
+
+.mode-btn-active {
+    background-color: var(--upuaut-surface-raised);
+    color: var(--upuaut-sand);
+    border-bottom: 2px solid var(--upuaut-gold);
+}
+
+.evtx-prompt-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background-color: rgba(212, 175, 55, 0.08);
+    border: 1px dashed rgba(212, 175, 55, 0.4);
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+}
+
+/* ========================================================= */
+/* TIMELINE HISTOGRAM                                        */
+/* ========================================================= */
+
+.histogram-card {
+    background-color: var(--upuaut-surface);
+    border: 1px solid var(--upuaut-border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.histogram-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+}
+
+.histogram-title {
+    font-weight: 700;
+    color: var(--upuaut-sand);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    letter-spacing: 0.06em;
+}
+
+.histogram-subtitle {
+    font-size: 0.7rem;
+    color: var(--upuaut-text-dim);
+    font-weight: normal;
+}
+
+.histogram-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    font-size: 0.7rem;
+    color: var(--upuaut-text-muted);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.legend-box {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+}
+
+.red-box { background-color: var(--upuaut-danger); }
+.orange-box { background-color: #F97316; }
+.yellow-box { background-color: var(--upuaut-warning); }
+
+.histogram-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 60px;
+    padding-top: 4px;
+}
+
+.histogram-empty {
+    width: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--upuaut-text-dim);
+    line-height: 50px;
+}
+
+.histogram-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+    cursor: pointer;
+}
+
+.histogram-column:hover .bar-stack {
+    opacity: 0.8;
+}
+
+.bar-stack {
+    width: 100%;
+    min-height: 2px;
+    display: flex;
+    flex-direction: column-reverse;
+    border-radius: 2px 2px 0 0;
+    overflow: hidden;
+    background-color: var(--upuaut-surface-raised);
+}
+
+.bar-seg {
+    width: 100%;
+}
+
+.bar-red { background-color: var(--upuaut-danger); }
+.bar-orange { background-color: #F97316; }
+.bar-yellow { background-color: var(--upuaut-warning); }
+.bar-blue { background-color: var(--upuaut-lapis); }
+
+.bar-label {
+    font-size: 0.6rem;
+    color: var(--upuaut-text-dim);
+    font-family: monospace;
+    margin-top: 4px;
+}
+
+/* ========================================================= */
+/* EVENT CLUSTERS / FINGERPRINT CARDS                        */
+/* ========================================================= */
+
+.cluster-view-container {
+    padding: 0.75rem;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.cluster-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.cluster-card {
+    background-color: var(--upuaut-surface-raised);
+    border: 1px solid var(--upuaut-border);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.cluster-card:hover {
+    border-color: var(--upuaut-gold);
+    background-color: rgba(212, 175, 55, 0.05);
+}
+
+.cluster-selected {
+    border-color: var(--upuaut-gold) !important;
+    background-color: rgba(212, 175, 55, 0.12) !important;
+    box-shadow: 0 0 12px var(--upuaut-gold-glow);
+}
+
+.cluster-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cluster-ident {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.cluster-provider {
+    font-weight: 600;
+    color: var(--upuaut-sand);
+}
+
+.cluster-count-badge {
+    background-color: rgba(212, 175, 55, 0.2);
+    color: var(--upuaut-sand);
+    border: 1px solid rgba(212, 175, 55, 0.4);
+    font-size: 0.75rem;
+    font-weight: 800;
+    font-family: monospace;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+}
+
+.cluster-headline {
+    font-size: 0.85rem;
+    color: var(--upuaut-text);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cluster-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--upuaut-text-dim);
+    margin-top: 0.2rem;
+}
+
+.cluster-timing {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: monospace;
+}
+
+.cluster-pids {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.pid-tag {
+    background-color: var(--upuaut-surface);
+    border: 1px solid var(--upuaut-border);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.65rem;
+}
+
+/* ========================================================= */
+/* STRUCTURED EVENTDATA PROPERTY GRID                        */
+/* ========================================================= */
+
+.property-grid-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.property-grid-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--upuaut-sand);
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.property-empty {
+    font-size: 0.75rem;
+    color: var(--upuaut-text-dim);
+    padding: 1rem 0;
+}
+
+.property-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.prop-card {
+    background-color: var(--upuaut-surface-raised);
+    border: 1px solid var(--upuaut-border-subtle);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.prop-key {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--upuaut-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.prop-val {
+    font-size: 0.75rem;
+    color: #93C5FD;
+    word-break: break-all;
+}
+
+/* ========================================================= */
+/* ORACLE TAB STRIP                                          */
+/* ========================================================= */
+
+.oracle-tab-strip {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--upuaut-border);
+    margin-top: 0.5rem;
+}
+
+.oracle-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--upuaut-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.oracle-tab:hover {
+    color: var(--upuaut-sand);
+}
+
+.oracle-tab-active {
+    color: var(--upuaut-gold);
+    border-bottom-color: var(--upuaut-gold);
+}

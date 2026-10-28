@@ -1,0 +1,68 @@
+@namespace Upuaut.UI.Components
+@using Upuaut.Core.Models
+
+<div class="cluster-view-container">
+    @if (Clusters.Count == 0)
+    {
+        <div class="empty-state">
+            <span>No failure clusters found for active filters.</span>
+        </div>
+    }
+    else
+    {
+        <div class="cluster-grid">
+            @foreach (var cluster in Clusters)
+            {
+                var isSelected = SelectedCluster?.Fingerprint == cluster.Fingerprint;
+                <div class="cluster-card @(isSelected ? "cluster-selected" : "")"
+                     @onclick="@(() => OnClusterSelected.InvokeAsync(cluster))">
+                    <div class="cluster-header">
+                        <div class="cluster-ident">
+                            <span class="severity-badge @GetSeverityClass(cluster.Level)">
+                                @cluster.Level.ToString()
+                            </span>
+                            <span class="mono-text gold-accent font-bold">Event @cluster.EventId</span>
+                            <span class="cluster-provider">@cluster.ProviderName</span>
+                        </div>
+                        <div class="cluster-counter">
+                            <span class="cluster-count-badge">@cluster.Count x</span>
+                        </div>
+                    </div>
+
+                    <div class="cluster-headline">
+                        @(cluster.Exemplar.Explanation?.Summary ?? cluster.Exemplar.Message)
+                    </div>
+
+                    <div class="cluster-footer">
+                        <div class="cluster-timing">
+                            <span>⏱ First: @cluster.FirstSeen.ToString("HH:mm:ss")</span>
+                            <span>•</span>
+                            <span>Last: @cluster.LastSeen.ToString("HH:mm:ss")</span>
+                        </div>
+                        @if (cluster.DistinctProcesses.Count > 0)
+                        {
+                            <div class="cluster-pids">
+                                <span class="pid-tag">PID: @string.Join(", ", cluster.DistinctProcesses)</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<EventCluster> Clusters { get; set; } = Array.Empty<EventCluster>();
+    [Parameter] public EventCluster? SelectedCluster { get; set; }
+    [Parameter] public EventCallback<EventCluster> OnClusterSelected { get; set; }
+
+    private static string GetSeverityClass(LogSeverityLevel level) => level switch
+    {
+        LogSeverityLevel.Critical => "severity-critical",
+        LogSeverityLevel.Error => "severity-error",
+        LogSeverityLevel.Warning => "severity-warning",
+        LogSeverityLevel.Information => "severity-info",
+        _ => "severity-verbose"
+    };
+}

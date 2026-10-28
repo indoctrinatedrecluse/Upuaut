@@ -1,23 +1,36 @@
 @page "/chronicles"
 @namespace Upuaut.UI.Pages
 @inject IChroniclesService ChroniclesService
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <PageTitle>Upuaut — The Duat Chronicles</PageTitle>
 
 <div class="chronicles-container">
-    <!-- Top Filter Header -->
+    <!-- Top Filter & Control Header -->
     <div class="chronicles-header">
         <div class="header-titles">
             <h1 class="header-main-title">
                 <span class="gold-accent">📜</span> The Duat Chronicles
             </h1>
             <span class="header-sub-title">
-                Windows Event Log Triage &amp; Human-Readable Diagnostics
+                Windows Event Log Triage, Anomaly Clustering &amp; Human-Readable Diagnostics
             </span>
         </div>
 
         <div class="header-actions-bar">
+            <!-- View Mode Switcher -->
+            <div class="view-mode-toggle">
+                <button class="mode-btn @(_viewMode == ViewMode.Stream ? "mode-btn-active" : "")"
+                        @onclick="@(() => SetViewMode(ViewMode.Stream))">
+                    <span>≡</span> Stream View
+                </button>
+                <button class="mode-btn @(_viewMode == ViewMode.Clusters ? "mode-btn-active" : "")"
+                        @onclick="@(() => SetViewMode(ViewMode.Clusters))">
+                    <span>❖</span> Failure Clusters (@_clusters.Count)
+                </button>
+            </div>
+
             <!-- Channel Selector -->
             <div class="filter-group">
                 <span class="filter-label">Channel:</span>
@@ -49,18 +62,44 @@
                 Query Logs
             </FluentButton>
 
+            <!-- Offline EVTX Open Button -->
+            <FluentButton Appearance="ButtonAppearance.Outline"
+                          IconStart="@(new Icons.Regular.Size16.FolderOpen())"
+                          OnClick="ToggleEvtxPrompt">
+                Load .evtx
+            </FluentButton>
+
             <!-- Live Stream Button -->
             <FluentButton Appearance="@(_isLiveStreaming ? ButtonAppearance.Primary : ButtonAppearance.Outline)"
                           IconStart="@(new Icons.Regular.Size20.Radar())"
                           OnClick="ToggleLiveStreamAsync">
-                @(_isLiveStreaming ? "Live: Active" : "Start Live Stream")
+                @(_isLiveStreaming ? "Live: Streaming" : "Live Stream")
             </FluentButton>
         </div>
     </div>
 
+    <!-- Offline EVTX Path Input Bar (if open) -->
+    @if (_showEvtxPrompt)
+    {
+        <div class="evtx-prompt-bar">
+            <span class="gold-accent">📂 Offline EVTX:</span>
+            <input type="text"
+                   class="upuaut-search-input"
+                   placeholder="Enter full path to .evtx file (e.g. C:\Diagnostics\System.evtx)"
+                   style="flex: 1;"
+                   @bind="_evtxFilePath" />
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="LoadCustomEvtxAsync">
+                Load File
+            </FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Subtle" OnClick="ToggleEvtxPrompt">
+                Cancel
+            </FluentButton>
+        </div>
+    }
+
     <!-- Secondary Filter & Search Ribbon -->
     <div class="filter-ribbon">
-        <!-- Level Checkbox Pills -->
+        <!-- Severity Checkbox Pills -->
         <div class="level-pills">
             <span class="filter-label" style="margin-right: 0.25rem;">Severity:</span>
             <button class="pill-btn @(_filter.Levels.Contains(LogSeverityLevel.Critical) ? "pill-critical-active" : "")"
@@ -81,11 +120,26 @@
             </button>
         </div>
 
+        <!-- Provider Facet Filter -->
+        @if (_topProviders.Count > 0)
+        {
+            <div class="filter-group">
+                <span class="filter-label">Provider:</span>
+                <select class="upuaut-select" @bind="_selectedProviderFacet" @bind:after="OnProviderFacetChanged">
+                    <option value="">All Providers (@_topProviders.Count)</option>
+                    @foreach (var (provider, count) in _topProviders)
+                    {
+                        <option value="@provider">@provider (@count)</option>
+                    }
+                </select>
+            </div>
+        }
+
         <!-- Benign Noise Filter Switch -->
         <div class="noise-filter-switch">
             <label class="switch-container">
                 <input type="checkbox" @bind="_hideBenignNoise" />
-                <span class="switch-label">Hide Benign Noise (e.g. DCOM 10016)</span>
+                <span class="switch-label">Hide Benign Noise (DCOM 10016, HAL TAD)</span>
             </label>
         </div>
 
@@ -98,14 +152,26 @@
                    value="@_filter.SearchText"
                    @oninput="OnSearchInput" />
         </div>
+
+        <!-- Export Dropdown -->
+        <div class="export-actions">
+            <FluentButton Appearance="ButtonAppearance.Outline"
+                          IconStart="@(new Icons.Regular.Size16.ArrowDownload())"
+                          OnClick="ExportReportAsync">
+                Export Triage Report
+            </FluentButton>
+        </div>
     </div>
+
+    <!-- Interactive Time Histogram -->
+    <EventHistogram Logs="@FilteredLogs" BucketCount="24" />
 
     <!-- KPI Summary Row -->
     <div class="kpi-row">
         <div class="kpi-card">
-            <span class="kpi-title">TOTAL DISPLAYED</span>
+            <span class="kpi-title">TOTAL EVENTS</span>
             <span class="kpi-value">@FilteredLogs.Count</span>
-            <span class="kpi-sub">Retrieved from @_filter.Channel</span>
+            <span class="kpi-sub">@(!string.IsNullOrEmpty(_loadedFile) ? Path.GetFileName(_loadedFile) : _filter.Channel)</span>
         </div>
         <div class="kpi-card">
             <span class="kpi-title" style="color: #EF4444;">CRITICAL ISSUES</span>
@@ -120,16 +186,21 @@
         <div class="kpi-card">
             <span class="kpi-title" style="color: #EAB308;">WARNINGS</span>
             <span class="kpi-value" style="color: #EAB308;">@_warningCount</span>
-            <span class="kpi-sub">Timeouts &amp; telemetry notices</span>
+            <span class="kpi-sub">Timeouts &amp; notices</span>
         </div>
         <div class="kpi-card">
             <span class="kpi-title" style="color: #10B981;">NOISE FILTERED</span>
             <span class="kpi-value" style="color: #10B981;">@_benignFilteredCount</span>
-            <span class="kpi-sub">Suppressed harmless events</span>
+            <span class="kpi-sub">Suppressed harmless telemetry</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: var(--upuaut-gold);">FAILURE CLUSTERS</span>
+            <span class="kpi-value" style="color: var(--upuaut-gold);">@_clusters.Count</span>
+            <span class="kpi-sub">Distinct error signatures</span>
         </div>
     </div>
 
-    <!-- Status message bar if any -->
+    <!-- Status banner if any -->
     @if (!string.IsNullOrEmpty(_statusMessage))
     {
         <div class="status-banner">
@@ -139,7 +210,7 @@
 
     <!-- Split Master-Detail Workspace -->
     <div class="workspace-split">
-        <!-- Left: Log Records Table -->
+        <!-- Left: Stream View OR Cluster View -->
         <div class="logs-table-pane">
             @if (_isLoading)
             {
@@ -158,6 +229,12 @@
                     </span>
                 </div>
             }
+            else if (_viewMode == ViewMode.Clusters)
+            {
+                <EventClusterView Clusters="@_clusters"
+                                  SelectedCluster="@_selectedCluster"
+                                  OnClusterSelected="OnClusterSelected" />
+            }
             else
             {
                 <div class="table-scroll-container">
@@ -165,9 +242,9 @@
                         <thead>
                             <tr>
                                 <th style="width: 85px;">Severity</th>
-                                <th style="width: 140px;">Time</th>
+                                <th style="width: 135px;">Time</th>
                                 <th style="width: 80px;">Event ID</th>
-                                <th style="width: 180px;">Provider</th>
+                                <th style="width: 175px;">Provider</th>
                                 <th>Plain English Summary</th>
                             </tr>
                         </thead>
@@ -212,9 +289,17 @@
                             <span class="oracle-badge">
                                 <span class="gold-accent">✦</span> THE ORACLE EXPLANATION
                             </span>
-                            <span class="triage-badge @GetTriageClass(_selectedLog.Explanation?.TriageRating)">
-                                @(_selectedLog.Explanation?.TriageRating.ToString() ?? "Standard")
-                            </span>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <span class="triage-badge @GetTriageClass(_selectedLog.Explanation?.TriageRating)">
+                                    @(_selectedLog.Explanation?.TriageRating.ToString() ?? "Standard")
+                                </span>
+                                <FluentButton Appearance="ButtonAppearance.Subtle"
+                                              IconStart="@(new Icons.Regular.Size16.Copy())"
+                                              Title="Copy as Markdown Bug Report"
+                                              OnClick="CopyAsMarkdownBugAsync">
+                                    Copy Bug
+                                </FluentButton>
+                            </div>
                         </div>
 
                         <h2 class="oracle-headline">
@@ -229,83 +314,104 @@
                                 <span style="color: var(--upuaut-text-muted);">— @_selectedLog.Explanation.StatusMeaning</span>
                             </div>
                         }
+
+                        <!-- Oracle Inspection Tabs -->
+                        <div class="oracle-tab-strip">
+                            <button class="oracle-tab @(_activeTab == OracleTab.Overview ? "oracle-tab-active" : "")"
+                                    @onclick="@(() => _activeTab = OracleTab.Overview)">
+                                Overview &amp; Remediation
+                            </button>
+                            <button class="oracle-tab @(_activeTab == OracleTab.Properties ? "oracle-tab-active" : "")"
+                                    @onclick="@(() => _activeTab = OracleTab.Properties)">
+                                EventData (@_selectedLog.EventData.Count)
+                            </button>
+                            <button class="oracle-tab @(_activeTab == OracleTab.RawXml ? "oracle-tab-active" : "")"
+                                    @onclick="@(() => _activeTab = OracleTab.RawXml)">
+                                Raw Message &amp; XML
+                            </button>
+                        </div>
                     </div>
 
                     <div class="oracle-body">
-                        <!-- Probable Causes -->
-                        @if (_selectedLog.Explanation?.ProbableCauses.Count > 0)
+                        @if (_activeTab == OracleTab.Overview)
                         {
+                            <!-- Probable Causes -->
+                            @if (_selectedLog.Explanation?.ProbableCauses.Count > 0)
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title">Probable Causes</h4>
+                                    <ul class="bullet-list">
+                                        @foreach (var cause in _selectedLog.Explanation.ProbableCauses)
+                                        {
+                                            <li>@cause</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            <!-- Recommended Actions -->
+                            @if (_selectedLog.Explanation?.RecommendedActions.Count > 0)
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title" style="color: #10B981;">Recommended Remediation</h4>
+                                    <ul class="bullet-list checklist">
+                                        @foreach (var action in _selectedLog.Explanation.RecommendedActions)
+                                        {
+                                            <li>@action</li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
+
+                            <!-- Technical Coordinates -->
                             <div class="section-block">
-                                <h4 class="section-title">Probable Causes</h4>
-                                <ul class="bullet-list">
-                                    @foreach (var cause in _selectedLog.Explanation.ProbableCauses)
-                                    {
-                                        <li>@cause</li>
-                                    }
-                                </ul>
+                                <h4 class="section-title">Technical Coordinates</h4>
+                                <div class="tech-grid">
+                                    <div class="tech-item">
+                                        <span class="tech-key">Event ID</span>
+                                        <span class="tech-val mono-text gold-accent">@_selectedLog.EventId</span>
+                                    </div>
+                                    <div class="tech-item">
+                                        <span class="tech-key">Provider</span>
+                                        <span class="tech-val">@_selectedLog.ProviderName</span>
+                                    </div>
+                                    <div class="tech-item">
+                                        <span class="tech-key">Timestamp (UTC)</span>
+                                        <span class="tech-val mono-text">@_selectedLog.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
+                                    </div>
+                                    <div class="tech-item">
+                                        <span class="tech-key">Channel / Source</span>
+                                        <span class="tech-val">@(_selectedLog.SourceFile ?? _selectedLog.Channel)</span>
+                                    </div>
+                                    <div class="tech-item">
+                                        <span class="tech-key">Process ID</span>
+                                        <span class="tech-val mono-text">@(_selectedLog.ProcessId?.ToString() ?? "N/A")</span>
+                                    </div>
+                                    <div class="tech-item">
+                                        <span class="tech-key">Computer</span>
+                                        <span class="tech-val">@(_selectedLog.ComputerName ?? "LocalHost")</span>
+                                    </div>
+                                </div>
                             </div>
                         }
-
-                        <!-- Recommended Actions -->
-                        @if (_selectedLog.Explanation?.RecommendedActions.Count > 0)
+                        else if (_activeTab == OracleTab.Properties)
+                        {
+                            <EventPropertyGrid Properties="@_selectedLog.EventData" />
+                        }
+                        else if (_activeTab == OracleTab.RawXml)
                         {
                             <div class="section-block">
-                                <h4 class="section-title" style="color: #10B981;">Recommended Remediation</h4>
-                                <ul class="bullet-list checklist">
-                                    @foreach (var action in _selectedLog.Explanation.RecommendedActions)
-                                    {
-                                        <li>@action</li>
-                                    }
-                                </ul>
+                                <h4 class="section-title">Raw Windows Event Message</h4>
+                                <pre class="raw-box">@_selectedLog.Message</pre>
                             </div>
-                        }
 
-                        <!-- Technical Metadata Grid -->
-                        <div class="section-block">
-                            <h4 class="section-title">Technical Coordinates</h4>
-                            <div class="tech-grid">
-                                <div class="tech-item">
-                                    <span class="tech-key">Event ID</span>
-                                    <span class="tech-val mono-text gold-accent">@_selectedLog.EventId</span>
+                            @if (!string.IsNullOrEmpty(_selectedLog.RawXml))
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title">Raw XML Payload</h4>
+                                    <pre class="raw-box xml-box">@_selectedLog.RawXml</pre>
                                 </div>
-                                <div class="tech-item">
-                                    <span class="tech-key">Provider</span>
-                                    <span class="tech-val">@_selectedLog.ProviderName</span>
-                                </div>
-                                <div class="tech-item">
-                                    <span class="tech-key">Timestamp (UTC)</span>
-                                    <span class="tech-val mono-text">@_selectedLog.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
-                                </div>
-                                <div class="tech-item">
-                                    <span class="tech-key">Channel</span>
-                                    <span class="tech-val">@_selectedLog.Channel</span>
-                                </div>
-                                <div class="tech-item">
-                                    <span class="tech-key">Process ID</span>
-                                    <span class="tech-val mono-text">@(_selectedLog.ProcessId?.ToString() ?? "N/A")</span>
-                                </div>
-                                <div class="tech-item">
-                                    <span class="tech-key">Computer</span>
-                                    <span class="tech-val">@(_selectedLog.ComputerName ?? "LocalHost")</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Original Windows Message -->
-                        <div class="section-block">
-                            <h4 class="section-title">Raw Windows Event Message</h4>
-                            <pre class="raw-box">@_selectedLog.Message</pre>
-                        </div>
-
-                        <!-- Raw XML (Collapsible) -->
-                        @if (!string.IsNullOrEmpty(_selectedLog.RawXml))
-                        {
-                            <details class="section-block xml-details">
-                                <summary class="section-title" style="cursor: pointer;">
-                                    View Full Event XML Payload
-                                </summary>
-                                <pre class="raw-box xml-box">@_selectedLog.RawXml</pre>
-                            </details>
+                            }
                         }
                     </div>
                 </div>
@@ -325,14 +431,28 @@
 </div>
 
 @code {
+    private enum ViewMode { Stream, Clusters }
+    private enum OracleTab { Overview, Properties, RawXml }
+
+    private ViewMode _viewMode = ViewMode.Stream;
+    private OracleTab _activeTab = OracleTab.Overview;
+
     private LogFilterOptions _filter = new();
     private List<LogRecord> _allLogs = new();
+    private IReadOnlyList<EventCluster> _clusters = Array.Empty<EventCluster>();
+    private EventCluster? _selectedCluster;
     private LogRecord? _selectedLog;
     private bool _isLoading;
     private bool _isLiveStreaming;
     private bool _hideBenignNoise = true;
     private string _statusMessage = string.Empty;
     private IReadOnlyList<string> _availableChannels = Array.Empty<string>();
+    private List<(string Provider, int Count)> _topProviders = new();
+    private string _selectedProviderFacet = string.Empty;
+
+    private bool _showEvtxPrompt;
+    private string _evtxFilePath = string.Empty;
+    private string? _loadedFile;
 
     private int _criticalCount;
     private int _errorCount;
@@ -348,8 +468,41 @@
         await TriggerQueryAsync();
     }
 
+    private void SetViewMode(ViewMode mode)
+    {
+        _viewMode = mode;
+    }
+
+    private void ToggleEvtxPrompt()
+    {
+        _showEvtxPrompt = !_showEvtxPrompt;
+    }
+
+    private async Task LoadCustomEvtxAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_evtxFilePath)) return;
+
+        _isLoading = true;
+        _loadedFile = _evtxFilePath;
+        _showEvtxPrompt = false;
+        StateHasChanged();
+
+        try
+        {
+            var logs = await ChroniclesService.LoadEvtxFileAsync(_evtxFilePath, _filter);
+            _allLogs = logs.ToList();
+            ProcessLogs();
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task OnChannelChanged()
     {
+        _loadedFile = null;
         await TriggerQueryAsync();
     }
 
@@ -357,7 +510,7 @@
     {
         if (_filter.Levels.Contains(level))
         {
-            if (_filter.Levels.Count > 1) // Keep at least one
+            if (_filter.Levels.Count > 1)
             {
                 _filter.Levels.Remove(level);
             }
@@ -367,7 +520,21 @@
             _filter.Levels.Add(level);
         }
 
-        StateHasChanged();
+        ProcessLogs();
+    }
+
+    private void OnProviderFacetChanged()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProviderFacet))
+        {
+            _filter.SelectedProviders = null;
+        }
+        else
+        {
+            _filter.SelectedProviders = new HashSet<string> { _selectedProviderFacet };
+        }
+
+        ProcessLogs();
     }
 
     private async Task TriggerQueryAsync()
@@ -380,12 +547,7 @@
         {
             var logs = await ChroniclesService.QueryEventLogsAsync(_filter);
             _allLogs = logs.ToList();
-            CalculateCounts();
-
-            if (_allLogs.Count > 0)
-            {
-                _selectedLog = FilteredLogs.FirstOrDefault();
-            }
+            ProcessLogs();
         }
         finally
         {
@@ -413,7 +575,7 @@
         InvokeAsync(() =>
         {
             _allLogs.Insert(0, log);
-            CalculateCounts();
+            ProcessLogs();
             StateHasChanged();
         });
     }
@@ -432,10 +594,16 @@
         _selectedLog = log;
     }
 
+    private void OnClusterSelected(EventCluster cluster)
+    {
+        _selectedCluster = cluster;
+        _selectedLog = cluster.Exemplar;
+    }
+
     private void OnSearchInput(ChangeEventArgs e)
     {
         _filter.SearchText = e.Value?.ToString();
-        StateHasChanged();
+        ProcessLogs();
     }
 
     private List<LogRecord> FilteredLogs
@@ -447,6 +615,11 @@
             if (_hideBenignNoise)
             {
                 query = query.Where(l => l.Explanation?.TriageRating != TriageSeverity.BenignNoise);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_selectedProviderFacet))
+            {
+                query = query.Where(l => l.ProviderName.Equals(_selectedProviderFacet, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrWhiteSpace(_filter.SearchText))
@@ -464,12 +637,69 @@
         }
     }
 
-    private void CalculateCounts()
+    private void ProcessLogs()
     {
         _criticalCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Critical);
         _errorCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Error);
         _warningCount = _allLogs.Count(l => l.Level == LogSeverityLevel.Warning);
         _benignFilteredCount = _allLogs.Count(l => l.Explanation?.TriageRating == TriageSeverity.BenignNoise);
+
+        // Compute top providers for facet navigation
+        _topProviders = _allLogs
+            .GroupBy(l => l.ProviderName)
+            .OrderByDescending(g => g.Count())
+            .Take(12)
+            .Select(g => (g.Key, g.Count()))
+            .ToList();
+
+        // Cluster active filtered logs
+        _clusters = ChroniclesService.ClusterLogs(FilteredLogs);
+
+        if (_selectedLog == null || !FilteredLogs.Any(l => l.RecordId == _selectedLog.RecordId))
+        {
+            _selectedLog = FilteredLogs.FirstOrDefault();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task CopyAsMarkdownBugAsync()
+    {
+        if (_selectedLog == null) return;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"### 🐛 [{_selectedLog.Level}] Event {_selectedLog.EventId} — {_selectedLog.ProviderName}");
+        sb.AppendLine($"- **Timestamp:** `{_selectedLog.Timestamp:yyyy-MM-dd HH:mm:ss.fff UTC}`");
+        sb.AppendLine($"- **Triage Rating:** `{_selectedLog.Explanation?.TriageRating}`");
+        sb.AppendLine($"- **Oracle Summary:** {_selectedLog.Explanation?.Summary}");
+
+        if (!string.IsNullOrEmpty(_selectedLog.Explanation?.DecodedStatusCode))
+        {
+            sb.AppendLine($"- **Decoded Code:** `{_selectedLog.Explanation.DecodedStatusCode}` ({_selectedLog.Explanation.StatusMeaning})");
+        }
+
+        if (_selectedLog.Explanation?.RecommendedActions.Count > 0)
+        {
+            sb.AppendLine("\n**Actionable Remediation:**");
+            foreach (var act in _selectedLog.Explanation.RecommendedActions)
+            {
+                sb.AppendLine($"- [ ] {act}");
+            }
+        }
+
+        sb.AppendLine("\n```text");
+        sb.AppendLine(_selectedLog.Message);
+        sb.AppendLine("```");
+
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+        _statusMessage = "Copied event details as Markdown bug report to clipboard!";
+    }
+
+    private async Task ExportReportAsync()
+    {
+        var md = ChroniclesService.ExportLogs(FilteredLogs, LogExportFormat.Markdown);
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", md);
+        _statusMessage = $"Exported complete triage report ({FilteredLogs.Count} events) to clipboard!";
     }
 
     private static string GetSeverityClass(LogSeverityLevel level) => level switch

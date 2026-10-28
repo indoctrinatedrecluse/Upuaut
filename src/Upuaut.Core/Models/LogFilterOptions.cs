@@ -13,6 +13,7 @@ public enum LogTimeRange
 public class LogFilterOptions
 {
     public string Channel { get; set; } = "System";
+    public string? FilePath { get; set; }
     
     // Default to Critical, Error, Warning as requested
     public HashSet<LogSeverityLevel> Levels { get; set; } = new()
@@ -28,6 +29,7 @@ public class LogFilterOptions
 
     public int? EventId { get; set; }
     public string? ProviderName { get; set; }
+    public HashSet<string>? SelectedProviders { get; set; }
     public string? SearchText { get; set; }
-    public int MaxEvents { get; set; } = 1000;
+    public int MaxEvents { get; set; } = 1500;
 }

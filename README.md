@@ -163,7 +163,8 @@ Upuaut/
 - [x] Comprehensive test suite (`tests/Upuaut.Tests`) verifying log parsing and explanation accuracy.
 - [ ] Real-time ETW session listener for kernel/network providers.
 
-### Phase 3: The Scout (On-Demand Packet Sniffing) ⚪
+### Phase 3: The Scout (On-Demand Packet Sniffing) ⏸️ (Deferred TODO)
+> *Note: Packet capture engine implementation is temporarily deferred to prioritize delivering the world's most capable Windows log diagnostic and explanation platform first.*
 - [ ] Adapter enumeration and capture session management.
 - [ ] Packet dissection engine (Ethernet, IPv4/IPv6, TCP, UDP, DNS, TLS).
 - [ ] Live socket-to-PID attribution (identifying the Windows process behind each packet).
