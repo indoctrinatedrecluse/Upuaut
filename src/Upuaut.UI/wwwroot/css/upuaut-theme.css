@@ -165,6 +165,75 @@ body, html {
 .header-realm {
     color: var(--upuaut-text-muted);
     font-weight: 500;
+    white-space: nowrap;
+}
+
+/* ========================================================= */
+/* ANIMATED HIEROGLYPHIC TITLE BAR STREAM                    */
+/* ========================================================= */
+
+.header-hieroglyphs-marquee {
+    flex: 1;
+    max-width: 620px;
+    height: 30px;
+    margin: 0 1.25rem;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(180deg, rgba(212, 175, 55, 0.05) 0%, rgba(0, 0, 0, 0.35) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.25);
+    border-radius: 15px;
+    padding: 0 0.5rem;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7), 0 0 10px rgba(212, 175, 55, 0.12);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+}
+
+.hieroglyphs-track {
+    display: flex;
+    white-space: nowrap;
+    will-change: transform;
+    animation: hieroglyphScrollAnim 32s linear infinite;
+}
+
+.header-hieroglyphs-marquee:hover .hieroglyphs-track {
+    animation-play-state: paused;
+}
+
+@keyframes hieroglyphScrollAnim {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-50%);
+    }
+}
+
+.hieroglyphs-content {
+    font-family: 'Segoe UI Historic', 'Noto Sans Egyptian Hieroglyphs', 'Segoe UI Symbol', serif;
+    font-size: 1.15rem;
+    color: var(--upuaut-gold);
+    letter-spacing: 0.38em;
+    padding-right: 0.38em;
+    display: inline-flex;
+    align-items: center;
+    text-shadow: 0 0 8px rgba(212, 175, 55, 0.65), 0 0 16px rgba(212, 175, 55, 0.25);
+    user-select: none;
+    line-height: 1;
+}
+
+@media (max-width: 1100px) {
+    .header-hieroglyphs-marquee {
+        max-width: 380px;
+        margin: 0 0.75rem;
+    }
+}
+
+@media (max-width: 850px) {
+    .header-hieroglyphs-marquee {
+        display: none;
+    }
 }
 
 .header-actions {

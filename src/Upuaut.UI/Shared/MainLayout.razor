@@ -15,6 +15,14 @@
                 <span class="header-realm">Windows System Telemetry</span>
             </div>
 
+            <!-- ANIMATED HIEROGLYPHIC TITLE STREAM -->
+            <div class="header-hieroglyphs-marquee" title="The Sacred Hieroglyphic Alphabet of the Duat (Hover to pause)">
+                <div class="hieroglyphs-track">
+                    <span class="hieroglyphs-content">@HieroglyphicAlphabetStream</span>
+                    <span class="hieroglyphs-content" aria-hidden="true">@HieroglyphicAlphabetStream</span>
+                </div>
+            </div>
+
             <div class="header-actions">
                 <div class="badge-chip">
                     <span class="chip-dot"></span>
@@ -166,6 +174,11 @@
 @code {
     private bool _showDiagnostics;
     private bool _showAccountMenu;
+
+    private const string HieroglyphicAlphabetStream =
+        "𓄿 𓇋 𓇌 𓂝 𓅱 𓃀 𓊪 𓆑 𓅓 𓈖 𓂋 𓉔 𓎛 𓐍 𓄡 𓊃 𓋴 𓈙 𓈎 𓎡 𓎼 𓏏 𓍿 𓂧 𓆓 " +
+        "✦ 𓅱 𓊪 𓅱 𓄿 𓅱 𓏏 ✦ 𓅓 𓂝 𓅱 𓅱 𓏛 ✦ 𓌳 𓂝 𓐍 𓏏 𓆄 ✦ 𓇋 𓈖 𓊪 𓅱 𓃣 ✦ 𓋴 𓈙 𓏏 𓏛 ✦ 𓈎 𓃀 𓎛 𓏏 ✦ 𓊃 𓎡 𓂋 𓅓 " +
+        "✦ 𓋹 𓊹 𓊽 𓁹 𓇳 𓇽 ✦ ";
 
     private void ToggleDiagnostics()
     {
