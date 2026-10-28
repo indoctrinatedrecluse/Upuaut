@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using Upuaut.Core.Diagnostics;
 
 namespace Upuaut.App;
 
@@ -9,23 +10,29 @@ public partial class App : Application
 {
     public App()
     {
-        Log("App constructor");
+        AppLogger.Info("App", "Upuaut application initializing...");
+        
+        // Critical WinRT redirection
         AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+        
+        // Comprehensive crash & error trapping
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
-        Exit += (s, e) => Log($"App.Exit event: Code={e.ApplicationExitCode}");
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        
+        Exit += (s, e) => AppLogger.Info("App", $"Upuaut exited with code: {e.ApplicationExitCode}");
     }
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        Log("App.OnStartup enter");
+        AppLogger.Info("App", $"OnStartup begin (Args: {string.Join(" ", e.Args)})");
         base.OnStartup(e);
-        Log("App.OnStartup exit");
+        AppLogger.Info("App", "OnStartup completed");
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        Log($"App.OnExit enter: Code={e.ApplicationExitCode}");
+        AppLogger.Info("App", $"OnExit begin: Code={e.ApplicationExitCode}");
         base.OnExit(e);
     }
 
@@ -38,7 +45,7 @@ public partial class App : Application
             var sdkNetPath = Path.Combine(appDir, "Microsoft.Windows.SDK.NET.dll");
             if (File.Exists(sdkNetPath))
             {
-                Log($"AssemblyResolve: Redirecting {args.Name} -> {sdkNetPath}");
+                AppLogger.Info("App", $"AssemblyResolve: Redirecting {args.Name} -> {sdkNetPath}");
                 return Assembly.LoadFrom(sdkNetPath);
             }
         }
@@ -47,25 +54,42 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        Log($"DispatcherUnhandledException: {e.Exception}");
-        e.Handled = false;
+        var dumpPath = CrashReporter.GenerateCrashDump(e.Exception, "WPF Dispatcher UI Thread Exception");
+
+        var message = $"A critical UI thread exception occurred:\n\n{e.Exception.Message}\n\n" +
+                      $"A diagnostic crash dump was saved to:\n{dumpPath}\n\n" +
+                      "Would you like to open the crash reports folder?";
+
+        var result = MessageBox.Show(
+            message,
+            "Upuaut — Critical Application Error",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Error);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            AppLogger.OpenCrashFolder();
+        }
+
+        e.Handled = true;
     }
 
     private void OnCurrentDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        Log($"CurrentDomainUnhandledException: {e.ExceptionObject}");
+        if (e.ExceptionObject is Exception ex)
+        {
+            CrashReporter.GenerateCrashDump(ex, $"AppDomain Unhandled (IsTerminating={e.IsTerminating})");
+        }
+        else
+        {
+            AppLogger.Fatal("App", $"Non-Exception object thrown in AppDomain: {e.ExceptionObject}");
+        }
     }
 
-    public static void Log(string msg)
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        try
-        {
-            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "upuaut_startup.log");
-            File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] [APP] {msg}\n");
-        }
-        catch
-        {
-            // Ignore
-        }
+        CrashReporter.GenerateCrashDump(e.Exception, "Background TaskScheduler Unobserved Task Exception");
+        // Mark as observed so the process doesn't terminate unexpectedly
+        e.SetObserved();
     }
 }

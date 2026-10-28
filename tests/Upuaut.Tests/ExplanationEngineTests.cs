@@ -108,6 +108,43 @@ public class ExplanationEngineTests
     }
 
     [Fact]
+    public void ExplainsDotNetRuntime1026_AsHighSeverityUnhandledException()
+    {
+        var log = new LogRecord
+        {
+            EventId = 1026,
+            ProviderName = ".NET Runtime",
+            Level = LogSeverityLevel.Error,
+            Message = "Application: Upuaut.exe Framework Version: v4.0.30319 Description: The process was terminated due to an unhandled exception."
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.Equal(TriageSeverity.High, explanation.TriageRating);
+        Assert.True(explanation.IsCuratedKnowledge);
+        Assert.Contains(".NET", explanation.Summary);
+    }
+
+    [Fact]
+    public void ExplainsWinlogon4005_AsCriticalLogonCrash()
+    {
+        var log = new LogRecord
+        {
+            EventId = 4005,
+            ProviderName = "Microsoft-Windows-Winlogon",
+            Level = LogSeverityLevel.Error,
+            Message = "The Windows logon process has unexpectedly terminated."
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.Equal(TriageSeverity.Critical, explanation.TriageRating);
+        Assert.Contains("logon", explanation.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DecodesArbitraryStatusCode_AccessViolation()
     {
         var log = new LogRecord

@@ -11,6 +11,10 @@ public class LogExplanationEngine
     {
         // NTSTATUS
         { "0xC0000005", ("STATUS_ACCESS_VIOLATION", "The software attempted to read or write to an invalid memory address.") },
+        { "0xC0000008", ("STATUS_INVALID_HANDLE", "An invalid handle was passed to a system call.") },
+        { "0xC000001D", ("STATUS_ILLEGAL_INSTRUCTION", "An attempt was made to execute an illegal processor instruction.") },
+        { "0xC00000FD", ("STATUS_STACK_OVERFLOW", "A new guard page for the stack cannot be allocated (thread stack overflow).") },
+        { "0xC0000374", ("STATUS_HEAP_CORRUPTION", "A process has corrupted its own heap memory structure.") },
         { "0xC00000BB", ("STATUS_NOT_SUPPORTED", "The requested command or hardware feature is not supported by the firmware or driver.") },
         { "0xC0000001", ("STATUS_UNSUCCESSFUL", "The requested operation did not succeed.") },
         { "0xC000000D", ("STATUS_INVALID_PARAMETER", "An invalid parameter was passed to a service or function.") },
@@ -33,6 +37,12 @@ public class LogExplanationEngine
         { "0x80070005", ("E_ACCESSDENIED", "Access is denied. The calling account does not possess necessary ACL permissions.") },
         { "0x80070002", ("ERROR_FILE_NOT_FOUND", "The system cannot find the file specified.") },
         { "0x80070003", ("ERROR_PATH_NOT_FOUND", "The system cannot find the path specified.") },
+        { "0x8007007E", ("ERROR_MOD_NOT_FOUND", "The specified DLL module could not be found.") },
+        { "0x800700C1", ("ERROR_BAD_EXE_FORMAT", "%1 is not a valid Win32 application (32-bit vs 64-bit architecture mismatch).") },
+        { "0x80070422", ("ERROR_SERVICE_DISABLED", "The service cannot be started, either because it is disabled or because it has no enabled devices associated with it.") },
+        { "0x80070424", ("ERROR_SERVICE_DOES_NOT_EXIST", "The specified service does not exist as an installed service.") },
+        { "0x80070643", ("ERROR_INSTALL_FAILURE", "Fatal error during Windows Installer (MSI) installation.") },
+        { "0x800F081F", ("CBS_E_SOURCE_NOT_FOUND", "The source files could not be found for a Windows component or DISM repair operation.") },
         { "0x8007000E", ("E_OUTOFMEMORY", "Ran out of available memory.") },
         { "0x80070057", ("E_INVALIDARG", "One or more arguments are invalid.") },
         { "0x80004005", ("E_FAIL", "Unspecified general failure.") },
@@ -326,6 +336,104 @@ public class LogExplanationEngine
                     "Check the faulting application name and module name in the details below.",
                     "Reinstall or update the crashing application.",
                     "Install the latest Microsoft Visual C++ Redistributable packages."
+                }
+            };
+        }
+
+        // .NET Runtime (Event 1026)
+        if (log.ProviderName.Contains(".NET Runtime", StringComparison.OrdinalIgnoreCase) && log.EventId == 1026)
+        {
+            return new LogExplanation
+            {
+                Summary = "A managed .NET application terminated abruptly due to an unhandled exception escaping the runtime.",
+                TriageRating = TriageSeverity.High,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Unhandled NullReferenceException, InvalidOperationException, or OutOfMemoryException.",
+                    "Missing external DLL dependency or target framework mismatch."
+                },
+                RecommendedActions = new[]
+                {
+                    "Inspect the exception message and managed stack trace within the event description.",
+                    "Check if the application requires a newer .NET Runtime installation (e.g. .NET 8 or .NET 10 LTS)."
+                },
+                TechnicalDetails = new[]
+                {
+                    "Subsystem: Common Language Runtime (.NET CLR)",
+                    "Event ID: 1026"
+                }
+            };
+        }
+
+        // NTFS / Filesystem Corruption (Event 55, 98)
+        if (log.ProviderName.Contains("Ntfs", StringComparison.OrdinalIgnoreCase) && (log.EventId == 55 || log.EventId == 98))
+        {
+            return new LogExplanation
+            {
+                Summary = "The NTFS filesystem detected metadata corruption on a disk volume. The filesystem structure is compromised.",
+                TriageRating = TriageSeverity.Critical,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Sudden power outage or hard reset while disk writes were pending in cache.",
+                    "Failing storage media with unreadable metadata sectors.",
+                    "Buggy storage filter driver."
+                },
+                RecommendedActions = new[]
+                {
+                    "Schedule and run a full disk check by executing 'chkdsk /f /r X:' (replace X: with affected drive).",
+                    "Back up important files from this volume immediately before repairing.",
+                    "Check drive S.M.A.R.T. telemetry for reallocated sectors."
+                },
+                TechnicalDetails = new[]
+                {
+                    "Subsystem: Windows NTFS Driver",
+                    $"Event ID: {log.EventId}"
+                }
+            };
+        }
+
+        // ESENT Database Error (Event 455)
+        if (log.ProviderName.Contains("ESENT", StringComparison.OrdinalIgnoreCase) && log.EventId == 455)
+        {
+            return new LogExplanation
+            {
+                Summary = "The Extensible Storage Engine (ESENT) failed to open its database log file because the specified logging directory does not exist.",
+                TriageRating = TriageSeverity.Medium,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Windows Update or cleanup tools removed the 'TileDataLayer\\Database' folder in %LocalAppData%\\TileDataLayer.",
+                    "Common benign Windows 10/11 system glitch that doesn't cause operational impact."
+                },
+                RecommendedActions = new[]
+                {
+                    "Create the folder 'C:\\Windows\\system32\\config\\systemprofile\\AppData\\Local\\TileDataLayer\\Database' manually to silence the warning.",
+                    "Alternatively, ignore this event as it does not affect system stability."
+                }
+            };
+        }
+
+        // Winlogon (Event 4005)
+        if (log.ProviderName.Contains("Winlogon", StringComparison.OrdinalIgnoreCase) && log.EventId == 4005)
+        {
+            return new LogExplanation
+            {
+                Summary = "The Windows logon process terminated unexpectedly, forcing the session to disconnect or reset.",
+                TriageRating = TriageSeverity.Critical,
+                IsCuratedKnowledge = true,
+                ProbableCauses = new[]
+                {
+                    "Third-party credential provider or antivirus hook crashing winlogon.exe.",
+                    "Corrupted user profile registry hive (NTUSER.DAT).",
+                    "System file corruption in authui.dll or logoncli.dll."
+                },
+                RecommendedActions = new[]
+                {
+                    "Boot into Safe Mode to check if third-party software is causing the crash.",
+                    "Run 'sfc /scannow' to verify Windows logon system files.",
+                    "Inspect Event 1000 in Application log to identify any crashing DLL loaded into winlogon."
                 }
             };
         }

@@ -97,6 +97,29 @@
         </div>
     }
 
+    <!-- Quick-Triage Presets Bar -->
+    <div class="triage-presets-bar">
+        <span class="preset-title">⚡ Quick Triage:</span>
+        <button class="preset-btn" @onclick='@(() => ApplyPresetAsync("bsod"))' title="Kernel-Power 41, BugCheck 1001, WHEA hardware faults">
+            <span>⚡</span> BSOD &amp; Reboots
+        </button>
+        <button class="preset-btn" @onclick='@(() => ApplyPresetAsync("crashes"))' title="Application Error 1000, SCM 7000/7031, .NET Runtime 1026">
+            <span>💥</span> App &amp; Service Crashes
+        </button>
+        <button class="preset-btn" @onclick='@(() => ApplyPresetAsync("network"))' title="DNS-Client 1014, DHCP, Network timeouts">
+            <span>🌐</span> Network &amp; DNS Drops
+        </button>
+        <button class="preset-btn" @onclick='@(() => ApplyPresetAsync("storage"))' title="Disk 7/11, NTFS 55/98 filesystem metadata corruptions">
+            <span>💾</span> Disk &amp; Filesystem
+        </button>
+        <button class="preset-btn" @onclick='@(() => ApplyPresetAsync("security"))' title="Security Audit 4625 failed logons with decoded sub-status">
+            <span>🔐</span> Failed Logons
+        </button>
+        <button class="preset-btn preset-btn-reset" @onclick='@(() => ApplyPresetAsync("reset"))' title="Reset filters to standard view">
+            <span>🔄</span> Reset Filters
+        </button>
+    </div>
+
     <!-- Secondary Filter & Search Ribbon -->
     <div class="filter-ribbon">
         <!-- Severity Checkbox Pills -->
@@ -503,6 +526,56 @@
     private async Task OnChannelChanged()
     {
         _loadedFile = null;
+        await TriggerQueryAsync();
+    }
+
+    private async Task ApplyPresetAsync(string presetName)
+    {
+        _loadedFile = null;
+        _selectedProviderFacet = string.Empty;
+        _filter.SelectedProviders = null;
+
+        switch (presetName)
+        {
+            case "bsod":
+                _filter.Channel = "System";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Critical };
+                _filter.SearchText = "";
+                _filter.TimeRange = LogTimeRange.Last7Days;
+                break;
+            case "crashes":
+                _filter.Channel = "Application";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Critical, LogSeverityLevel.Error };
+                _filter.SearchText = "";
+                _filter.TimeRange = LogTimeRange.Last7Days;
+                break;
+            case "network":
+                _filter.Channel = "System";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Warning, LogSeverityLevel.Error };
+                _filter.SearchText = "DNS-Client";
+                _filter.TimeRange = LogTimeRange.Last7Days;
+                break;
+            case "storage":
+                _filter.Channel = "System";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Warning, LogSeverityLevel.Error, LogSeverityLevel.Critical };
+                _filter.SearchText = "Disk";
+                _filter.TimeRange = LogTimeRange.Last30Days;
+                break;
+            case "security":
+                _filter.Channel = "Security";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Information, LogSeverityLevel.Error, LogSeverityLevel.Warning, LogSeverityLevel.Critical };
+                _filter.SearchText = "4625";
+                _filter.TimeRange = LogTimeRange.Last7Days;
+                break;
+            case "reset":
+            default:
+                _filter.Channel = "System";
+                _filter.Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Critical, LogSeverityLevel.Error, LogSeverityLevel.Warning };
+                _filter.SearchText = "";
+                _filter.TimeRange = LogTimeRange.Last24Hours;
+                break;
+        }
+
         await TriggerQueryAsync();
     }
 

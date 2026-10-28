@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @namespace Upuaut.UI.Shared
+@using Upuaut.UI.Components
 
 <div class="upuaut-shell">
     <aside class="upuaut-sidebar">
@@ -16,11 +17,11 @@
             <div class="header-actions">
                 <div class="badge-chip">
                     <span class="chip-dot"></span>
-                    <span>.NET 10 CLR</span>
+                    <span>.NET 10 LTS</span>
                 </div>
-                <div class="badge-chip gold-chip">
-                    <span>EGY // ACTIVE</span>
-                </div>
+                <button class="badge-chip gold-chip diag-btn" @onclick="ToggleDiagnostics" title="Open App Diagnostics &amp; Logs">
+                    <span>⚙️ Diagnostics &amp; Logs</span>
+                </button>
             </div>
         </header>
 
@@ -30,4 +31,15 @@
     </div>
 </div>
 
+<DiagnosticsDrawer @bind-IsOpen="_showDiagnostics" />
+
 <FluentProviders />
+
+@code {
+    private bool _showDiagnostics;
+
+    private void ToggleDiagnostics()
+    {
+        _showDiagnostics = !_showDiagnostics;
+    }
+}

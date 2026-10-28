@@ -1,0 +1,215 @@
+@namespace Upuaut.UI.Components
+@using System.Runtime.InteropServices
+@using System.Security.Principal
+@using System.Diagnostics
+@using Upuaut.Core.Diagnostics
+@inject IJSRuntime JSRuntime
+
+@if (IsOpen)
+{
+    <div class="diag-drawer-overlay" @onclick="Close">
+        <div class="diag-drawer-content" @onclick:stopPropagation="true">
+            <div class="diag-drawer-header">
+                <div class="diag-drawer-title">
+                    <span class="gold-accent">⚙️</span> Upuaut Diagnostics &amp; System Health
+                </div>
+                <button class="diag-close-btn" @onclick="Close">✕</button>
+            </div>
+
+            <!-- Environment Snapshot Cards -->
+            <div class="diag-env-grid">
+                <div class="diag-env-card">
+                    <span class="diag-env-label">RUNTIME</span>
+                    <span class="diag-env-val">@RuntimeInformation.FrameworkDescription</span>
+                    <span class="diag-env-sub">.NET 10 LTS Engine</span>
+                </div>
+
+                <div class="diag-env-card">
+                    <span class="diag-env-label">PRIVILEGE</span>
+                    <span class="diag-env-val @(_isElevated ? "text-green" : "text-yellow")">
+                        @(_isElevated ? "Administrator" : "Standard User")
+                    </span>
+                    <span class="diag-env-sub">@(_isElevated ? "Full Security & ETW Access" : "Elevation Recommended")</span>
+                </div>
+
+                <div class="diag-env-card">
+                    <span class="diag-env-label">OPERATING SYSTEM</span>
+                    <span class="diag-env-val">@RuntimeInformation.OSDescription</span>
+                    <span class="diag-env-sub">@RuntimeInformation.OSArchitecture (PID: @Environment.ProcessId)</span>
+                </div>
+
+                <div class="diag-env-card">
+                    <span class="diag-env-label">WORKING SET MEMORY</span>
+                    <span class="diag-env-val">@(_workingSetMb.ToString("F1")) MB</span>
+                    <span class="diag-env-sub">Peak: @(_peakWorkingSetMb.ToString("F1")) MB</span>
+                </div>
+            </div>
+
+            <!-- Forensic Directory Actions -->
+            <div class="diag-actions-bar">
+                <FluentButton Appearance="ButtonAppearance.Primary"
+                              IconStart="@(new Icons.Regular.Size16.FolderOpen())"
+                              OnClick="@AppLogger.OpenLogFolder">
+                    Open Logs Folder
+                </FluentButton>
+
+                <FluentButton Appearance="ButtonAppearance.Outline"
+                              IconStart="@(new Icons.Regular.Size16.DocumentError())"
+                              OnClick="@AppLogger.OpenCrashFolder">
+                    Open Crash Dumps
+                </FluentButton>
+
+                <FluentButton Appearance="ButtonAppearance.Outline"
+                              IconStart="@(new Icons.Regular.Size16.ArrowClockwise())"
+                              OnClick="RefreshBreadcrumbs">
+                    Refresh Breadcrumbs
+                </FluentButton>
+
+                <FluentButton Appearance="ButtonAppearance.Subtle"
+                              IconStart="@(new Icons.Regular.Size16.Copy())"
+                              OnClick="CopyTelemetrySummaryAsync">
+                    @(_copied ? "Copied!" : "Copy Telemetry")
+                </FluentButton>
+            </div>
+
+            <!-- In-Memory Diagnostic Breadcrumbs Feed -->
+            <div class="breadcrumbs-container">
+                <div class="breadcrumbs-header">
+                    <span>Recent Diagnostic Breadcrumbs (@_breadcrumbs.Count)</span>
+                    <span class="breadcrumbs-sub">Captures background engine, WebView2, and service operations</span>
+                </div>
+
+                <div class="breadcrumbs-list">
+                    @if (_breadcrumbs.Count == 0)
+                    {
+                        <div class="empty-breadcrumbs">No diagnostic events recorded yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var entry in _breadcrumbs.AsEnumerable().Reverse())
+                        {
+                            <div class="breadcrumb-item @GetEntryClass(entry.Level)">
+                                <div class="bc-meta">
+                                    <span class="bc-time">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                    <span class="bc-level">@entry.Level</span>
+                                    <span class="bc-cat">[@entry.Category]</span>
+                                    <span class="bc-thread">T@(entry.ThreadId.ToString("D2"))</span>
+                                </div>
+                                <div class="bc-msg">@entry.Message</div>
+                                @if (!string.IsNullOrEmpty(entry.MemberName))
+                                {
+                                    <div class="bc-caller">@entry.FilePath:@entry.LineNumber &rarr; @entry.MemberName</div>
+                                }
+                                @if (!string.IsNullOrEmpty(entry.ExceptionDetails))
+                                {
+                                    <pre class="bc-ex">@entry.ExceptionDetails</pre>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+
+    private IReadOnlyList<InternalLogEntry> _breadcrumbs = Array.Empty<InternalLogEntry>();
+    private bool _isElevated;
+    private double _workingSetMb;
+    private double _peakWorkingSetMb;
+    private bool _copied;
+
+    protected override void OnInitialized()
+    {
+        RefreshData();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            RefreshData();
+        }
+    }
+
+    private void RefreshData()
+    {
+        _breadcrumbs = AppLogger.GetRecentBreadcrumbs();
+        
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                _isElevated = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+            }
+        }
+        catch
+        {
+            _isElevated = false;
+        }
+
+        try
+        {
+            var proc = Process.GetCurrentProcess();
+            proc.Refresh();
+            _workingSetMb = proc.WorkingSet64 / (1024.0 * 1024.0);
+            _peakWorkingSetMb = proc.PeakWorkingSet64 / (1024.0 * 1024.0);
+        }
+        catch
+        {
+            // Ignore
+        }
+    }
+
+    private void RefreshBreadcrumbs()
+    {
+        RefreshData();
+        StateHasChanged();
+    }
+
+    private async Task Close()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task CopyTelemetrySummaryAsync()
+    {
+        var summary = $"Upuaut Diagnostic Telemetry\n" +
+                      $"Runtime: {RuntimeInformation.FrameworkDescription}\n" +
+                      $"OS: {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture})\n" +
+                      $"Elevated: {_isElevated}\n" +
+                      $"Process: ID={Environment.ProcessId}, WorkingSet={_workingSetMb:F1}MB, Peak={_peakWorkingSetMb:F1}MB\n" +
+                      $"Logs Path: {AppLogger.LogDirectory}\n" +
+                      $"Crash Path: {AppLogger.CrashDirectory}\n" +
+                      $"Timestamp: {DateTime.UtcNow:O}\n";
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", summary);
+            _copied = true;
+            StateHasChanged();
+            await Task.Delay(2000);
+            _copied = false;
+            StateHasChanged();
+        }
+        catch
+        {
+            // Fallback
+        }
+    }
+
+    private static string GetEntryClass(LogLevel level) => level switch
+    {
+        LogLevel.Debug => "bc-debug",
+        LogLevel.Info => "bc-info",
+        LogLevel.Warning => "bc-warn",
+        LogLevel.Error => "bc-error",
+        LogLevel.Fatal => "bc-fatal",
+        _ => ""
+    };
+}
