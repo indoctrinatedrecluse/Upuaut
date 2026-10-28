@@ -1,0 +1,262 @@
+@page "/pantheon"
+@namespace Upuaut.UI.Pages
+@inject NavigationManager NavManager
+
+<PageTitle>Upuaut — The Pantheon &amp; Sacred Lore</PageTitle>
+
+<div class="pantheon-container">
+    <!-- Hero Banner -->
+    <div class="pantheon-hero">
+        <div class="pantheon-hero-badge">
+            <span class="gold-accent">𓇋 𓈖 𓊪 𓅱 ✦ 𓅱 𓊪 𓅱 𓄿 𓅱 𓏏</span>
+            <span>DIVINE EPITHETS &amp; ARCHITECTURAL GUARDIANS</span>
+        </div>
+        <h1 class="pantheon-title">
+            The Celestial Pantheon <span class="gold-accent">&amp;</span> Sacred Lore
+        </h1>
+        <p class="pantheon-subtitle">
+            Every subsystem within Upuaut is dedicated to a guardian deity of ancient Egypt, drawing inspiration from their cosmic duties in the Duat, their mastery of truth, and their vigilance over the unseen realms.
+        </p>
+
+        <!-- Category Selector Filter -->
+        <div class="pantheon-filter-bar">
+            <button class="pantheon-filter-btn @(_selectedDomain == "all" ? "active" : "")" @onclick='@(() => SetDomain("all"))'>
+                <span>✦ All Guardians (@_guardians.Count)</span>
+            </button>
+            <button class="pantheon-filter-btn @(_selectedDomain == "vanguard" ? "active" : "")" @onclick='@(() => SetDomain("vanguard"))'>
+                <span>🐺 Vanguard &amp; Scouting</span>
+            </button>
+            <button class="pantheon-filter-btn @(_selectedDomain == "chronicle" ? "active" : "")" @onclick='@(() => SetDomain("chronicle"))'>
+                <span>📜 Chronicles &amp; Wisdom</span>
+            </button>
+            <button class="pantheon-filter-btn @(_selectedDomain == "balance" ? "active" : "")" @onclick='@(() => SetDomain("balance"))'>
+                <span>⚖️ Truth &amp; Purification</span>
+            </button>
+            <button class="pantheon-filter-btn @(_selectedDomain == "preservation" ? "active" : "")" @onclick='@(() => SetDomain("preservation"))'>
+                <span>🛡️ Preservation &amp; Restoration</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Pantheon Cards Grid -->
+    <div class="pantheon-grid">
+        @foreach (var deity in FilteredGuardians)
+        {
+            <div class="deity-card @(deity.IsPrimary ? "primary-deity-card" : "")">
+                <div class="deity-header">
+                    <div class="deity-avatar-box">
+                        <span class="deity-symbol">@deity.Icon</span>
+                    </div>
+                    <div class="deity-ident">
+                        <div class="deity-hieroglyph">@deity.Hieroglyphs</div>
+                        <h2 class="deity-name">@deity.Name</h2>
+                        <span class="deity-alt-name">@deity.AlternateNames</span>
+                    </div>
+                    <div class="deity-domain-pill">
+                        @deity.Domain
+                    </div>
+                </div>
+
+                <div class="deity-epithet">
+                    <span class="epithet-quote">“@deity.Epithet”</span>
+                </div>
+
+                <div class="deity-lore">
+                    <h3 class="lore-heading">✦ The Ancient Mythos</h3>
+                    <p class="lore-text">@deity.Mythology</p>
+                </div>
+
+                <!-- Upuaut Component Alignment Box -->
+                <div class="component-alignment-box">
+                    <div class="alignment-header">
+                        <span class="gold-accent">⚙️ Upuaut Subsystem:</span>
+                        <strong class="component-name">@deity.SubsystemName</strong>
+                    </div>
+                    <p class="alignment-desc">@deity.SubsystemRole</p>
+                    <div class="alignment-tech-tags">
+                        @foreach (var tag in deity.TechTags)
+                        {
+                            <span class="tech-tag">@tag</span>
+                        }
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(deity.ActionRoute))
+                {
+                    <div class="deity-card-footer">
+                        <button class="explore-subsystem-btn" @onclick="@(() => NavigateToSubsystem(deity.ActionRoute))">
+                            <span>Open @deity.SubsystemShortName</span>
+                            <span class="btn-arrow">→</span>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- The Realm of the Duat Deep Dive Footer -->
+    <div class="duat-lore-banner">
+        <div class="duat-banner-header">
+            <span class="gold-glyph">𓇽</span>
+            <div>
+                <h3 class="duat-title">The Realm of the Duat: The Operating System Underworld</h3>
+                <span class="duat-subtitle">Why Upuaut Navigates the Depths of Windows</span>
+            </div>
+        </div>
+        <p class="duat-text">
+            In Egyptian cosmology, the <strong>Duat</strong> was the realm through which the Sun Barque of Ra journeyed during the twelve hours of the night. It was not merely a domain of shadows, but a crucible of trial, transformation, and order where chaotic forces (<em>Apep</em>) sought to disrupt cosmic equilibrium. In modern computing, the Windows Kernel, Event Tracing for Windows (ETW), and low-level network sockets are the contemporary Duat: constantly churning with thousands of unseen operations every millisecond. Upuaut is designed to stand on the prow of your system's solar boat, illuminating hidden bottlenecks and opening the way to forensic clarity.
+        </p>
+    </div>
+</div>
+
+@code {
+    private string _selectedDomain = "all";
+
+    private void SetDomain(string domain)
+    {
+        _selectedDomain = domain;
+    }
+
+    private void NavigateToSubsystem(string route)
+    {
+        NavManager.NavigateTo(route);
+    }
+
+    private IEnumerable<DeityRecord> FilteredGuardians =>
+        _selectedDomain == "all"
+            ? _guardians
+            : _guardians.Where(g => g.Category.Equals(_selectedDomain, StringComparison.OrdinalIgnoreCase));
+
+    private record DeityRecord(
+        string Name,
+        string AlternateNames,
+        string Hieroglyphs,
+        string Icon,
+        string Domain,
+        string Category,
+        string Epithet,
+        string Mythology,
+        string SubsystemName,
+        string SubsystemShortName,
+        string SubsystemRole,
+        string[] TechTags,
+        string ActionRoute,
+        bool IsPrimary = false
+    );
+
+    private readonly List<DeityRecord> _guardians = new()
+    {
+        new(
+            Name: "Upuaut (Wepwawet)",
+            AlternateNames: "Sed · The Wolf of Asyut",
+            Hieroglyphs: "𓅱 𓊪 𓅱 𓄿 𓅱 𓏏",
+            Icon: "🐺",
+            Domain: "Vanguard & Wayfinder",
+            Category: "vanguard",
+            Epithet: "Opener of the Ways · Leader of the Sun Barque",
+            Mythology: "Ancient jackal and wolf deity of Asyut (Lycopolis). Upuaut was revered as the royal vanguard who trod the uncharted terrain before the pharaoh and guided the sun barque through the perils of the Duat. He was not a guardian of death, but the master of paths, clearing insurmountable barriers so life and knowledge could advance.",
+            SubsystemName: "The Scout & Network Vanguard",
+            SubsystemShortName: "The Scout",
+            SubsystemRole: "Drives native driverless raw socket packet capture (SIO_RCVALL) on Windows, binding socket traffic directly to owning processes via iphlpapi.dll without requiring external drivers.",
+            TechTags: new[] { "Raw Sockets", "SIO_RCVALL", "iphlpapi.dll", "PID Attribution", "Dissector" },
+            ActionRoute: "scout",
+            IsPrimary: true
+        ),
+
+        new(
+            Name: "Thoth (Djehuty)",
+            AlternateNames: "Tehuti · Lord of Hermopolis",
+            Hieroglyphs: "𓅓 𓂝 𓅱 𓅱 𓏛",
+            Icon: "📜",
+            Domain: "Chronicles & Ingestion",
+            Category: "chronicle",
+            Epithet: "Lord of the Sacred Scribes · Master of Divine Speech",
+            Mythology: "Ibis- and baboon-headed patron of wisdom, mathematics, writing, astronomy, and divine law. Thoth maintained the cosmic records of all deeds in the universe, ensuring that no action, light or shadow, passed unrecorded. In the trial of souls, it was Thoth who penned the final indelible truth.",
+            SubsystemName: "The Duat Chronicles & Event Log Engine",
+            SubsystemShortName: "Chronicles",
+            SubsystemRole: "High-performance streaming engine for Windows Event Logs (.evtx), EventLogReader, XPath optimization, and deep historical telemetry ingestion.",
+            TechTags: new[] { "EventLogReader", "XPath Optimization", ".evtx Streaming", "ETW Reader", "System Logs" },
+            ActionRoute: "chronicles"
+        ),
+
+        new(
+            Name: "Ma'at",
+            AlternateNames: "Mayet · Lady of the Feather",
+            Hieroglyphs: "𓌳 𓂝 𓐍 𓏏 𓆄",
+            Icon: "⚖️",
+            Domain: "Truth & Cosmic Order",
+            Category: "balance",
+            Epithet: "The Feather of Truth · Mistress of Cosmic Harmony",
+            Mythology: "Personification of universal balance, justice, order, and morality. In the Hall of Two Truths, the heart (Ib) of the deceased was placed on the golden scales against Ma'at's white ostrich feather. If burdened by chaos (Isfet) or discord, the scales tilted.",
+            SubsystemName: "The Scales & Triage Scoring Engine",
+            SubsystemShortName: "The Scales",
+            SubsystemRole: "Evaluates OS anomalies, computing weighted health scores across CPU, memory, packet anomalies (TCP RST flood), and critical event frequencies.",
+            TechTags: new[] { "Weighted Scoring", "Anomaly Detection", "Entropy Analysis", "Health Matrix" },
+            ActionRoute: "weigher"
+        ),
+
+        new(
+            Name: "Anpu (Anubis)",
+            AlternateNames: "Anpu · Lord of the Sacred Land",
+            Hieroglyphs: "𓇋 𓈖 𓊪 𓅱 𓃣",
+            Icon: "🛡️",
+            Domain: "Preservation & Forensics",
+            Category: "preservation",
+            Epithet: "Guardian of the Threshold · He Who Embalms",
+            Mythology: "The black jackal guardian of souls, tombs, and sacred mummification. Anubis carefully embalmed, preserved, and sealed the physical vessel so that decay and oblivion could never destroy its essence, allowing the soul to be analyzed intact across eternity.",
+            SubsystemName: "The Crash Reporter & Forensic Dump Vault",
+            SubsystemShortName: "Crash Reporter",
+            SubsystemRole: "Traps unhandled exceptions across WPF Dispatcher, AppDomain, and TaskScheduler threads. Generates structured JSON and Markdown forensic post-mortem logs in %LocalAppData%\\Upuaut\\Crashes.",
+            TechTags: new[] { "Crash Dumper", "Thread Traps", "Forensic Post-Mortems", "Breadcrumb Ring Buffer" },
+            ActionRoute: ""
+        ),
+
+        new(
+            Name: "Seshat (Safkhet)",
+            AlternateNames: "She Who Knots the Rope · Mistress of Builders",
+            Hieroglyphs: "𓋴 𓈙 𓏏 𓏛",
+            Icon: "📖",
+            Domain: "Documentation & Architecture",
+            Category: "chronicle",
+            Epithet: "Mistress of the House of Books · Keeper of Sacred Records",
+            Mythology: "Goddess of architecture, surveying, sacred geometry, and library archives. Crowned with a seven-pointed star-flower, Seshat stretched the golden measuring cord (pedj-shes) to lay foundations for sacred temples and inscribed the history of dynasties upon the leaves of the celestial Ished tree.",
+            SubsystemName: "Sacred Documentation & Developer Portal",
+            SubsystemShortName: "Documentation",
+            SubsystemRole: "The comprehensive architectural knowledge base, developer guides for Visual Studio 2026, CLI manual, and step-by-step diagnostic workflows.",
+            TechTags: new[] { "Architecture Manifest", "VS 2026 Workloads", "CLI Reference", "Forensic Manual" },
+            ActionRoute: "docs"
+        ),
+
+        new(
+            Name: "Kebechet (Qebhet)",
+            AlternateNames: "Lady of Cold Water · Celestial Serpent",
+            Hieroglyphs: "𓈎 𓃀 𓎛 𓏏",
+            Icon: "💧",
+            Domain: "Purification & Noise Filtering",
+            Category: "balance",
+            Epithet: "The Purifier · Pourer of Celestial Libations",
+            Mythology: "Daughter of Anubis, depicted as a divine serpent or ostrich offering cool water. Kebechet poured the crisp, purifying waters of liberation over the arriving dead, rinsing away accumulated dust, spiritual grime, and trivial noise before they entered the presence of the gods.",
+            SubsystemName: "Benign Noise Suppression & DCOM Filtering",
+            SubsystemShortName: "Noise Filter",
+            SubsystemRole: "Filters out benign Windows noise that floods standard Event Viewer—such as DCOM 10016 permission notifications and ESENT database checkpoints—to highlight genuine system faults.",
+            TechTags: new[] { "Noise Suppression", "DCOM 10016 Filter", "ESENT Muter", "Signal-to-Noise Ratio" },
+            ActionRoute: "chronicles"
+        ),
+
+        new(
+            Name: "Seker (Sokar)",
+            AlternateNames: "The Restorer · Falcon of Memphis",
+            Hieroglyphs: "𓊃 𓎡 𓂋 𓅓",
+            Icon: "⚡",
+            Domain: "Restoration & Remediation",
+            Category: "preservation",
+            Epithet: "Restorer of the Broken · Lord of the Mysterious Rites",
+            Mythology: "Archaic falcon deity of craftsmen, metallurgy, and resurrection in the deepest caverns of the underworld (Ro-stau). Seker was revered for reforging broken implements, transforming inert matter, and restoring vigor to collapsed structures.",
+            SubsystemName: "1-Click Forensic Remediation Engine",
+            SubsystemShortName: "Remediation",
+            SubsystemRole: "Synthesizes automated DISM, SFC, Netsh, WinRM, and service recovery commands directly corresponding to identified event codes, allowing instant remediation.",
+            TechTags: new[] { "DISM HealthScan", "SFC Repair", "Netsh Flush", "SCM Recovery", "PowerShell Fixes" },
+            ActionRoute: "chronicles"
+        )
+    };
+}

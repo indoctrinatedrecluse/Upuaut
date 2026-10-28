@@ -1,8 +1,9 @@
 @inherits LayoutComponentBase
 @namespace Upuaut.UI.Shared
 @using Upuaut.UI.Components
+@inject NavigationManager NavManager
 
-<div class="upuaut-shell">
+<div class="upuaut-shell" @onclick="HandleShellClick">
     <aside class="upuaut-sidebar">
         <NavMenu />
     </aside>
@@ -19,9 +20,136 @@
                     <span class="chip-dot"></span>
                     <span>.NET 10 LTS</span>
                 </div>
+
                 <button class="badge-chip gold-chip diag-btn" @onclick="ToggleDiagnostics" title="Open App Diagnostics &amp; Logs">
                     <span>⚙️ Diagnostics &amp; Logs</span>
                 </button>
+
+                <!-- Account & Egyptian Lore Menu Button -->
+                <div class="account-menu-wrapper" @onclick:stopPropagation="true">
+                    <button class="account-trigger-btn @(_showAccountMenu ? "active" : "")" @onclick="ToggleAccountMenu" title="Architect Profile &amp; The Sacred Pantheon">
+                        <span class="account-avatar-mini">AM</span>
+                        <span class="account-name-mini">Abhishek Mitra</span>
+                        <span class="account-caret">@(_showAccountMenu ? "▲" : "▼")</span>
+                    </button>
+
+                    @if (_showAccountMenu)
+                    {
+                        <div class="account-dropdown-panel animate-fade-in">
+                            <!-- Architect Profile Header -->
+                            <div class="acc-dropdown-header">
+                                <div class="acc-avatar-large">AM</div>
+                                <div class="acc-info">
+                                    <h3 class="acc-author-name">Abhishek Mitra</h3>
+                                    <span class="acc-handle">@("indoctrinatedrecluse")</span>
+                                    <span class="acc-role">Systems Architect &amp; Engineer</span>
+                                </div>
+                            </div>
+
+                            <!-- Fast Architect Links -->
+                            <div class="acc-fast-links">
+                                <button class="acc-link-btn" @onclick='@(() => OpenExternalUrl("https://github.com/indoctrinatedrecluse/"))'>
+                                    <span>🐙</span> GitHub
+                                </button>
+                                <button class="acc-link-btn" @onclick='@(() => OpenExternalUrl("https://portfolio-flutter-78bcf.web.app/"))'>
+                                    <span>🌐</span> Portfolio
+                                </button>
+                                <button class="acc-link-btn" @onclick='@(() => OpenExternalUrl("https://github.com/indoctrinatedrecluse/Upuaut"))'>
+                                    <span>⭐</span> Upuaut Repo
+                                </button>
+                            </div>
+
+                            <!-- Egyptian Hieroglyphic Divider -->
+                            <div class="acc-hieroglyph-bar">
+                                <span>𓇋 𓈖 𓊪 𓅱 ✦ 𓅱 𓊪 𓅱 𓄿 𓅱 𓏏 ✦ 𓌳 𓂝 𓐍 𓏏</span>
+                            </div>
+
+                            <!-- The Pantheon & Lore Quick View Section -->
+                            <div class="acc-pantheon-section">
+                                <div class="acc-section-title-row">
+                                    <span class="acc-section-title">THE CELESTIAL PANTHEON</span>
+                                    <span class="acc-subsystem-count">7 GUARDIANS</span>
+                                </div>
+                                <p class="acc-pantheon-intro">
+                                    Every diagnostic subsystem in Upuaut is named in reverence of an Egyptian deity guarding the Duat:
+                                </p>
+
+                                <div class="acc-deity-list">
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("scout"))'>
+                                        <span class="acc-deity-icon">🐺</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Upuaut (Wepwawet)</strong>
+                                            <span class="acc-deity-desc">Opener of the Ways → The Scout (Wire Sniffer)</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("chronicles"))'>
+                                        <span class="acc-deity-icon">📜</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Thoth (Djehuty)</strong>
+                                            <span class="acc-deity-desc">Master of Sacred Words → Chronicles (Logs)</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("weigher"))'>
+                                        <span class="acc-deity-icon">⚖️</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Ma'at</strong>
+                                            <span class="acc-deity-desc">The Feather of Truth → The Scales (Triage)</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("pantheon"))'>
+                                        <span class="acc-deity-icon">🛡️</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Anpu (Anubis)</strong>
+                                            <span class="acc-deity-desc">Guardian of the Vessel → Crash Dumper</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("docs"))'>
+                                        <span class="acc-deity-icon">📖</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Seshat</strong>
+                                            <span class="acc-deity-desc">Mistress of Books → Documentation Engine</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("pantheon"))'>
+                                        <span class="acc-deity-icon">💧</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Kebechet</strong>
+                                            <span class="acc-deity-desc">Lady of Cold Water → Noise Suppression</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("pantheon"))'>
+                                        <span class="acc-deity-icon">⚡</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Seker</strong>
+                                            <span class="acc-deity-desc">Restorer of the Broken → 1-Click Remediation</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button class="acc-pantheon-btn" @onclick='@(() => NavigateAndClose("pantheon"))'>
+                                    <span>📜 Explore Full Pantheon &amp; Lore Portal</span>
+                                    <span>→</span>
+                                </button>
+                            </div>
+
+                            <!-- Footer Navigation Links -->
+                            <div class="acc-dropdown-footer">
+                                <button class="acc-footer-nav" @onclick='@(() => NavigateAndClose("docs"))'>
+                                    <span>📖 System Documentation</span>
+                                </button>
+                                <button class="acc-footer-nav" @onclick='@(() => NavigateAndClose("about"))'>
+                                    <span>🏛️ About the Architect &amp; Specs</span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
             </div>
         </header>
 
@@ -37,9 +165,52 @@
 
 @code {
     private bool _showDiagnostics;
+    private bool _showAccountMenu;
 
     private void ToggleDiagnostics()
     {
         _showDiagnostics = !_showDiagnostics;
+        if (_showDiagnostics)
+        {
+            _showAccountMenu = false;
+        }
+    }
+
+    private void ToggleAccountMenu()
+    {
+        _showAccountMenu = !_showAccountMenu;
+    }
+
+    private void HandleShellClick()
+    {
+        if (_showAccountMenu)
+        {
+            _showAccountMenu = false;
+        }
+    }
+
+    private void NavigateAndClose(string route)
+    {
+        _showAccountMenu = false;
+        NavManager.NavigateTo(route);
+    }
+
+    private void OpenExternalUrl(string url)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch
+        {
+            // Suppress fallback
+        }
     }
 }

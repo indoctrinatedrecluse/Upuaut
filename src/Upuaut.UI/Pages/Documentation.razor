@@ -1,0 +1,341 @@
+@page "/docs"
+@page "/documentation"
+@namespace Upuaut.UI.Pages
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Upuaut — System Documentation &amp; Architecture Reference</PageTitle>
+
+<div class="docs-container">
+    <!-- Header Banner -->
+    <div class="docs-hero">
+        <div class="docs-hero-badge">
+            <span class="gold-accent">📖</span> SESHTAU — SACRED SPECIFICATIONS &amp; MANUAL
+        </div>
+        <h1 class="docs-title">
+            Upuaut <span class="gold-accent">System Documentation</span>
+        </h1>
+        <p class="docs-subtitle">
+            Complete architectural manifest, forensic decoder manual, driverless wire-sniffing engine reference, and developer guide for Visual Studio 2026 Enterprise Edition.
+        </p>
+
+        <!-- Search & Category Filter Bar -->
+        <div class="docs-search-bar">
+            <div class="search-input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text"
+                       class="docs-search-field"
+                       placeholder="Search documentation (e.g. SIO_RCVALL, BSOD, iphlpapi, run.ps1, VS 2026)..."
+                       @bind="_searchQuery"
+                       @bind:event="oninput" />
+                @if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    <button class="clear-search-btn" @onclick="@(() => _searchQuery = "")">✕</button>
+                }
+            </div>
+
+            <div class="docs-category-chips">
+                <button class="cat-chip @(_selectedCategory == "all" ? "active" : "")" @onclick='@(() => _selectedCategory = "all")'>All Sections</button>
+                <button class="cat-chip @(_selectedCategory == "arch" ? "active" : "")" @onclick='@(() => _selectedCategory = "arch")'>Architecture &amp; .NET 10</button>
+                <button class="cat-chip @(_selectedCategory == "chronicles" ? "active" : "")" @onclick='@(() => _selectedCategory = "chronicles")'>The Duat Chronicles</button>
+                <button class="cat-chip @(_selectedCategory == "scout" ? "active" : "")" @onclick='@(() => _selectedCategory = "scout")'>The Scout (Packet Capture)</button>
+                <button class="cat-chip @(_selectedCategory == "diagnostics" ? "active" : "")" @onclick='@(() => _selectedCategory = "diagnostics")'>Crash Reporter &amp; Logs</button>
+                <button class="cat-chip @(_selectedCategory == "vs2026" ? "active" : "")" @onclick='@(() => _selectedCategory = "vs2026")'>Visual Studio 2026 Guide</button>
+                <button class="cat-chip @(_selectedCategory == "cli" ? "active" : "")" @onclick='@(() => _selectedCategory = "cli")'>CLI &amp; Automation</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Documentation Sections -->
+    <div class="docs-content-layout">
+        <div class="docs-articles">
+            @if (!FilteredArticles.Any())
+            {
+                <div class="no-docs-results">
+                    <span class="empty-icon">📜</span>
+                    <h3>No matching documentation found</h3>
+                    <p>Try searching with another keyword like "sockets", "crash", "ETW", or clear the search query.</p>
+                </div>
+            }
+
+            @foreach (var article in FilteredArticles)
+            {
+                <article class="doc-card" id="@article.Id">
+                    <div class="doc-card-header">
+                        <div class="doc-badge-row">
+                            <span class="doc-cat-badge">@article.CategoryName</span>
+                            <span class="doc-section-id">#@article.Id</span>
+                        </div>
+                        <h2 class="doc-heading">@article.Title</h2>
+                        <p class="doc-summary">@article.Summary</p>
+                    </div>
+
+                    <div class="doc-body">
+                        @((MarkupString)article.HtmlContent)
+                    </div>
+                </article>
+            }
+        </div>
+
+        <!-- Sticky Table of Contents Sidebar -->
+        <aside class="docs-toc-sidebar">
+            <div class="toc-header">
+                <span class="gold-accent">✦</span> TABLE OF CONTENTS
+            </div>
+            <nav class="toc-nav">
+                @foreach (var article in FilteredArticles)
+                {
+                    <a href="#@article.Id" class="toc-link">
+                        <span class="toc-icon">@article.Icon</span>
+                        <span class="toc-text">@article.Title</span>
+                    </a>
+                }
+            </nav>
+            <div class="toc-footer">
+                <span class="toc-note">Upuaut Core Specification v0.2.0</span>
+                <span class="toc-note">Author: Abhishek Mitra</span>
+            </div>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private string _searchQuery = "";
+    private string _selectedCategory = "all";
+
+    private IEnumerable<DocArticle> FilteredArticles
+    {
+        get
+        {
+            var items = _articles.AsEnumerable();
+
+            if (_selectedCategory != "all")
+            {
+                items = items.Where(a => a.Category.Equals(_selectedCategory, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                var q = _searchQuery.Trim();
+                items = items.Where(a =>
+                    a.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    a.Summary.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    a.RawText.Contains(q, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return items;
+        }
+    }
+
+    private record DocArticle(
+        string Id,
+        string Category,
+        string CategoryName,
+        string Title,
+        string Summary,
+        string Icon,
+        string HtmlContent,
+        string RawText
+    );
+
+    private readonly List<DocArticle> _articles = new()
+    {
+        new(
+            Id: "in-process-blazor-hybrid",
+            Category: "arch",
+            CategoryName: "Architecture & Runtime",
+            Title: "In-Process Blazor Hybrid Architecture",
+            Summary: "Why Upuaut executes the frontend and backend in a unified in-process model, eliminating IPC overhead and unlocking raw Win32 pointer speed.",
+            Icon: "⚡",
+            HtmlContent: @"
+                <p>Traditional diagnostic tools and web-wrapper desktop apps (such as Electron or Tauri) segregate the user interface and native OS services across separate processes communicating over JSON-RPC or WebSocket IPC channels. For real-time forensic triage—where the OS may generate thousands of packet frames and ETW log entries per second—this architecture incurs severe serialization latency and memory copy penalties.</p>
+                
+                <h4>The Upuaut In-Process Philosophy</h4>
+                <p>Upuaut runs <strong>in-process</strong> using <strong>Microsoft Blazor Hybrid with WPF and Microsoft WebView2</strong> on <strong>.NET 10 LTS</strong>. The C# business logic, native Win32 sockets, and the Blazor WebAssembly/HTML rendering loop share the same managed heap and address space:</p>
+                <ul>
+                    <li><strong>Direct Memory Pointers:</strong> Raw packet byte arrays captured via Win32 sockets are stored in zero-allocation ring buffers and directly sliced for UI hex-dump inspection without crossing process boundaries.</li>
+                    <li><strong>Hardware Accelerated Rendering:</strong> WebView2 utilizes the system Chromium engine backed by Direct3D hardware acceleration for fluid 120 FPS data grid scrolling.</li>
+                    <li><strong>Direct Win32 API Interop:</strong> Upuaut calls <code>iphlpapi.dll</code>, <code>advapi32.dll</code>, and <code>wevtapi.dll</code> directly via P/Invoke with zero proxy services or inter-process daemons.</li>
+                </ul>
+            ",
+            RawText: "In-Process Blazor Hybrid Architecture WPF WebView2 .NET 10 LTS Win32 PInvoke iphlpapi advapi32 zero-allocation ring buffer"
+        ),
+
+        new(
+            Id: "the-duat-chronicles",
+            Category: "chronicles",
+            CategoryName: "Duat Chronicles",
+            Title: "The Duat Chronicles & Forensic Event Log Engine",
+            Summary: "Streaming Windows Event Log parser using native EventLogReader, XPath optimization, and deep forensic error explanation.",
+            Icon: "📜",
+            HtmlContent: @"
+                <p>The standard Windows Event Viewer (<code>eventvwr.msc</code>) is notorious for slow, blocking scans, cryptic error messages, and an overwhelming flood of noise. The Duat Chronicles revolutionizes Windows log analysis through structured, high-speed parsing.</p>
+                
+                <h4>1. Optimized XPath Queries</h4>
+                <p>Instead of reading logs sequentially, Upuaut uses compiled XPath expressions evaluated directly by the Windows Eventing kernel subsystem (<code>wevtapi.dll</code>):</p>
+                <pre class=""docs-code""><code>*[System[(Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) &lt;= 86400000]]]</code></pre>
+                <p>This allows scanning 50,000+ entries in under 200 milliseconds, fetching only Critical and Error events from the last 24 hours.</p>
+
+                <h4>2. Quick-Triage Presets</h4>
+                <p>One-click filters isolate the most urgent OS failures:</p>
+                <ul>
+                    <li><strong>⚡ BSOD &amp; BugChecks:</strong> Extracts Event 1001 (WER-SystemErrorReporting) and Event 41 (Kernel-Power).</li>
+                    <li><strong>💥 App Crashes:</strong> Isolates Event 1000 (Application Error) and Event 1026 (.NET Runtime).</li>
+                    <li><strong>🌐 Network &amp; DNS:</strong> Catches Event 1014 (DNS Client Resolution Timeout) and NetBT failures.</li>
+                    <li><strong>💾 Disk &amp; Storage:</strong> Identifies NTFS corruption, bad blocks (Event 7 / Disk), and StorAHCI timeouts.</li>
+                    <li><strong>🔐 Security:</strong> Tracks Event 4625 (Failed Logons) with Logon Type 2/3/10 and Sub-Status codes.</li>
+                </ul>
+
+                <h4>3. The Oracle Explanation &amp; 1-Click Remediation</h4>
+                <p>Every identified error is paired with a plain-English diagnosis, root cause hypothesis, and an immediate PowerShell command (such as DISM, SFC, or Netsh) ready to copy and execute.</p>
+            ",
+            RawText: "The Duat Chronicles EventLogReader XPath optimization BSOD BugCheck App Crashes Event 1000 Event 4625 DNS 1014 The Oracle 1-Click Remediation"
+        ),
+
+        new(
+            Id: "the-scout-packet-capture",
+            Category: "scout",
+            CategoryName: "The Scout",
+            Title: "The Scout: Driverless Packet Capture & Process Attribution",
+            Summary: "Driverless wire sniffing via Windows native SIO_RCVALL raw sockets with real-time socket-to-process attribution via iphlpapi.dll.",
+            Icon: "📡",
+            HtmlContent: @"
+                <p>Most network sniffers on Windows require third-party kernel drivers such as Npcap or WinPcap. Upuaut eliminates this requirement entirely through a driverless Windows native architecture.</p>
+
+                <h4>1. Driverless Capture via SIO_RCVALL</h4>
+                <p>When running with administrative privileges, Upuaut binds a standard .NET <code>System.Net.Sockets.Socket</code> configured as:</p>
+                <pre class=""docs-code""><code>var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.IP);
+socket.Bind(new IPEndPoint(localIp, 0));
+socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[] { 1, 0, 0, 0 });</code></pre>
+                <p>This instructs the Windows TCP/IP stack to deliver all inbound and outbound IPv4 packets directly into Upuaut's user-mode ring buffer without installing any external driver or kernel extension.</p>
+
+                <h4>2. Real-Time Process Attribution (iphlpapi.dll)</h4>
+                <p>Unlike standard packet capture tools that only display IP addresses and port numbers, Upuaut maps every network frame to the exact Windows executable that initiated or received it. By invoking <code>GetExtendedTcpTable</code> and <code>GetExtendedUdpTable</code> from <code>iphlpapi.dll</code>, Upuaut resolves:</p>
+                <ul>
+                    <li>Process ID (PID) and Process Name (e.g. <code>chrome.exe</code>, <code>teams.exe</code>, <code>svchost.exe</code>).</li>
+                    <li>Full executable image path on disk.</li>
+                    <li>Active TCP state (Established, TimeWait, CloseWait, Listen).</li>
+                </ul>
+
+                <h4>3. Protocol Dissectors &amp; Anomaly Detection</h4>
+                <p>Zero-allocation binary dissectors parse IPv4, TCP (SYN, ACK, FIN, RST, PSH, URG), UDP, ICMP, and DNS query domain names. Out-of-order TCP RST flags and rapid reset bursts are automatically flagged as anomalies.</p>
+            ",
+            RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless iphlpapi GetExtendedTcpTable GetExtendedUdpTable PID attribution TCP UDP DNS ICMP"
+        ),
+
+        new(
+            Id: "diagnostics-and-crash-reporting",
+            Category: "diagnostics",
+            CategoryName: "Diagnostics & Telemetry",
+            Title: "App Diagnostics & Forensic Crash Reporting",
+            Summary: "Comprehensive telemetry system with in-memory breadcrumbs, rolling JSONL logs, and multi-threaded crash trapping.",
+            Icon: "🛡️",
+            HtmlContent: @"
+                <p>Upuaut is designed with industrial-grade resilience. Diagnostic and forensic crash data are recorded continuously so that any failure can be analyzed post-mortem.</p>
+
+                <h4>1. Multi-Threaded Crash Hooks</h4>
+                <p>Upuaut traps unhandled exceptions across three critical lifecycle layers in <code>App.xaml.cs</code>:</p>
+                <ul>
+                    <li><code>WpfApp.DispatcherUnhandledException</code>: Traps UI thread faults without tearing down the native window.</li>
+                    <li><code>AppDomain.CurrentDomain.UnhandledException</code>: Catches worker thread and background task exceptions.</li>
+                    <li><code>TaskScheduler.UnobservedTaskException</code>: Intercepts unobserved asynchronous faults.</li>
+                </ul>
+
+                <h4>2. Forensic Dump Vault</h4>
+                <p>When an unhandled exception occurs, Upuaut writes a comprehensive forensic dump under <code>%LocalAppData%\Upuaut\Crashes</code> containing:</p>
+                <ul>
+                    <li><strong>Machine &amp; OS Telemetry:</strong> Windows Build, .NET runtime version, CPU architecture, elevation status, and physical RAM footprint.</li>
+                    <li><strong>Exception Stack Trace:</strong> Full inner exception chain with source file line numbers.</li>
+                    <li><strong>Historical Breadcrumbs:</strong> The last 250 in-memory diagnostic events leading up to the exact millisecond of failure.</li>
+                </ul>
+
+                <h4>3. Daily Rolling Logs</h4>
+                <p>Telemetry is written to <code>%LocalAppData%\Upuaut\Logs\upuaut-YYYY-MM-DD.jsonl</code>. Each entry is a single-line JSON object containing timestamps, thread IDs, log levels, calling methods, and telemetry payloads.</p>
+            ",
+            RawText: "Crash Reporter Diagnostics Telemetry LocalAppData Upuaut Crashes Logs JSONL Breadcrumbs Dispatcher AppDomain TaskScheduler"
+        ),
+
+        new(
+            Id: "visual-studio-2026-guide",
+            Category: "vs2026",
+            CategoryName: "Visual Studio 2026",
+            Title: "Visual Studio 2026 Enterprise Edition Developer Guide",
+            Summary: "Configuration guide for Visual Studio 2026 Enterprise Edition, including .slnx solution structure, .editorconfig, and launch profiles.",
+            Icon: "💻",
+            HtmlContent: @"
+                <p>Upuaut is configured for development in <strong>Visual Studio 2026 Enterprise Edition</strong> (as well as VS 2022 v17.10+):</p>
+
+                <h4>1. Modern Solution Structure (.slnx)</h4>
+                <p>The solution file <code>Upuaut.slnx</code> uses the new streamlined XML solution format. Projects are logically partitioned into <code>/src/</code> and <code>/tests/</code> folders:</p>
+                <ul>
+                    <li><code>src/Upuaut.App</code>: WPF Desktop Host entrypoint, BlazorWebView configuration, and native lifecycle hooks.</li>
+                    <li><code>src/Upuaut.UI</code>: Blazor components, Fluent UI v5 controls, CSS stylesheets, and interactive pages.</li>
+                    <li><code>src/Upuaut.Core</code>: Shared models, diagnostic logging (AppLogger), and crash reporter (CrashReporter).</li>
+                    <li><code>src/Upuaut.Chronicles</code>: Windows Event Log ingestion engine, XPath query compiler, and The Oracle forensic decoder.</li>
+                    <li><code>src/Upuaut.Scout</code>: Driverless raw socket capture engine, IP Helper P/Invoke, and protocol dissectors.</li>
+                    <li><code>src/Upuaut.Weigher</code>: System anomaly triage, metric normalization, and scoring algorithms.</li>
+                    <li><code>tests/Upuaut.Tests</code>: Unit test suite for dissectors, log decoders, and forensic heuristics.</li>
+                </ul>
+
+                <h4>2. Launch Profiles &amp; Elevated Debugging</h4>
+                <p><code>launchSettings.json</code> in <code>Upuaut.App/Properties</code> contains two distinct F5 launch profiles:</p>
+                <ul>
+                    <li><strong>Upuaut.App (Standard):</strong> Runs under the current user account for UI development and offline .evtx analysis.</li>
+                    <li><strong>Upuaut.App (Elevated Administrator):</strong> Launches with elevated privileges to test live raw socket packet capture and Windows Security logs.</li>
+                </ul>
+
+                <h4>3. Code Standards &amp; Workload Manifest</h4>
+                <p>The repository includes <code>.editorconfig</code> enforcing C# 13 conventions (file-scoped namespaces, nullable reference types, expression-bodied members) and <code>.vsconfig</code> declaring the required Visual Studio workloads (<code>Microsoft.VisualStudio.Workload.ManagedDesktop</code>, <code>Microsoft.VisualStudio.ComponentGroup.Wpf.Prerequisites</code>, and <code>Microsoft.NetCore.Component.SDK</code>).</p>
+            ",
+            RawText: "Visual Studio 2026 Enterprise Edition .slnx sln launchSettings.json .editorconfig .vsconfig elevated debugging F5 C# 13"
+        ),
+
+        new(
+            Id: "cli-and-automation",
+            Category: "cli",
+            CategoryName: "CLI & Automation",
+            Title: "CLI & Automation Guide (run.ps1)",
+            Summary: "Reference guide for the run.ps1 build and launch script, UAC auto-elevation, and command-line switches.",
+            Icon: "⚡",
+            HtmlContent: @"
+                <p>Upuaut provides a robust automation script <code>run.ps1</code> located at the repository root. By default, <code>run.ps1</code> requests UAC administrator elevation to unlock raw socket packet sniffing and Security log inspection.</p>
+
+                <h4>Usage &amp; Syntax</h4>
+                <pre class=""docs-code""><code>.\run.ps1 [-Configuration &lt;Debug|Release&gt;] [-NoElevate] [-Wait] [-Clean]</code></pre>
+
+                <h4>Parameters</h4>
+                <table class=""docs-table"">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>-Configuration</code></td>
+                            <td>String</td>
+                            <td>Build configuration. Defaults to <code>Debug</code>. Pass <code>Release</code> for optimized production builds.</td>
+                        </tr>
+                        <tr>
+                            <td><code>-NoElevate</code></td>
+                            <td>Switch</td>
+                            <td>Bypasses the UAC prompt, running Upuaut under standard user privileges (The Scout will run in offline mode).</td>
+                        </tr>
+                        <tr>
+                            <td><code>-Wait</code></td>
+                            <td>Switch</td>
+                            <td>Keeps the PowerShell console attached to the host process until the application exits.</td>
+                        </tr>
+                        <tr>
+                            <td><code>-Clean</code></td>
+                            <td>Switch</td>
+                            <td>Performs a full <code>dotnet clean</code> across the solution before compiling.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            ",
+            RawText: "CLI Automation run.ps1 Configuration NoElevate Wait Clean PowerShell UAC elevated Administrator build"
+        )
+    };
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Upuaut.App": {
+      "commandName": "Project",
+      "workingDirectory": "$(TargetDir)",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "UPUAUT_DEV_TOOLS": "1"
+      }
+    },
+    "Upuaut.App (Elevated Administrator)": {
+      "commandName": "Project",
+      "workingDirectory": "$(TargetDir)",
+      "nativeDebugging": false,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "UPUAUT_DEV_TOOLS": "1"
+      }
+    }
+  }
+}

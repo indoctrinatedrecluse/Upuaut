@@ -168,7 +168,7 @@ Upuaut/
 - [x] Enterprise diagnostic logging (`AppLogger`) and crash reporter subsystem (`CrashReporter`) with interactive in-app diagnostics drawer (`DiagnosticsDrawer.razor`).
 - [x] Unified PowerShell bootstrapper script (`run.ps1`) with automatic UAC elevation by default.
 
-### Phase 3: The Scout (On-Demand Packet Sniffing) 🟢 (Active)
+### Phase 3: The Scout (On-Demand Packet Sniffing) 🟢 (Completed)
 - [x] Driverless Native Windows Raw Socket Capture Engine (`SIO_RCVALL` on IPv4).
 - [x] Live Socket-to-Process (PID) Attribution via Windows IP Helper API (`GetExtendedTcpTable`, `GetExtendedUdpTable` in `iphlpapi.dll`).
 - [x] Packet dissection engine (Ethernet, IPv4, TCP with flags/windows, UDP, ICMP, DNS query domain names).
@@ -180,10 +180,41 @@ Upuaut/
   - Wire frame table with auto-scroll and per-packet process badges.
   - Detailed Frame Inspector with socket 4-tuple coordinates, protocol flags, and raw byte Hex Dump & ASCII viewer.
 
-### Phase 4: The Scales (Correlation & Anomaly Detection) ⚪
+### Phase 4: Pantheon Lore, Documentation, & Developer Experience 🟢 (Completed)
+- [x] **The Celestial Pantheon & Sacred Lore Portal (`/pantheon`):**
+  - Dedicated lore explorer detailing the 7 Egyptian guardian deities and their direct software mappings:
+    - 🐺 **Upuaut (Wepwawet):** Opener of the Ways → *The Scout (Driverless Wire Sniffer & Network Vanguard)*
+    - 📜 **Thoth (Djehuty):** Master of Sacred Words → *The Duat Chronicles & Event Log Ingestion Engine*
+    - ⚖️ **Ma'at:** The Feather of Truth → *The Scales (System Triage & Anomaly Weigher)*
+    - 🛡️ **Anpu (Anubis):** Guardian of the Tomb → *Crash Reporter & Forensic Memory Dumper*
+    - 📖 **Seshat:** Mistress of Books → *The Sacred Archives & Documentation Engine*
+    - 💧 **Kebechet (Qebhet):** Lady of Cold Water → *Benign Noise Suppression & DCOM Filtering*
+    - ⚡ **Seker (Sokar):** Restorer of the Broken → *1-Click Forensic Remediation Engine*
+- [x] **Header Account & Pantheon Flyout Menu:** Fast access to the Architect profile, quick lore summaries, system documentation, and diagnostic drawers.
+- [x] **System Documentation Portal (`/docs`):** Complete searchable architectural specifications, forensic manuals, CLI reference, and code examples.
+- [x] **Visual Studio 2026 Enterprise Edition Support:**
+  - Modern XML Solution format (`Upuaut.slnx`) partitioned into `/src/` and `/tests/` alongside classic `Upuaut.sln`.
+  - `.editorconfig` enforcing C# 13 and Razor formatting conventions.
+  - `.vsconfig` declaring required Visual Studio desktop and diagnostic workloads.
+  - `launchSettings.json` with Standard and Administrator (Elevated) launch profiles.
+- [x] **About & Architect Specs (`/about`):** Detailed application specifications and background credentials.
+
+### Phase 5: The Scales (Correlation & Anomaly Detection) ⚪
 - [ ] Correlated timeline view matching network drops to system event errors.
 - [ ] Automated heuristic triage (highlighting suspicious error bursts and timeouts).
 - [ ] Capture export (`.pcapng` and `.evtx` / structured `.json`).
+
+---
+
+## 🏛️ The Architect
+
+Upuaut is designed and engineered by **Abhishek Mitra** ([`@indoctrinatedrecluse`](https://github.com/indoctrinatedrecluse)).
+
+- 🎓 **Education:** MS in Computer Science, University of Southern California (USC), Los Angeles, CA.
+- 💼 **Background:** Software engineering across Microsoft IDC, Digite (Full-Stack DevOps), and Synactive (Desktop Architecture, San Francisco).
+- 🌐 **Portfolio Website:** [portfolio-flutter-78bcf.web.app](https://portfolio-flutter-78bcf.web.app/)
+- 🐙 **GitHub Profile:** [github.com/indoctrinatedrecluse](https://github.com/indoctrinatedrecluse)
+- ⭐ **Repository:** [github.com/indoctrinatedrecluse/Upuaut](https://github.com/indoctrinatedrecluse/Upuaut)
 
 ---
 

@@ -1,0 +1,162 @@
+@page "/about"
+@namespace Upuaut.UI.Pages
+@using System.Runtime.InteropServices
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Upuaut — About the Architect &amp; Instrument</PageTitle>
+
+<div class="about-container">
+    <!-- Hero Banner -->
+    <div class="about-hero">
+        <div class="about-hero-badge">
+            <span class="gold-accent">✦</span> THE ARCHITECT &amp; THE VESSEL
+        </div>
+        <h1 class="about-title">
+            Upuaut <span class="gold-accent">—</span> Opener of the Ways
+        </h1>
+        <p class="about-tagline">
+            A high-performance Windows OS triage instrument, forensic event log analyzer, and on-demand wire sniffer.
+        </p>
+    </div>
+
+    <!-- Dual Column Layout: Author & System Specs -->
+    <div class="about-grid">
+        <!-- Author Profile Card -->
+        <div class="about-card author-card">
+            <div class="card-header-styled">
+                <div class="author-avatar-badge">AM</div>
+                <div>
+                    <h2 class="author-name">Abhishek Mitra</h2>
+                    <span class="author-handle">@("indoctrinatedrecluse")</span>
+                </div>
+            </div>
+
+            <p class="author-bio">
+                Systems engineer, full-stack architect, and builder of creative software. Passionate about low-level operating system mechanics, network protocols, experimental runtimes, and rich mythological storytelling.
+            </p>
+
+            <div class="author-credentials">
+                <div class="cred-item">
+                    <span class="cred-icon">🎓</span>
+                    <div>
+                        <span class="cred-title">MS in Computer Science</span>
+                        <span class="cred-sub">University of Southern California (USC), Los Angeles, CA</span>
+                    </div>
+                </div>
+
+                <div class="cred-item">
+                    <span class="cred-icon">💼</span>
+                    <div>
+                        <span class="cred-title">Software Engineering Background</span>
+                        <span class="cred-sub">Microsoft IDC, Digite (Full-Stack DevOps), Synactive (Desktop Apps, San Francisco)</span>
+                    </div>
+                </div>
+
+                <div class="cred-item">
+                    <span class="cred-icon">🎮</span>
+                    <div>
+                        <span class="cred-title">Interests &amp; Pursuits</span>
+                        <span class="cred-sub">Systems diagnostics, game modding, ancient mythology, literature, and water sports</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Author Links -->
+            <div class="author-links-row">
+                <button class="author-link-btn gold-link-btn" @onclick='@(() => OpenUrl("https://github.com/indoctrinatedrecluse/"))'>
+                    <span>🐙</span> GitHub Profile
+                </button>
+                <button class="author-link-btn" @onclick='@(() => OpenUrl("https://portfolio-flutter-78bcf.web.app/"))'>
+                    <span>🌐</span> Portfolio Website
+                </button>
+                <button class="author-link-btn" @onclick='@(() => OpenUrl("https://github.com/indoctrinatedrecluse/Upuaut"))'>
+                    <span>⭐</span> Upuaut Repository
+                </button>
+            </div>
+        </div>
+
+        <!-- Application & Platform Specs Card -->
+        <div class="about-card specs-card">
+            <div class="card-header-styled">
+                <div class="spec-glyph">🐺</div>
+                <div>
+                    <h2 class="author-name">Instrument Architecture</h2>
+                    <span class="author-handle">v0.2.0-preview (LTS Edition)</span>
+                </div>
+            </div>
+
+            <p class="author-bio">
+                Engineered with an In-Process Blazor Hybrid desktop architecture on .NET 10. Eliminates IPC overhead by binding native Win32/ETW diagnostic streams directly into the UI rendering canvas.
+            </p>
+
+            <div class="spec-list">
+                <div class="spec-row">
+                    <span class="spec-k">Target Framework</span>
+                    <span class="spec-v gold-accent">.NET 10 LTS (C# 13)</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Host Process</span>
+                    <span class="spec-v">WPF Desktop Host + Microsoft WebView2</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">UI Components</span>
+                    <span class="spec-v">Microsoft Fluent UI for Blazor v5.0.1</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Packet Capture</span>
+                    <span class="spec-v">Windows Native Raw Sockets (Driverless, SIO_RCVALL)</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Process Attribution</span>
+                    <span class="spec-v">Native Windows IP Helper (iphlpapi.dll)</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Log Engine</span>
+                    <span class="spec-v">System.Diagnostics.Eventing.Reader + The Oracle</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Crash Reporting</span>
+                    <span class="spec-v">Forensic Snapshot Engine (%LocalAppData%\Upuaut)</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">License</span>
+                    <span class="spec-v">MIT License (Open Source)</span>
+                </div>
+            </div>
+
+            <div class="pantheon-teaser-box">
+                <span class="gold-accent">✦ Thematic Origin:</span> Named after <strong>Upuaut (Wepwawet)</strong>, the ancient Egyptian jackal deity revered as the <em>"Opener of the Ways"</em>, scout of the solar boat, and vanguard guide through the mysterious underworld (the Duat).
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private async Task OpenUrl(string url)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+                return;
+            }
+            await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+        }
+        catch
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+            }
+            catch
+            {
+                // Fallback suppressed
+            }
+        }
+    }
+}

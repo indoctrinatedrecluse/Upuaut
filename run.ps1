@@ -91,7 +91,9 @@ $appProjectPath = Join-Path $solutionRoot "src\Upuaut.App\Upuaut.App.csproj"
 # Clean if requested
 if ($Clean) {
     Write-Host "[*] Cleaning solution..." -ForegroundColor Yellow
-    dotnet clean $solutionRoot -c $Configuration --nologo -v quiet
+    $slnPath = Join-Path $solutionRoot "Upuaut.slnx"
+    if (-not (Test-Path $slnPath)) { $slnPath = Join-Path $solutionRoot "Upuaut.sln" }
+    dotnet clean $slnPath -c $Configuration --nologo -v quiet
 }
 
 # Build unless -NoBuild specified
