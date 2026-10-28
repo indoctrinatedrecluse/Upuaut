@@ -151,24 +151,34 @@ Upuaut/
 - [x] Dark Egyptian theme scaffolding (Obsidian `#090A0D`, Sand `#E6C687`, Lapis `#1E3A8A`, Gold `#D4AF37`).
 - [x] Remote repository created and pushed (`https://github.com/indoctrinatedrecluse/Upuaut`).
 
-### Phase 2: The Chronicles (Windows Logs & The Oracle) 🟡 (In Progress)
+### Phase 2: The Chronicles (Windows Logs & The Oracle) 🟢 (Completed)
 - [x] Historical and live Windows Event Log engine (`System.Diagnostics.Eventing.Reader`) with optimized XPath generation.
 - [x] Friendly Human-Readable Error Explanation Engine (*The Oracle*) decoding cryptic Windows events, DCOM warnings, BSOD BugChecks, and 150+ NTSTATUS/HRESULT codes.
+- [x] Deep Forensic Decoder for Critical & Error events:
+  - Decodes BSOD Stop Codes (decimal and hex) with root causes and minidump locations.
+  - Decodes Application Error 1000 (faulting module roles, memory access violations `0xC0000005`, stack overruns).
+  - Decodes Service Control Manager 7000/7009/7031 with friendly Win32 exit codes.
+  - Decodes Security 4625 failed logons with interactive/RDP logon types and sub-status causes.
+  - Decodes Disk and NTFS filesystem corruption indices with actionable shell remediation commands (`sfc /scannow`, `chkdsk`, `sc.exe`).
 - [x] Multi-level filtration (Critical, Error, Warning, Info), Channel selector, and Time-range filters.
+- [x] 1-Click Quick-Triage Presets (⚡ BSOD & Reboots, 💥 App Crashes, 🌐 Network Drops, 💾 Disk Health, 🔐 Failed Logons).
 - [x] Benign noise suppression toggle (e.g. DCOM 10016) to surface only real issues.
 - [x] Full-text search across messages, providers, Event IDs, and error codes.
 - [x] Real-time event watcher (`EventLogWatcher`) for live log streaming.
-- [x] Theme-appropriate application icon (`upuaut.ico` and `upuaut.png`).
-- [x] Unified PowerShell bootstrapper script (`run.ps1`) with elevation support.
-- [x] Comprehensive test suite (`tests/Upuaut.Tests`) verifying log parsing and explanation accuracy.
-- [ ] Real-time ETW session listener for kernel/network providers.
+- [x] Enterprise diagnostic logging (`AppLogger`) and crash reporter subsystem (`CrashReporter`) with interactive in-app diagnostics drawer (`DiagnosticsDrawer.razor`).
+- [x] Unified PowerShell bootstrapper script (`run.ps1`) with automatic UAC elevation by default.
 
-### Phase 3: The Scout (On-Demand Packet Sniffing) ⏸️ (Deferred TODO)
-> *Note: Packet capture engine implementation is temporarily deferred to prioritize delivering the world's most capable Windows log diagnostic and explanation platform first.*
-- [ ] Adapter enumeration and capture session management.
-- [ ] Packet dissection engine (Ethernet, IPv4/IPv6, TCP, UDP, DNS, TLS).
-- [ ] Live socket-to-PID attribution (identifying the Windows process behind each packet).
-- [ ] Detail pane with protocol breakdown and raw hex/ASCII inspection.
+### Phase 3: The Scout (On-Demand Packet Sniffing) 🟢 (Active)
+- [x] Driverless Native Windows Raw Socket Capture Engine (`SIO_RCVALL` on IPv4).
+- [x] Live Socket-to-Process (PID) Attribution via Windows IP Helper API (`GetExtendedTcpTable`, `GetExtendedUdpTable` in `iphlpapi.dll`).
+- [x] Packet dissection engine (Ethernet, IPv4, TCP with flags/windows, UDP, ICMP, DNS query domain names).
+- [x] Anomaly detection (TCP connection resets / aborts flagged in real time).
+- [x] Wireshark-inspired interactive UI (`Scout.razor`):
+  - Real-time wire throughput, packets/sec rate, total data volume, and active process count.
+  - Protocol filters (All, TCP, TLS/HTTPS, DNS, UDP, ICMP).
+  - Dynamic Process Filter dropdown for isolating traffic to specific applications (e.g., `chrome.exe`, `discord.exe`).
+  - Wire frame table with auto-scroll and per-packet process badges.
+  - Detailed Frame Inspector with socket 4-tuple coordinates, protocol flags, and raw byte Hex Dump & ASCII viewer.
 
 ### Phase 4: The Scales (Correlation & Anomaly Detection) ⚪
 - [ ] Correlated timeline view matching network drops to system event errors.

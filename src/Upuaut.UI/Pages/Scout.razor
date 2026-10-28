@@ -1,38 +1,500 @@
 @page "/scout"
 @namespace Upuaut.UI.Pages
+@using System.Text
+@using Upuaut.Core.Interfaces
+@using Upuaut.Core.Models
+@using Upuaut.Scout.Services
+@inject ICaptureEngine CaptureEngine
+@inject ScoutManager ScoutService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
-<PageTitle>Upuaut — The Scout</PageTitle>
+<PageTitle>Upuaut — The Scout (Packet Sniffer)</PageTitle>
 
-<div class="page-container">
-    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
-                🐺 The Scout
+<div class="scout-container">
+    <!-- Top Scout Control & Adapter Header -->
+    <div class="scout-header">
+        <div class="scout-title-block">
+            <h1 class="header-main-title">
+                <span class="gold-accent">🐺</span> The Scout
             </h1>
-            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
-                On-Demand Packet Sniffing &amp; Process Attribution
+            <span class="header-sub-title">
+                On-Demand Network Packet Sniffing with Real-Time Windows Process ID Attribution
             </span>
         </div>
 
-        <div style="display: flex; gap: 0.75rem; align-items: center;">
-            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Play())">
-                Start Capture
+        <div class="scout-actions-bar">
+            <!-- Adapter Selector -->
+            <div class="filter-group">
+                <span class="filter-label">Adapter:</span>
+                <select class="upuaut-select" @bind="_selectedDeviceId" disabled="@_isCapturing">
+                    @foreach (var dev in _devices)
+                    {
+                        <option value="@dev.Id">@dev.Name (@dev.IpAddress)</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Start / Stop Button -->
+            @if (!_isCapturing)
+            {
+                <FluentButton Appearance="ButtonAppearance.Primary"
+                              IconStart="@(new Icons.Regular.Size16.Play())"
+                              OnClick="StartCaptureAsync">
+                    Start Capture
+                </FluentButton>
+            }
+            else
+            {
+                <FluentButton Appearance="ButtonAppearance.Primary"
+                              IconStart="@(new Icons.Regular.Size16.Stop())"
+                              OnClick="StopCaptureAsync">
+                    <span class="pulse-dot"></span> Stop Capture
+                </FluentButton>
+            }
+
+            <!-- Clear Button -->
+            <FluentButton Appearance="ButtonAppearance.Outline"
+                          IconStart="@(new Icons.Regular.Size16.Delete())"
+                          OnClick="ClearBuffer">
+                Clear
             </FluentButton>
+
+            <!-- Mode Badge -->
+            <div class="badge-chip gold-chip" title="Direct raw socket capture without third-party drivers">
+                <span>Native Raw Sockets (Elevated)</span>
+            </div>
         </div>
     </div>
 
-    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">CAPTURED FRAMES</span>
-            <span class="badge-chip">Buffer: 0 / 50,000</span>
+    <!-- Live KPI Summary Cards -->
+    <div class="kpi-row">
+        <div class="kpi-card">
+            <span class="kpi-title">TOTAL PACKETS</span>
+            <span class="kpi-value gold-accent">@_stats.TotalPackets.ToString("N0")</span>
+            <span class="kpi-sub">Buffer: @_recentFrames.Count / @ScoutService.BufferCapacity</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #60A5FA;">DATA VOLUME</span>
+            <span class="kpi-value" style="color: #60A5FA;">@FormatBytes(_stats.TotalBytes)</span>
+            <span class="kpi-sub">Real-time wire throughput</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #34D399;">PACKET RATE</span>
+            <span class="kpi-value" style="color: #34D399;">@(_stats.PacketsPerSecond.ToString("F1")) pps</span>
+            <span class="kpi-sub">@(_isCapturing ? "Capturing active" : "Standby")</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-title" style="color: #F59E0B;">ACTIVE PROCESSES</span>
+            <span class="kpi-value" style="color: #F59E0B;">@_stats.TopProcesses.Count</span>
+            <span class="kpi-sub">Attributed via IP Helper</span>
+        </div>
+    </div>
+
+    <!-- Filter & Search Ribbon -->
+    <div class="filter-ribbon">
+        <!-- Protocol Pills -->
+        <div class="level-pills">
+            <span class="filter-label">Protocol:</span>
+            <button class="pill-btn @(_selectedProtocol == null ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(null))">
+                All
+            </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.TCP ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(NetworkProtocol.TCP))">
+                TCP
+            </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.TLS ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(NetworkProtocol.TLS))">
+                TLS / HTTPS
+            </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.DNS ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(NetworkProtocol.DNS))">
+                DNS
+            </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.UDP ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(NetworkProtocol.UDP))">
+                UDP
+            </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.ICMP ? "pill-info-active" : "")"
+                    @onclick="@(() => SetProtocol(NetworkProtocol.ICMP))">
+                ICMP
+            </button>
         </div>
 
-        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
-            <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
-            <span>Capture engine in standby. Select an adapter to commence sniffing.</span>
+        <!-- Process Filter Dropdown -->
+        @if (_stats.TopProcesses.Count > 0)
+        {
+            <div class="filter-group">
+                <span class="filter-label">Process:</span>
+                <select class="upuaut-select" @bind="_selectedProcess" @bind:after="ApplyFilters">
+                    <option value="">All Processes</option>
+                    @foreach (var (procName, count) in _stats.TopProcesses)
+                    {
+                        <option value="@procName">@procName (@count)</option>
+                    }
+                </select>
+            </div>
+        }
+
+        <!-- Search Input -->
+        <div class="search-box-container" style="flex: 1;">
+            <span class="search-icon">🔍</span>
+            <input type="text"
+                   class="upuaut-search-input"
+                   placeholder="Filter by IP, port, host domain, or payload..."
+                   value="@_searchFilter"
+                   @oninput="OnSearchChanged" />
         </div>
-    </FluentCard>
+
+        <!-- Auto-scroll checkbox -->
+        <label class="switch-container" style="margin-left: 0.5rem;">
+            <input type="checkbox" @bind="_autoScroll" />
+            <span class="switch-label">Auto-scroll</span>
+        </label>
+    </div>
+
+    <!-- Main Workspace: Split Frame List & Packet Inspector -->
+    <div class="scout-workspace">
+        <!-- Left: Live Frame Stream -->
+        <div class="packet-list-pane">
+            <div class="table-container">
+                <table class="upuaut-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 60px;">#</th>
+                            <th style="width: 100px;">Time</th>
+                            <th style="width: 140px;">Process</th>
+                            <th style="width: 170px;">Source</th>
+                            <th style="width: 170px;">Destination</th>
+                            <th style="width: 80px;">Proto</th>
+                            <th style="width: 70px;">Len</th>
+                            <th>Summary / Flags</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_filteredFrames.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="8" class="empty-state">
+                                    <div class="empty-state-content">
+                                        <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
+                                        <span>@(_isCapturing ? "Waiting for matching packets on wire..." : "Capture in standby. Click 'Start Capture' above to sniff live packets.")</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var frame in _filteredFrames)
+                            {
+                                <tr class="table-row @(_selectedFrame?.FrameNumber == frame.FrameNumber ? "row-selected" : "") @(frame.HasErrorOrRetransmit ? "row-error" : "")"
+                                    @onclick="@(() => SelectFrame(frame))">
+                                    <td class="mono-text">@frame.FrameNumber</td>
+                                    <td class="mono-text">@frame.Timestamp.ToString("HH:mm:ss.fff")</td>
+                                    <td class="proc-cell" title="@(frame.ProcessName ?? "System") (PID: @frame.ProcessId)">
+                                        @if (!string.IsNullOrEmpty(frame.ProcessName))
+                                        {
+                                            <span class="proc-badge">@frame.ProcessName</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="proc-unknown">—</span>
+                                        }
+                                    </td>
+                                    <td class="mono-text">@frame.SourceIp@FormatPort(frame.SourcePort)</td>
+                                    <td class="mono-text">@frame.DestinationIp@FormatPort(frame.DestinationPort)</td>
+                                    <td>
+                                        <span class="proto-badge @GetProtocolBadgeClass(frame.Protocol)">
+                                            @frame.Protocol
+                                        </span>
+                                    </td>
+                                    <td class="mono-text">@frame.TotalLength</td>
+                                    <td class="summary-cell" title="@frame.Summary">
+                                        @if (frame.HasErrorOrRetransmit)
+                                        {
+                                            <span class="warn-pill">RESET</span>
+                                        }
+                                        @frame.Summary
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Right: Packet Details & Hex Viewer -->
+        <div class="packet-inspector-pane">
+            @if (_selectedFrame != null)
+            {
+                <div class="inspector-card">
+                    <div class="inspector-header">
+                        <div class="ins-title-row">
+                            <span class="proto-badge @GetProtocolBadgeClass(_selectedFrame.Protocol)">
+                                @_selectedFrame.Protocol Frame #@_selectedFrame.FrameNumber
+                            </span>
+                            <span class="mono-text" style="font-size: 0.8rem; color: var(--upuaut-text-muted);">
+                                @_selectedFrame.TotalLength bytes
+                            </span>
+                        </div>
+                        <h3 class="ins-summary">@_selectedFrame.Summary</h3>
+                    </div>
+
+                    <div class="inspector-body">
+                        <!-- Process Attribution Card -->
+                        <div class="section-block">
+                            <h4 class="section-title" style="color: var(--upuaut-gold);">
+                                <span>🎯 Process Attribution (IP Helper)</span>
+                            </h4>
+                            <div class="tech-grid">
+                                <div class="tech-item">
+                                    <span class="tech-key">PROCESS NAME</span>
+                                    <span class="tech-val gold-accent" style="font-weight: 700;">
+                                        @(_selectedFrame.ProcessName ?? "Unattributed / Kernel")
+                                    </span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">PROCESS ID</span>
+                                    <span class="tech-val mono-text">
+                                        @(_selectedFrame.ProcessId?.ToString() ?? "N/A")
+                                    </span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">INTERFACE</span>
+                                    <span class="tech-val">@(_selectedFrame.InterfaceName ?? "Default")</span>
+                                </div>
+                                <div class="tech-item">
+                                    <span class="tech-key">TIMESTAMP</span>
+                                    <span class="tech-val mono-text">@_selectedFrame.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Network 4-Tuple -->
+                        <div class="section-block">
+                            <h4 class="section-title">Network Socket Coordinates</h4>
+                            <div class="socket-grid">
+                                <div class="socket-box">
+                                    <span class="tech-key">SOURCE</span>
+                                    <span class="socket-ip">@_selectedFrame.SourceIp</span>
+                                    <span class="socket-port">Port @(_selectedFrame.SourcePort?.ToString() ?? "—")</span>
+                                </div>
+                                <div class="socket-arrow">&rarr;</div>
+                                <div class="socket-box">
+                                    <span class="tech-key">DESTINATION</span>
+                                    <span class="socket-ip">@_selectedFrame.DestinationIp</span>
+                                    <span class="socket-port">Port @(_selectedFrame.DestinationPort?.ToString() ?? "—")</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Payload Hex / ASCII View -->
+                        @if (_selectedFrame.Payload != null && _selectedFrame.Payload.Length > 0)
+                        {
+                            <div class="section-block">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <h4 class="section-title" style="margin: 0;">Payload Bytes (@_selectedFrame.Payload.Length B)</h4>
+                                    <button class="cli-copy-btn" @onclick="CopyPayloadHexAsync">📋 Copy Hex</button>
+                                </div>
+                                <pre class="hex-dump-box">@GenerateHexDump(_selectedFrame.Payload)</pre>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="inspector-placeholder">
+                    <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
+                    <span style="font-weight: 600; color: var(--upuaut-sand);">Select a Frame to Inspect Wire Telemetry</span>
+                    <span style="font-size: 0.8rem; color: var(--upuaut-text-dim); text-align: center; max-width: 280px;">
+                        The Scout resolves process attribution and decodes transport headers and application payloads.
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
 </div>
 
 @code {
+    private IReadOnlyList<NetworkDeviceDescriptor> _devices = Array.Empty<NetworkDeviceDescriptor>();
+    private string _selectedDeviceId = string.Empty;
+    private bool _isCapturing;
+    private bool _autoScroll = true;
+
+    private List<PacketFrame> _recentFrames = new();
+    private List<PacketFrame> _filteredFrames = new();
+    private PacketFrame? _selectedFrame;
+
+    private NetworkProtocol? _selectedProtocol;
+    private string _selectedProcess = string.Empty;
+    private string _searchFilter = string.Empty;
+
+    private ScoutStatistics _stats = new(0, 0, 0, new Dictionary<NetworkProtocol, int>(), new Dictionary<string, int>());
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        _devices = ScoutService.GetAvailableDevices();
+        if (_devices.Count > 0)
+        {
+            _selectedDeviceId = _devices[0].Id;
+        }
+
+        ScoutService.PacketReceived += OnPacketReceived;
+
+        // Periodic UI refresh ticker (200ms) to throttle rendering without dropping packets
+        _refreshTimer = new System.Threading.Timer(_ =>
+        {
+            InvokeAsync(() =>
+            {
+                RefreshUI();
+                StateHasChanged();
+            });
+        }, null, 250, 250);
+    }
+
+    private async Task StartCaptureAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedDeviceId)) return;
+
+        try
+        {
+            await ScoutService.StartCaptureAsync(_selectedDeviceId);
+            _isCapturing = true;
+            RefreshUI();
+        }
+        catch (Exception ex)
+        {
+            _isCapturing = false;
+            await JSRuntime.InvokeVoidAsync("alert", $"Packet capture failed: {ex.Message}");
+        }
+    }
+
+    private async Task StopCaptureAsync()
+    {
+        await ScoutService.StopCaptureAsync();
+        _isCapturing = false;
+        RefreshUI();
+    }
+
+    private void ClearBuffer()
+    {
+        ScoutService.ClearBuffer();
+        _recentFrames.Clear();
+        _filteredFrames.Clear();
+        _selectedFrame = null;
+        RefreshUI();
+    }
+
+    private void SetProtocol(NetworkProtocol? proto)
+    {
+        _selectedProtocol = proto;
+        ApplyFilters();
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        _searchFilter = e.Value?.ToString() ?? "";
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredFrames = ScoutService.GetRecentFrames(_selectedProtocol, _selectedProcess, _searchFilter, 400).ToList();
+        if (_autoScroll && _filteredFrames.Count > 0 && _selectedFrame == null)
+        {
+            _selectedFrame = _filteredFrames[0];
+        }
+    }
+
+    private void RefreshUI()
+    {
+        _stats = ScoutService.GetStatistics();
+        ApplyFilters();
+    }
+
+    private void OnPacketReceived(object? sender, PacketFrame frame)
+    {
+        // Buffered by ScoutManager; timer handles UI refresh to prevent thread lock
+    }
+
+    private void SelectFrame(PacketFrame frame)
+    {
+        _selectedFrame = frame;
+    }
+
+    private async Task CopyPayloadHexAsync()
+    {
+        if (_selectedFrame?.Payload == null) return;
+        var hex = Convert.ToHexString(_selectedFrame.Payload);
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", hex);
+    }
+
+    private static string FormatPort(int? port) => port.HasValue ? $":{port.Value}" : "";
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes > 1024 * 1024 * 1024) return $"{(bytes / (1024.0 * 1024 * 1024)):F2} GB";
+        if (bytes > 1024 * 1024) return $"{(bytes / (1024.0 * 1024)):F2} MB";
+        if (bytes > 1024) return $"{(bytes / 1024.0):F1} KB";
+        return $"{bytes} B";
+    }
+
+    private static string GetProtocolBadgeClass(NetworkProtocol proto) => proto switch
+    {
+        NetworkProtocol.TCP => "proto-tcp",
+        NetworkProtocol.UDP => "proto-udp",
+        NetworkProtocol.DNS => "proto-dns",
+        NetworkProtocol.TLS => "proto-tls",
+        NetworkProtocol.HTTP => "proto-http",
+        NetworkProtocol.ICMP => "proto-icmp",
+        _ => "proto-other"
+    };
+
+    private static string GenerateHexDump(byte[] data)
+    {
+        var sb = new StringBuilder();
+        int bytesPerLine = 16;
+
+        for (int i = 0; i < data.Length; i += bytesPerLine)
+        {
+            sb.Append($"{i:X4}  ");
+
+            // Hex bytes
+            for (int j = 0; j < bytesPerLine; j++)
+            {
+                if (i + j < data.Length)
+                    sb.Append($"{data[i + j]:X2} ");
+                else
+                    sb.Append("   ");
+
+                if (j == 7) sb.Append(' ');
+            }
+
+            sb.Append(" |");
+
+            // ASCII representation
+            for (int j = 0; j < bytesPerLine; j++)
+            {
+                if (i + j < data.Length)
+                {
+                    byte b = data[i + j];
+                    sb.Append(b >= 32 && b <= 126 ? (char)b : '.');
+                }
+            }
+
+            sb.AppendLine("|");
+        }
+
+        return sb.ToString();
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+        ScoutService.PacketReceived -= OnPacketReceived;
+    }
 }

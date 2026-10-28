@@ -1,5 +1,10 @@
 @page "/"
 @namespace Upuaut.UI.Pages
+@using Upuaut.Core.Interfaces
+@using Upuaut.Scout.Services
+@inject NavigationManager Nav
+@inject ScoutManager ScoutService
+@inject IChroniclesService ChroniclesService
 
 <PageTitle>Upuaut — Overview</PageTitle>
 
@@ -14,7 +19,7 @@
     </div>
 
     <div class="card-grid">
-        <div class="diag-card">
+        <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("chronicles"))' title="Click to view Windows Event Logs">
             <div class="diag-card-header">
                 <span class="diag-card-title">Event Log Status</span>
                 <FluentIcon Value="@(new Icons.Regular.Size20.DocumentBulletListMultiple())" />
@@ -23,46 +28,50 @@
             <div class="diag-card-sub">Channels: System, Application, Security &amp; ETW</div>
         </div>
 
-        <div class="diag-card">
+        <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("scout"))' title="Click to view Packet Sniffer">
             <div class="diag-card-header">
                 <span class="diag-card-title">Network Sniffer</span>
                 <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
             </div>
-            <div class="diag-card-value">Standby</div>
-            <div class="diag-card-sub">Socket-to-Process correlation ready</div>
+            <div class="diag-card-value @(ScoutService.IsCapturing ? "text-green" : "")">
+                @(ScoutService.IsCapturing ? "Capturing Active" : "Standby")
+            </div>
+            <div class="diag-card-sub">
+                @(ScoutService.BufferCount > 0 ? $"{ScoutService.BufferCount} packets buffered" : "Socket-to-Process correlation ready")
+            </div>
         </div>
 
-        <div class="diag-card">
+        <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("weigher"))' title="Click to view Anomaly Correlator">
             <div class="diag-card-header">
                 <span class="diag-card-title">The Scales (Triage)</span>
                 <FluentIcon Value="@(new Icons.Regular.Size20.Scales())" />
             </div>
-            <div class="diag-card-value">0 Anomalies</div>
-            <div class="diag-card-sub">Real-time correlation window active</div>
+            <div class="diag-card-value">Armed</div>
+            <div class="diag-card-sub">Real-time correlation window active (&plusmn;2500ms)</div>
         </div>
     </div>
 
-    <div class="dashboard-sections" style="display: flex; flex-direction: column; gap: 1rem;">
+    <div class="dashboard-sections" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
         <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
             <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
-                <span>📜</span> The Duat Chronicles — Quick Launch
+                <span>📜</span> The Duat Chronicles — Event Log Forensic Triage
             </h3>
             <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
-                Triage local Windows Event Logs or launch real-time ETW kernel trace sessions for TCPIP drops, DNS latency, and process spawning.
+                Triage local Windows Event Logs, inspect BSOD stop codes, decode memory access violations, and group repetitive error bursts into distinct anomaly failure signatures.
             </p>
-            <FluentButton Appearance="ButtonAppearance.Primary" OnClick="@(() => NavigateTo("chronicles"))">
+            <FluentButton Appearance="ButtonAppearance.Primary" OnClick='@(() => NavigateTo("chronicles"))'>
                 Open Chronicles
             </FluentButton>
         </FluentCard>
 
         <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
             <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
-                <span>🐺</span> The Scout — On-Demand Packet Capture
+                <span>🐺</span> The Scout — Live Packet Sniffer &amp; Process Attribution
             </h3>
             <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
-                Capture live traffic with automatic Windows Process ID (PID) and executable name resolution for instant correlation.
+                Capture live network traffic with native Windows Raw Sockets (no Npcap required). Every TCP and UDP packet is attributed to its originating process name and PID via native IP Helper interop.
             </p>
-            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="@(() => NavigateTo("scout"))">
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick='@(() => NavigateTo("scout"))'>
                 Deploy Scout
             </FluentButton>
         </FluentCard>
@@ -70,8 +79,6 @@
 </div>
 
 @code {
-    [Inject] private NavigationManager Nav { get; set; } = default!;
-
     private void NavigateTo(string path)
     {
         Nav.NavigateTo(path);

@@ -6,6 +6,7 @@ using Microsoft.FluentUI.AspNetCore.Components;
 using Upuaut.Chronicles.Services;
 using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
+using Upuaut.Scout.Services;
 
 namespace Upuaut.App;
 
@@ -65,6 +66,8 @@ public partial class MainWindow : Window
 
             // Register Core & Domain Services
             services.AddSingleton<IChroniclesService, WindowsEventLogService>();
+            services.AddSingleton<ICaptureEngine, ScoutManager>();
+            services.AddSingleton<ScoutManager>(sp => (ScoutManager)sp.GetRequiredService<ICaptureEngine>());
 
             blazorWebView.Services = services.BuildServiceProvider();
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");

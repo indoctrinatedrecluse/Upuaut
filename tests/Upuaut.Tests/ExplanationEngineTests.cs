@@ -285,4 +285,110 @@ public class ExplanationEngineTests
             Assert.NotNull(first.Explanation);
         }
     }
+
+    [Fact]
+    public void ForensicDecoder_DecodesBugcheckCodeDecimal278_AsVideoTdrFailure()
+    {
+        var log = new LogRecord
+        {
+            EventId = 1001,
+            ProviderName = "Microsoft-Windows-WER-SystemErrorReporting",
+            Channel = "System",
+            Level = LogSeverityLevel.Critical,
+            Message = "The computer has rebooted from a bugcheck.",
+            EventData = new Dictionary<string, string>
+            {
+                { "BugcheckCode", "278" },
+                { "DumpFile", @"C:\Windows\Minidump\020126-10234-01.dmp" }
+            }
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.NotNull(explanation.DecodedFields);
+        Assert.Equal("VIDEO_TDR_FAILURE", explanation.DecodedFields["Stop Error Name"]);
+        Assert.Contains("display driver", explanation.DecodedFields["Meaning"], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(@"C:\Windows\Minidump\020126-10234-01.dmp", explanation.DecodedFields["Dump File Location"]);
+    }
+
+    [Fact]
+    public void ForensicDecoder_DecodesApplicationError1000_WithModuleAndAccessViolation()
+    {
+        var log = new LogRecord
+        {
+            EventId = 1000,
+            ProviderName = "Application Error",
+            Channel = "Application",
+            Level = LogSeverityLevel.Error,
+            Message = "Faulting application name: GameClient.exe, faulting module name: d3d11.dll",
+            EventData = new Dictionary<string, string>
+            {
+                { "FaultingApplicationName", "GameClient.exe" },
+                { "FaultingModuleName", "d3d11.dll" },
+                { "ExceptionCode", "0xc0000005" },
+                { "FaultOffset", "0x000000000018a42b" }
+            }
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.Equal("GameClient.exe", explanation.DecodedFields["Crashing App"]);
+        Assert.Equal("d3d11.dll", explanation.DecodedFields["Faulting Module"]);
+        Assert.Contains("DirectX 11", explanation.DecodedFields["Module Identity"]);
+        Assert.Contains("STATUS_ACCESS_VIOLATION", explanation.DecodedFields["Exception Meaning"]);
+    }
+
+    [Fact]
+    public void ForensicDecoder_DecodesServiceControlManager7000_WithExitCode1060()
+    {
+        var log = new LogRecord
+        {
+            EventId = 7000,
+            ProviderName = "Service Control Manager",
+            Channel = "System",
+            Level = LogSeverityLevel.Error,
+            Message = "The OldLegacyService service failed to start due to the following error: The specified service does not exist as an installed service.",
+            EventData = new Dictionary<string, string>
+            {
+                { "param1", "OldLegacyService" },
+                { "param2", "1060" }
+            }
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.Equal("OldLegacyService", explanation.DecodedFields["Service Identifier"]);
+        Assert.Contains("ERROR_SERVICE_DOES_NOT_EXIST", explanation.DecodedFields["SCM Error Code"]);
+    }
+
+    [Fact]
+    public void ForensicDecoder_DecodesSecurity4625_WithLogonType10AndSubStatus()
+    {
+        var log = new LogRecord
+        {
+            EventId = 4625,
+            ProviderName = "Microsoft-Windows-Security-Auditing",
+            Channel = "Security",
+            Level = LogSeverityLevel.Information,
+            Message = "An account failed to log on.",
+            EventData = new Dictionary<string, string>
+            {
+                { "TargetUserName", "Administrator" },
+                { "LogonType", "10" },
+                { "SubStatus", "0xC000006A" },
+                { "IpAddress", "192.168.1.150" }
+            }
+        };
+
+        var explanation = _engine.Explain(log);
+
+        Assert.NotNull(explanation);
+        Assert.Equal("Administrator", explanation.DecodedFields["Target Account"]);
+        Assert.Contains("Remote Desktop Protocol", explanation.DecodedFields["Logon Type"]);
+        Assert.Contains("STATUS_WRONG_PASSWORD", explanation.DecodedFields["SubStatus Explanation"]);
+        Assert.Equal("192.168.1.150", explanation.DecodedFields["Source IP Address"]);
+    }
 }

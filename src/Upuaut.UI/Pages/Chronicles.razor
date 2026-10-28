@@ -358,6 +358,55 @@
                     <div class="oracle-body">
                         @if (_activeTab == OracleTab.Overview)
                         {
+                            <!-- Forensic Subsystem & Impact Hero Banner -->
+                            @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.Subsystem) || !string.IsNullOrEmpty(_selectedLog.Explanation?.ImpactAssessment))
+                            {
+                                <div class="forensic-hero-banner">
+                                    <div class="forensic-subsystem">
+                                        <span class="gold-accent">🏛️ SUBSYSTEM:</span> @(_selectedLog.Explanation?.Subsystem ?? "Windows Subsystem")
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.ImpactAssessment))
+                                    {
+                                        <div class="forensic-impact">
+                                            <span style="color: #EF4444; font-weight: 700;">IMPACT:</span> @_selectedLog.Explanation.ImpactAssessment
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <!-- Deep Decoded Forensic Badges -->
+                            @if (_selectedLog.Explanation?.DecodedFields != null && _selectedLog.Explanation.DecodedFields.Count > 0)
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title" style="color: var(--upuaut-gold);">
+                                        <span>🔬 Decoded Forensic Telemetry</span>
+                                    </h4>
+                                    <div class="forensic-badges-grid">
+                                        @foreach (var (key, value) in _selectedLog.Explanation.DecodedFields)
+                                        {
+                                            <div class="forensic-badge-item">
+                                                <span class="f-badge-key">@key</span>
+                                                <span class="f-badge-val">@value</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Remediation Shell Command -->
+                            @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.ForensicFixCommand))
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title" style="color: #10B981;">⚡ Remediation Shell Command</h4>
+                                    <div class="cli-cmd-box">
+                                        <code>@_selectedLog.Explanation.ForensicFixCommand</code>
+                                        <button class="cli-copy-btn" @onclick="@(() => CopyTextAsync(_selectedLog.Explanation.ForensicFixCommand))" title="Copy Command">
+                                            📋 Copy
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+
                             <!-- Probable Causes -->
                             @if (_selectedLog.Explanation?.ProbableCauses.Count > 0)
                             {
@@ -746,9 +795,31 @@
         sb.AppendLine($"- **Triage Rating:** `{_selectedLog.Explanation?.TriageRating}`");
         sb.AppendLine($"- **Oracle Summary:** {_selectedLog.Explanation?.Summary}");
 
+        if (!string.IsNullOrEmpty(_selectedLog.Explanation?.Subsystem))
+        {
+            sb.AppendLine($"- **Subsystem:** `{_selectedLog.Explanation.Subsystem}`");
+        }
+        if (!string.IsNullOrEmpty(_selectedLog.Explanation?.ImpactAssessment))
+        {
+            sb.AppendLine($"- **Impact:** `{_selectedLog.Explanation.ImpactAssessment}`");
+        }
         if (!string.IsNullOrEmpty(_selectedLog.Explanation?.DecodedStatusCode))
         {
             sb.AppendLine($"- **Decoded Code:** `{_selectedLog.Explanation.DecodedStatusCode}` ({_selectedLog.Explanation.StatusMeaning})");
+        }
+
+        if (_selectedLog.Explanation?.DecodedFields?.Count > 0)
+        {
+            sb.AppendLine("\n**Decoded Forensic Telemetry:**");
+            foreach (var (k, v) in _selectedLog.Explanation.DecodedFields)
+            {
+                sb.AppendLine($"- **{k}:** `{v}`");
+            }
+        }
+
+        if (!string.IsNullOrEmpty(_selectedLog.Explanation?.ForensicFixCommand))
+        {
+            sb.AppendLine($"- **Recommended Shell Command:** `{_selectedLog.Explanation.ForensicFixCommand}`");
         }
 
         if (_selectedLog.Explanation?.RecommendedActions.Count > 0)
@@ -773,6 +844,14 @@
         var md = ChroniclesService.ExportLogs(FilteredLogs, LogExportFormat.Markdown);
         await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", md);
         _statusMessage = $"Exported complete triage report ({FilteredLogs.Count} events) to clipboard!";
+    }
+
+    private async Task CopyTextAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        _statusMessage = "Copied to clipboard!";
+        StateHasChanged();
     }
 
     private static string GetSeverityClass(LogSeverityLevel level) => level switch

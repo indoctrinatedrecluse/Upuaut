@@ -53,26 +53,33 @@ public class LogExplanationEngine
 
     public LogExplanation Explain(LogRecord log)
     {
+        LogExplanation baseResult;
+
         // 1. Check curated event knowledge base
         var curated = GetCuratedExplanation(log);
         if (curated != null)
         {
-            return curated;
+            baseResult = curated;
         }
-
-        // 2. Decode status code if present in the message or XML
-        string? statusCode = null;
-        string? statusMeaning = null;
-
-        var match = StatusCodeRegex.Match(log.Message);
-        if (match.Success && KnownStatusCodes.TryGetValue(match.Value, out var statusInfo))
+        else
         {
-            statusCode = $"{match.Value} ({statusInfo.Name})";
-            statusMeaning = statusInfo.Meaning;
+            // 2. Decode status code if present in the message or XML
+            string? statusCode = null;
+            string? statusMeaning = null;
+
+            var match = StatusCodeRegex.Match(log.Message);
+            if (match.Success && KnownStatusCodes.TryGetValue(match.Value, out var statusInfo))
+            {
+                statusCode = $"{match.Value} ({statusInfo.Name})";
+                statusMeaning = statusInfo.Meaning;
+            }
+
+            // 3. Fallback to smart heuristic synthesis
+            baseResult = SynthesizeGenericExplanation(log, statusCode, statusMeaning);
         }
 
-        // 3. Fallback to smart heuristic synthesis
-        return SynthesizeGenericExplanation(log, statusCode, statusMeaning);
+        // 4. Enrich with deep forensic field decoding (especially for Critical and Error events)
+        return ForensicLogDecoder.EnrichForensics(log, baseResult);
     }
 
     private LogExplanation? GetCuratedExplanation(LogRecord log)

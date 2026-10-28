@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Upuaut.Core\Upuaut.Core.csproj" />
     <ProjectReference Include="..\..\src\Upuaut.Chronicles\Upuaut.Chronicles.csproj" />
+    <ProjectReference Include="..\..\src\Upuaut.Scout\Upuaut.Scout.csproj" />
   </ItemGroup>
 
   <ItemGroup>
