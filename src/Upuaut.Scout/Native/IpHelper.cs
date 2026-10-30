@@ -88,8 +88,7 @@ public static class IpHelper
         UDP_TABLE_CLASS tableClass,
         uint reserved = 0);
 
-    // Cache of port -> (PID, ProcessName) with short expiration
-    private static readonly ConcurrentDictionary<int, (int Pid, string Name, DateTime CachedAt)> _portCache = new();
+    private static readonly ConcurrentDictionary<string, (int Pid, string Name)> _endpointCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<int, string> _pidNameCache = new();
     private static DateTime _lastFullScan = DateTime.MinValue;
     private static readonly TimeSpan CacheExpiry = TimeSpan.FromSeconds(2.5);
@@ -97,24 +96,20 @@ public static class IpHelper
     /// <summary>
     /// Resolves the local or remote port to the owning Windows Process ID and Process Name.
     /// </summary>
-    public static (int? ProcessId, string? ProcessName) ResolveProcess(int localPort, int remotePort)
+    public static (int? ProcessId, string? ProcessName) ResolveProcess(string sourceIp, int sourcePort, string destinationIp, int destinationPort)
     {
         RefreshTablesIfStale();
-
-        // 1. Try local port match
-        if (_portCache.TryGetValue(localPort, out var match) && match.Pid > 0)
-        {
+        if (_endpointCache.TryGetValue(Key(sourceIp, sourcePort, destinationIp, destinationPort), out var match) ||
+            _endpointCache.TryGetValue(Key(destinationIp, destinationPort, sourceIp, sourcePort), out match) ||
+            _endpointCache.TryGetValue(Key(sourceIp, sourcePort, "0.0.0.0", 0), out match) ||
+            _endpointCache.TryGetValue(Key(destinationIp, destinationPort, "0.0.0.0", 0), out match) ||
+            _endpointCache.TryGetValue(Key("0.0.0.0", sourcePort, "0.0.0.0", 0), out match) ||
+            _endpointCache.TryGetValue(Key("0.0.0.0", destinationPort, "0.0.0.0", 0), out match))
             return (match.Pid, match.Name);
-        }
-
-        // 2. Try remote port match (if local port was ephemeral and remote is local daemon)
-        if (_portCache.TryGetValue(remotePort, out var remoteMatch) && remoteMatch.Pid > 0)
-        {
-            return (remoteMatch.Pid, remoteMatch.Name);
-        }
-
         return (null, null);
     }
+
+    private static string Key(string localIp, int localPort, string remoteIp, int remotePort) => $"{localIp}:{localPort}|{remoteIp}:{remotePort}";
 
     private static void RefreshTablesIfStale()
     {
@@ -123,12 +118,12 @@ public static class IpHelper
             return;
         }
 
-        _lastFullScan = DateTime.UtcNow;
-
         try
         {
+            _endpointCache.Clear();
             RefreshTcpTable();
             RefreshUdpTable();
+            _lastFullScan = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -162,7 +157,7 @@ public static class IpHelper
                 if (pid > 0)
                 {
                     var procName = GetProcessName(pid);
-                    _portCache[row.LocalPort] = (pid, procName, now);
+                    _endpointCache[Key(row.LocalIp.ToString(), row.LocalPort, row.RemoteIp.ToString(), row.RemotePort)] = (pid, procName);
                 }
                 rowPtr = IntPtr.Add(rowPtr, rowSize);
             }
@@ -199,7 +194,7 @@ public static class IpHelper
                 if (pid > 0)
                 {
                     var procName = GetProcessName(pid);
-                    _portCache[row.LocalPort] = (pid, procName, now);
+                    _endpointCache[Key(row.LocalIp.ToString(), row.LocalPort, "0.0.0.0", 0)] = (pid, procName);
                 }
                 rowPtr = IntPtr.Add(rowPtr, rowSize);
             }

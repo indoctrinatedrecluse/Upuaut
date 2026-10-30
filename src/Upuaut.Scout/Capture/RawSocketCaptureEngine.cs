@@ -22,6 +22,7 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
     private long _frameCounter;
     private bool _isCapturing;
     private readonly object _lock = new();
+    private CancellationTokenRegistration _cancellationRegistration;
 
     public bool IsCapturing => _isCapturing;
     public event EventHandler<PacketFrame>? PacketReceived;
@@ -62,6 +63,7 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
 
     public Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
             if (_isCapturing)
@@ -94,39 +96,64 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                 byte[] outValue = new byte[4];
                 _socket.IOControl(IOControlCode.ReceiveAll, inValue, outValue);
 
-                _cts = new CancellationTokenSource();
+                _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 _isCapturing = true;
-                _receiveTask = Task.Run(() => ReceiveLoop(_socket, bindIp.ToString(), _cts.Token));
+                _receiveTask = Task.Run(() => ReceiveLoop(_socket, bindIp.ToString(), _cts.Token), CancellationToken.None);
 
                 AppLogger.Info("RawSocketCapture", $"Native packet capture active on {bindIp}.");
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AccessDenied)
             {
                 _isCapturing = false;
+                _socket?.Dispose();
+                _socket = null;
                 AppLogger.Error("RawSocketCapture", "Administrator elevation required to open raw socket (SIO_RCVALL).", ex);
                 throw new UnauthorizedAccessException("Raw packet sniffing requires running Upuaut as Administrator.", ex);
             }
             catch (Exception ex)
             {
                 _isCapturing = false;
+                _cts?.Cancel();
+                _socket?.Dispose();
+                _socket = null;
                 AppLogger.Error("RawSocketCapture", $"Failed to start raw socket capture on {bindIp}: {ex.Message}", ex);
                 throw;
             }
         }
 
+        var registration = cancellationToken.Register(() => _ = StopCaptureAsync());
+        lock (_lock)
+        {
+            if (_isCapturing) _cancellationRegistration = registration;
+            else registration.Dispose();
+        }
+
         return Task.CompletedTask;
     }
 
-    public Task StopCaptureAsync()
+    public Task StartCaptureAsync(string deviceId, PacketCaptureMode mode, CancellationToken cancellationToken = default)
     {
+        if (mode != PacketCaptureMode.RawIpv4) throw new NotSupportedException("Raw socket capture supports IPv4 mode only.");
+        return StartCaptureAsync(deviceId, cancellationToken);
+    }
+
+    public IReadOnlyList<NetworkDeviceDescriptor> GetAvailableDevices(PacketCaptureMode mode) => GetAvailableDevices();
+
+    public async Task StopCaptureAsync()
+    {
+        Task? receiveTask;
+        CancellationTokenSource? cts;
         lock (_lock)
         {
-            if (!_isCapturing) return Task.CompletedTask;
+            if (!_isCapturing && _receiveTask == null) return;
 
             _isCapturing = false;
+            cts = _cts;
+            receiveTask = _receiveTask;
+            _cancellationRegistration.Dispose();
             try
             {
-                _cts?.Cancel();
+                cts?.Cancel();
                 _socket?.Close();
                 _socket?.Dispose();
                 _socket = null;
@@ -139,7 +166,20 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
             AppLogger.Info("RawSocketCapture", "Packet capture stopped.");
         }
 
-        return Task.CompletedTask;
+        if (receiveTask != null)
+        {
+            try { await receiveTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
+        lock (_lock)
+        {
+            if (ReferenceEquals(_cts, cts))
+            {
+                _cts?.Dispose();
+                _cts = null;
+                _receiveTask = null;
+            }
+        }
     }
 
     private void ReceiveLoop(Socket socket, string ifaceName, CancellationToken token)

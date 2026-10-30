@@ -2,8 +2,19 @@
 @namespace Upuaut.UI.Shared
 @using Upuaut.UI.Components
 @inject NavigationManager NavManager
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
-<div class="upuaut-shell" @onclick="HandleShellClick">
+<div class="upuaut-shell @(_motionEnabled ? "has-motion-canvas" : "")" @onclick="HandleShellClick">
+    @if (_motionEnabled)
+    {
+        <div class="app-motion-canvas" aria-hidden="true">
+            <video autoplay muted loop playsinline preload="auto" poster="media/upuaut-splash-poster.jpg" @onloadeddata="OnMotionVideoReady" @onerror="OnMotionVideoError">
+                <source src="media/upuaut-background.mp4" type="video/mp4" />
+            </video>
+            <div class="app-motion-shade"></div>
+        </div>
+    }
     <aside class="upuaut-sidebar">
         <NavMenu />
     </aside>
@@ -31,6 +42,14 @@
 
                 <button class="badge-chip gold-chip diag-btn" @onclick="ToggleDiagnostics" title="Open App Diagnostics &amp; Logs">
                     <span>⚙️ Diagnostics &amp; Logs</span>
+                </button>
+
+                <button class="motion-toggle @(_motionEnabled ? "motion-on" : "")"
+                        @onclick="ToggleMotionAsync"
+                        aria-pressed="@_motionEnabled"
+                        title="Toggle animated app canvas and launch splash">
+                    <span class="motion-toggle-glyph">@(_motionEnabled ? "ON" : "OFF")</span>
+                    <span><strong>CANVAS MOTION</strong><small>@(_motionEnabled ? "ENABLED" : "REDUCED")</small></span>
                 </button>
 
                 <!-- Account & Egyptian Lore Menu Button -->
@@ -99,7 +118,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("weigher"))'>
+                                    <div class="acc-deity-item acc-deity-static" aria-disabled="true">
                                         <span class="acc-deity-icon">⚖️</span>
                                         <div class="acc-deity-text">
                                             <strong class="acc-deity-name">Ma'at</strong>
@@ -167,6 +186,18 @@
     </div>
 </div>
 
+@if (_showSplash)
+{
+    <div class="upuaut-launch-splash" role="status" aria-live="polite">
+        <div class="splash-sigil">&#x1F43A;</div>
+        <div class="splash-kicker">THE WAYS ARE OPENING</div>
+        <h1>UPUAUT</h1>
+        <p>Windows System Triage &amp; Network Intelligence</p>
+        <div class="splash-progress"><span></span></div>
+        <button class="splash-skip" @onclick="DismissSplash">Skip intro <span>&rarr;</span></button>
+    </div>
+}
+
 <DiagnosticsDrawer @bind-IsOpen="_showDiagnostics" />
 
 <FluentProviders />
@@ -174,6 +205,73 @@
 @code {
     private bool _showDiagnostics;
     private bool _showAccountMenu;
+    private bool _motionEnabled;
+    private bool _showSplash;
+    private bool _initialized;
+    private CancellationTokenSource? _splashLifetime;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialized) return;
+        _initialized = true;
+        try
+        {
+            _motionEnabled = await JSRuntime.InvokeAsync<bool>("upuautMotion.getEnabled");
+            _showSplash = _motionEnabled;
+            if (_showSplash) _ = DismissSplashIfVideoMissingAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _motionEnabled = false;
+            _showSplash = false;
+        }
+    }
+
+    private async Task ToggleMotionAsync()
+    {
+        _motionEnabled = !_motionEnabled;
+        if (!_motionEnabled) DismissSplash();
+        try { await JSRuntime.InvokeVoidAsync("upuautMotion.setEnabled", _motionEnabled); }
+        catch { }
+    }
+
+    private void OnMotionVideoReady()
+    {
+        if (!_showSplash || _splashLifetime is not null) return;
+        _splashLifetime = new CancellationTokenSource();
+        _ = DismissSplashAfterVideoAsync(_splashLifetime.Token);
+    }
+
+    private void OnMotionVideoError() => DismissSplash();
+
+    private async Task DismissSplashAfterVideoAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+            await InvokeAsync(DismissSplash);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task DismissSplashIfVideoMissingAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (_showSplash && _splashLifetime is null) await InvokeAsync(DismissSplash);
+    }
+
+    private void DismissSplash()
+    {
+        _splashLifetime?.Cancel();
+        _showSplash = false;
+    }
+
+    public void Dispose()
+    {
+        _splashLifetime?.Cancel();
+        _splashLifetime?.Dispose();
+    }
 
     private const string HieroglyphicAlphabetStream =
         "𓄿 𓇋 𓇌 𓂝 𓅱 𓃀 𓊪 𓆑 𓅓 𓈖 𓂋 𓉔 𓎛 𓐍 𓄡 𓊃 𓋴 𓈙 𓈎 𓎡 𓎼 𓏏 𓍿 𓂧 𓆓 " +

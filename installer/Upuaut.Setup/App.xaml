@@ -1,0 +1,21 @@
+<Application x:Class="Upuaut.Setup.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Startup="Application_Startup">
+    <Application.Resources>
+        <SolidColorBrush x:Key="Gold" Color="#D4AF37" />
+        <SolidColorBrush x:Key="Sand" Color="#E6C687" />
+        <SolidColorBrush x:Key="Ink" Color="#090A0D" />
+        <SolidColorBrush x:Key="Panel" Color="#E6101118" />
+        <SolidColorBrush x:Key="Muted" Color="#A6A9B2" />
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#E6C687" />
+            <Setter Property="Background" Value="#201D16" />
+            <Setter Property="BorderBrush" Value="#66512A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="14,9" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </Application.Resources>
+</Application>

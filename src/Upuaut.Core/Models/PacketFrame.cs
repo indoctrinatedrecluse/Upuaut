@@ -16,4 +16,9 @@ public record PacketFrame
     public byte[]? Payload { get; init; }
     public string? InterfaceName { get; init; }
     public bool HasErrorOrRetransmit { get; init; }
+    public string CaptureLayer { get; init; } = "IPv4";
+    public byte[]? RawData { get; init; }
+    public string? SourceMac { get; init; }
+    public string? DestinationMac { get; init; }
+    public ushort? EtherType { get; init; }
 }

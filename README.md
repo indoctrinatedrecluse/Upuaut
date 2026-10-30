@@ -221,3 +221,7 @@ Upuaut is designed and engineered by **Abhishek Mitra** ([`@indoctrinatedrecluse
 ## ⚖️ License
 Distributed under the [MIT License](LICENSE).
 
+## Windows installer and release
+
+The custom per-user Windows setup experience, video asset locations, and release instructions are documented in [installer/README.md](installer/README.md). Pushing a `v*` tag builds the self-contained x64 package and attaches it to a GitHub Release through `.github/workflows/release.yml`.
+

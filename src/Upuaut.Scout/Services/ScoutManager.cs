@@ -3,6 +3,7 @@ using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
 using Upuaut.Core.Models;
 using Upuaut.Scout.Capture;
+using System.Collections.Concurrent;
 
 namespace Upuaut.Scout.Services;
 
@@ -19,13 +20,16 @@ public record ScoutStatistics(
 /// </summary>
 public class ScoutManager : ICaptureEngine, IDisposable
 {
-    private readonly ICaptureEngine _engine;
+    private readonly RawSocketCaptureEngine _rawEngine;
+    private readonly EthernetCaptureEngine _ethernetEngine;
+    private ICaptureEngine? _activeEngine;
     private readonly RingBuffer<PacketFrame> _buffer = new(15000);
+    private readonly ConcurrentQueue<DateTime> _recentPacketTimes = new();
     private long _totalPackets;
     private long _totalBytes;
     private DateTime _captureStartedAt = DateTime.UtcNow;
 
-    public bool IsCapturing => _engine.IsCapturing;
+    public bool IsCapturing => _activeEngine?.IsCapturing == true;
     public int BufferCount => _buffer.Count;
     public int BufferCapacity => _buffer.Capacity;
 
@@ -33,34 +37,51 @@ public class ScoutManager : ICaptureEngine, IDisposable
 
     public ScoutManager()
     {
-        // By default, initialize with driverless native Windows raw socket engine
-        _engine = new RawSocketCaptureEngine();
-        _engine.PacketReceived += OnPacketCaptured;
+        _rawEngine = new RawSocketCaptureEngine();
+        _ethernetEngine = new EthernetCaptureEngine();
+        _rawEngine.PacketReceived += OnPacketCaptured;
+        _ethernetEngine.PacketReceived += OnPacketCaptured;
     }
 
     public IReadOnlyList<NetworkDeviceDescriptor> GetAvailableDevices()
     {
-        return _engine.GetAvailableDevices();
+        return GetAvailableDevices(PacketCaptureMode.RawIpv4);
     }
 
-    public async Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default)
+    public IReadOnlyList<NetworkDeviceDescriptor> GetAvailableDevices(PacketCaptureMode mode) => mode switch
     {
+        PacketCaptureMode.RawIpv4 => _rawEngine.GetAvailableDevices(),
+        PacketCaptureMode.Ethernet => _ethernetEngine.GetAvailableDevices(),
+        _ => Array.Empty<NetworkDeviceDescriptor>()
+    };
+
+    public async Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default)
+        => await StartCaptureAsync(deviceId, PacketCaptureMode.RawIpv4, cancellationToken);
+
+    public async Task StartCaptureAsync(string deviceId, PacketCaptureMode mode, CancellationToken cancellationToken = default)
+    {
+        if (IsCapturing) await StopCaptureAsync();
+        _activeEngine = mode == PacketCaptureMode.Ethernet ? _ethernetEngine : _rawEngine;
         _captureStartedAt = DateTime.UtcNow;
-        AppLogger.Info("ScoutManager", $"Starting packet capture on adapter: {deviceId}");
-        await _engine.StartCaptureAsync(deviceId, cancellationToken);
+        AppLogger.Info("ScoutManager", $"Starting {mode} packet capture on adapter: {deviceId}");
+        try { await _activeEngine.StartCaptureAsync(deviceId, mode, cancellationToken); }
+        catch { _activeEngine = null; throw; }
     }
 
     public async Task StopCaptureAsync()
     {
         AppLogger.Info("ScoutManager", "Stopping packet capture.");
-        await _engine.StopCaptureAsync();
+        var engine = _activeEngine;
+        if (engine != null) await engine.StopCaptureAsync();
+        _activeEngine = null;
     }
 
     public void ClearBuffer()
     {
-        // Clear snapshot by draining or re-initializing
-        _totalPackets = 0;
-        _totalBytes = 0;
+        _buffer.Clear();
+        Interlocked.Exchange(ref _totalPackets, 0);
+        Interlocked.Exchange(ref _totalBytes, 0);
+        while (_recentPacketTimes.TryDequeue(out _)) { }
     }
 
     public IReadOnlyList<PacketFrame> GetRecentFrames(
@@ -100,8 +121,9 @@ public class ScoutManager : ICaptureEngine, IDisposable
     public ScoutStatistics GetStatistics()
     {
         var snapshot = _buffer.ToSnapshot();
-        var elapsedSec = Math.Max(0.5, (DateTime.UtcNow - _captureStartedAt).TotalSeconds);
-        var pps = _engine.IsCapturing ? (snapshot.Count / elapsedSec) : 0;
+        var cutoff = DateTime.UtcNow.AddSeconds(-5);
+        while (_recentPacketTimes.TryPeek(out var timestamp) && timestamp < cutoff) _recentPacketTimes.TryDequeue(out _);
+        var pps = _recentPacketTimes.Count / 5d;
 
         var protoDist = snapshot
             .GroupBy(f => f.Protocol)
@@ -126,6 +148,7 @@ public class ScoutManager : ICaptureEngine, IDisposable
     {
         Interlocked.Increment(ref _totalPackets);
         Interlocked.Add(ref _totalBytes, frame.TotalLength);
+        _recentPacketTimes.Enqueue(DateTime.UtcNow);
 
         _buffer.Add(frame);
 
@@ -141,7 +164,9 @@ public class ScoutManager : ICaptureEngine, IDisposable
 
     public void Dispose()
     {
-        _engine.PacketReceived -= OnPacketCaptured;
-        if (_engine is IDisposable d) d.Dispose();
+        _rawEngine.PacketReceived -= OnPacketCaptured;
+        _ethernetEngine.PacketReceived -= OnPacketCaptured;
+        _rawEngine.Dispose();
+        _ethernetEngine.Dispose();
     }
 }

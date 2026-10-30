@@ -10,4 +10,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Upuaut.Tests/Upuaut.Tests.csproj" />
   </Folder>
+  <Folder Name="/installer/">
+    <Project Path="installer/Upuaut.Setup/Upuaut.Setup.csproj" />
+  </Folder>
 </Solution>

@@ -13,6 +13,7 @@ public static class PacketParser
 {
     public static PacketFrame? ParseIPv4Packet(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
     {
+        if (buffer is null || length < 20 || length > buffer.Length) return null;
         if (length < 20) return null; // Minimum IPv4 header length
 
         // Byte 0: Version & IHL
@@ -25,6 +26,7 @@ public static class PacketParser
 
         // Total Length
         int totalLength = (buffer[2] << 8) | buffer[3];
+        if (totalLength < ipHeaderLength) return null;
         if (totalLength > length) totalLength = length;
 
         // TTL & Protocol
@@ -44,9 +46,11 @@ public static class PacketParser
 
         int transportOffset = ipHeaderLength;
         int transportLength = totalLength - transportOffset;
+        int fragmentField = (buffer[6] << 8) | buffer[7];
+        bool fragmented = (fragmentField & 0x3FFF) != 0;
 
         // 1. TCP (Protocol 6)
-        if (protocolByte == 6 && transportLength >= 20)
+        if (!fragmented && protocolByte == 6 && transportLength >= 20)
         {
             protocol = NetworkProtocol.TCP;
             srcPort = (buffer[transportOffset] << 8) | buffer[transportOffset + 1];
@@ -63,6 +67,7 @@ public static class PacketParser
                                  buffer[transportOffset + 11]);
 
             byte tcpHeaderLen = (byte)(((buffer[transportOffset + 12] >> 4) & 0x0F) * 4);
+            if (tcpHeaderLen < 20 || tcpHeaderLen > transportLength) return null;
             byte flags = buffer[transportOffset + 13];
 
             bool fin = (flags & 0x01) != 0;
@@ -83,21 +88,22 @@ public static class PacketParser
 
             string flagStr = flagList.Count > 0 ? string.Join(",", flagList) : "NONE";
 
-            // Classify application layer protocol
-            if (srcPort == 443 || dstPort == 443)
-            {
-                protocol = NetworkProtocol.TLS;
-                summary = $"TLS [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum} Win={window}";
-            }
-            else if (srcPort == 80 || dstPort == 80 || srcPort == 8080 || dstPort == 8080)
-            {
-                protocol = NetworkProtocol.HTTP;
-                summary = $"HTTP [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum}";
-            }
-            else if (srcPort == 53 || dstPort == 53)
+            int payloadOffset = transportOffset + tcpHeaderLen;
+            int payloadLength = totalLength - payloadOffset;
+            if (srcPort == 53 || dstPort == 53)
             {
                 protocol = NetworkProtocol.DNS;
                 summary = $"DNS (TCP) [{flagStr}] {srcPort} &rarr; {dstPort}";
+            }
+            else if (LooksLikeTls(buffer, payloadOffset, payloadLength))
+            {
+                protocol = NetworkProtocol.TLS;
+                summary = $"TLS [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum}";
+            }
+            else if (LooksLikeHttp(buffer, payloadOffset, payloadLength))
+            {
+                protocol = NetworkProtocol.HTTP;
+                summary = $"HTTP [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum}";
             }
             else
             {
@@ -110,7 +116,6 @@ public static class PacketParser
                 summary += " [CONN RESET/REFUSED]";
             }
 
-            int payloadOffset = transportOffset + tcpHeaderLen;
             if (payloadOffset < totalLength)
             {
                 int payloadLen = totalLength - payloadOffset;
@@ -119,12 +124,13 @@ public static class PacketParser
             }
         }
         // 2. UDP (Protocol 17)
-        else if (protocolByte == 17 && transportLength >= 8)
+        else if (!fragmented && protocolByte == 17 && transportLength >= 8)
         {
             protocol = NetworkProtocol.UDP;
             srcPort = (buffer[transportOffset] << 8) | buffer[transportOffset + 1];
             dstPort = (buffer[transportOffset + 2] << 8) | buffer[transportOffset + 3];
             int udpLen = (buffer[transportOffset + 4] << 8) | buffer[transportOffset + 5];
+            if (udpLen < 8 || udpLen > transportLength) return null;
 
             int payloadOffset = transportOffset + 8;
             int payloadLen = Math.Max(0, udpLen - 8);
@@ -177,7 +183,7 @@ public static class PacketParser
         string? processName = null;
         if (srcPort.HasValue && dstPort.HasValue)
         {
-            var proc = IpHelper.ResolveProcess(srcPort.Value, dstPort.Value);
+            var proc = IpHelper.ResolveProcess(srcIp, srcPort.Value, dstIp, dstPort.Value);
             processId = proc.ProcessId;
             processName = proc.ProcessName;
         }
@@ -197,8 +203,56 @@ public static class PacketParser
             ProcessName = processName,
             Payload = payload,
             InterfaceName = interfaceName,
-            HasErrorOrRetransmit = hasErrorOrRetransmit
+            HasErrorOrRetransmit = hasErrorOrRetransmit,
+            CaptureLayer = "IPv4",
+            RawData = buffer.AsSpan(0, totalLength).ToArray()
         };
+    }
+
+    public static PacketFrame? ParseEthernetFrame(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
+    {
+        if (buffer is null || length < 14 || length > buffer.Length) return null;
+        var destinationMac = FormatMac(buffer.AsSpan(0, 6));
+        var sourceMac = FormatMac(buffer.AsSpan(6, 6));
+        int offset = 14;
+        ushort etherType = (ushort)((buffer[12] << 8) | buffer[13]);
+        while (etherType is 0x8100 or 0x88A8 or 0x9100)
+        {
+            if (length < offset + 4) return null;
+            etherType = (ushort)((buffer[offset + 2] << 8) | buffer[offset + 3]);
+            offset += 4;
+        }
+
+        PacketFrame? frame = etherType == 0x0800
+            ? ParseIPv4Packet(buffer.AsSpan(offset, length - offset).ToArray(), length - offset, frameIndex, interfaceName)
+            : etherType == 0x0806 ? new PacketFrame
+            {
+                FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, Protocol = NetworkProtocol.ARP,
+                TotalLength = length, Summary = "ARP frame", InterfaceName = interfaceName,
+                CaptureLayer = "Ethernet", RawData = buffer.AsSpan(0, length).ToArray()
+            } : null;
+        return frame is null ? null : frame with
+        {
+            TotalLength = length,
+            CaptureLayer = "Ethernet",
+            RawData = buffer.AsSpan(0, length).ToArray(),
+            SourceMac = sourceMac,
+            DestinationMac = destinationMac,
+            EtherType = etherType
+        };
+    }
+
+    private static string FormatMac(ReadOnlySpan<byte> address) => string.Join(":", address.ToArray().Select(b => b.ToString("X2")));
+
+    private static bool LooksLikeTls(byte[] data, int offset, int length) =>
+        length >= 5 && offset >= 0 && offset + 5 <= data.Length && data[offset] is >= 0x14 and <= 0x17 && data[offset + 1] == 0x03;
+
+    private static bool LooksLikeHttp(byte[] data, int offset, int length)
+    {
+        if (length < 4 || offset < 0 || offset + 4 > data.Length) return false;
+        ReadOnlySpan<byte> payload = data.AsSpan(offset, Math.Min(length, 16));
+        return payload.StartsWith("GET "u8) || payload.StartsWith("POST "u8) || payload.StartsWith("PUT "u8) ||
+               payload.StartsWith("HEAD "u8) || payload.StartsWith("DELETE "u8) || payload.StartsWith("HTTP/"u8);
     }
 
     private static string? TryExtractDnsQuery(byte[] buffer, int offset, int length)
@@ -216,7 +270,7 @@ public static class PacketParser
                 byte labelLen = buffer[qOffset++];
                 if (labelLen == 0) break; // End of QNAME
 
-                if (qOffset + labelLen > buffer.Length) break;
+                if (qOffset + labelLen > buffer.Length || qOffset + labelLen > offset + length) break;
 
                 if (sb.Length > 0) sb.Append('.');
                 sb.Append(Encoding.ASCII.GetString(buffer, qOffset, labelLen));

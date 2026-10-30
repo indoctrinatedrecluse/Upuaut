@@ -42,7 +42,7 @@ public class ScoutPacketTests
         Assert.Equal("142.250.190.46", frame.DestinationIp);
         Assert.Equal(52140, frame.SourcePort);
         Assert.Equal(443, frame.DestinationPort);
-        Assert.Equal(NetworkProtocol.TLS, frame.Protocol);
+        Assert.Equal(NetworkProtocol.TCP, frame.Protocol);
         Assert.Contains("SYN", frame.Summary);
     }
 

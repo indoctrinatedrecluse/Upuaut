@@ -11,6 +11,9 @@ x86/
 _ReSharper*/
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
+/artifacts/
+/installer/staging/
+.codex-build/
 
 ## --- Visual Studio & IDEs ---
 .vs/

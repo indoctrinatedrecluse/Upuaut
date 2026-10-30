@@ -1,0 +1,83 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    if: github.event.deleted != true
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') { $version = '1.0.0' }
+          "UPUAUT_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Validate release video assets
+        shell: pwsh
+        run: |
+          $assets = @(
+            'src/Upuaut.App/wwwroot/media/upuaut-background.mp4',
+            'src/Upuaut.App/wwwroot/media/upuaut-splash-poster.jpg',
+            'installer/assets/upuaut-installer-loop.mp4'
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Required release asset is missing: $asset" }
+            if ((Get-Item -LiteralPath $asset).Length -eq 0) { throw "Release asset is empty: $asset" }
+          }
+
+      - name: Publish Upuaut app
+        run: dotnet publish src/Upuaut.App/Upuaut.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ env.UPUAUT_VERSION }} -o artifacts/payload
+
+      - name: Publish installer
+        run: dotnet publish installer/Upuaut.Setup/Upuaut.Setup.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ env.UPUAUT_VERSION }} -o artifacts/package
+
+      - name: Assemble themed setup package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD 'artifacts/package'
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage 'payload'), (Join-Path $stage 'media') | Out-Null
+          Copy-Item -Path 'artifacts/payload/*' -Destination (Join-Path $stage 'payload') -Recurse -Force
+          Copy-Item -Path 'LICENSE' -Destination $stage -Force
+          $installerVideo = 'installer/assets/upuaut-installer-loop.mp4'
+          if (Test-Path $installerVideo) {
+            Copy-Item $installerVideo (Join-Path $stage 'media/upuaut-installer-loop.mp4') -Force
+          } else {
+            Write-Warning "No installer video at $installerVideo; setup will use its dark and gold fallback canvas."
+          }
+          $archive = "artifacts/Upuaut-Setup-win-x64-v$env:UPUAUT_VERSION.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal -Force
+          "UPUAUT_ARCHIVE=$archive" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Upuaut v${{ env.UPUAUT_VERSION }}
+          body_path: CHANGELOG.md
+          generate_release_notes: true
+          files: ${{ env.UPUAUT_ARCHIVE }}
+
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Upuaut-Setup-win-x64-v${{ env.UPUAUT_VERSION }}
+          path: ${{ env.UPUAUT_ARCHIVE }}
+          if-no-files-found: error

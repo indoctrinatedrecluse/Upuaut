@@ -15,15 +15,23 @@
     <!-- Top Scout Control & Adapter Header -->
     <div class="scout-header">
         <div class="scout-title-block">
+            <div class="scout-eyebrow"><span class="scout-eyebrow-rule"></span> UPUAUT // VANGUARD NETWORK SURVEILLANCE</div>
             <h1 class="header-main-title">
                 <span class="gold-accent">🐺</span> The Scout
             </h1>
             <span class="header-sub-title">
-                On-Demand Network Packet Sniffing with Real-Time Windows Process ID Attribution
+                Open the way through the wire. Observe traffic, decode its path, identify its bearer.
             </span>
         </div>
 
         <div class="scout-actions-bar">
+            <div class="filter-group">
+                <span class="filter-label">Capture:</span>
+                <select class="upuaut-select" @bind="_captureMode" @bind:after="OnCaptureModeChanged" disabled="@_isCapturing">
+                    <option value="RawIpv4">Native IPv4 (no driver)</option>
+                    <option value="Ethernet">Ethernet frames (Npcap)</option>
+                </select>
+            </div>
             <!-- Adapter Selector -->
             <div class="filter-group">
                 <span class="filter-label">Adapter:</span>
@@ -61,8 +69,8 @@
             </FluentButton>
 
             <!-- Mode Badge -->
-            <div class="badge-chip gold-chip" title="Direct raw socket capture without third-party drivers">
-                <span>Native Raw Sockets (Elevated)</span>
+            <div class="badge-chip gold-chip" title="IPv4 raw sockets need elevation; Ethernet capture needs Npcap">
+                <span>@(_captureMode == PacketCaptureMode.RawIpv4 ? "IPv4 · Elevated" : "Ethernet · Npcap")</span>
             </div>
         </div>
     </div>
@@ -158,6 +166,10 @@
     <div class="scout-workspace">
         <!-- Left: Live Frame Stream -->
         <div class="packet-list-pane">
+            <div class="scout-pane-heading">
+                <div><span class="scout-pane-glyph">𓆣</span><div><strong>WIRE TAPE</strong><small>LIVE FRAME STREAM · MOST RECENT FIRST</small></div></div>
+                <span class="scout-stream-state @(_isCapturing ? "is-live" : "")"><i></i>@(_isCapturing ? "SCOUTING" : "ON WATCH")</span>
+            </div>
             <div class="table-container">
                 <table class="upuaut-table">
                     <thead>
@@ -178,7 +190,8 @@
                             <tr>
                                 <td colspan="8" class="empty-state">
                                     <div class="empty-state-content">
-                                        <FluentIcon Value="@(new Icons.Regular.Size20.Radar())" />
+                                        <div class="scout-radar" aria-hidden="true"><span></span><b>𓃢</b></div>
+                                        <strong>@(_isCapturing ? "Listening at the threshold" : "The path is quiet")</strong>
                                         <span>@(_isCapturing ? "Waiting for matching packets on wire..." : "Capture in standby. Click 'Start Capture' above to sniff live packets.")</span>
                                     </div>
                                 </td>
@@ -227,6 +240,10 @@
 
         <!-- Right: Packet Details & Hex Viewer -->
         <div class="packet-inspector-pane">
+            <div class="scout-pane-heading inspector-pane-heading">
+                <div><span class="scout-pane-glyph">𓂀</span><div><strong>SEER’S LENS</strong><small>FRAME INSPECTION &amp; ATTRIBUTION</small></div></div>
+                <span class="scout-inspector-seal">𓋹</span>
+            </div>
             @if (_selectedFrame != null)
             {
                 <div class="inspector-card">
@@ -266,6 +283,10 @@
                                     <span class="tech-val">@(_selectedFrame.InterfaceName ?? "Default")</span>
                                 </div>
                                 <div class="tech-item">
+                                    <span class="tech-key">CAPTURE LAYER</span>
+                                    <span class="tech-val">@_selectedFrame.CaptureLayer</span>
+                                </div>
+                                <div class="tech-item">
                                     <span class="tech-key">TIMESTAMP</span>
                                     <span class="tech-val mono-text">@_selectedFrame.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff")</span>
                                 </div>
@@ -275,6 +296,10 @@
                         <!-- Network 4-Tuple -->
                         <div class="section-block">
                             <h4 class="section-title">Network Socket Coordinates</h4>
+                            @if (_selectedFrame.SourceMac is not null || _selectedFrame.DestinationMac is not null)
+                            {
+                                <div class="mono-text" style="margin-bottom: 0.75rem;">@_selectedFrame.SourceMac &rarr; @_selectedFrame.DestinationMac · EtherType 0x@_selectedFrame.EtherType?.ToString("X4")</div>
+                            }
                             <div class="socket-grid">
                                 <div class="socket-box">
                                     <span class="tech-key">SOURCE</span>
@@ -323,6 +348,7 @@
     private string _selectedDeviceId = string.Empty;
     private bool _isCapturing;
     private bool _autoScroll = true;
+    private PacketCaptureMode _captureMode = PacketCaptureMode.RawIpv4;
 
     private List<PacketFrame> _recentFrames = new();
     private List<PacketFrame> _filteredFrames = new();
@@ -337,11 +363,7 @@
 
     protected override void OnInitialized()
     {
-        _devices = ScoutService.GetAvailableDevices();
-        if (_devices.Count > 0)
-        {
-            _selectedDeviceId = _devices[0].Id;
-        }
+        RefreshDevices();
 
         ScoutService.PacketReceived += OnPacketReceived;
 
@@ -356,13 +378,21 @@
         }, null, 250, 250);
     }
 
+    private void OnCaptureModeChanged() => RefreshDevices();
+
+    private void RefreshDevices()
+    {
+        _devices = ScoutService.GetAvailableDevices(_captureMode);
+        _selectedDeviceId = _devices.FirstOrDefault()?.Id ?? string.Empty;
+    }
+
     private async Task StartCaptureAsync()
     {
         if (string.IsNullOrWhiteSpace(_selectedDeviceId)) return;
 
         try
         {
-            await ScoutService.StartCaptureAsync(_selectedDeviceId);
+            await ScoutService.StartCaptureAsync(_selectedDeviceId, _captureMode);
             _isCapturing = true;
             RefreshUI();
         }

@@ -18,6 +18,12 @@
         </div>
     </div>
 
+    <script>
+        window.upuautMotion = {
+            getEnabled: () => localStorage.getItem("upuaut.motionBackground") !== "false",
+            setEnabled: enabled => localStorage.setItem("upuaut.motionBackground", enabled ? "true" : "false")
+        };
+    </script>
     <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>
