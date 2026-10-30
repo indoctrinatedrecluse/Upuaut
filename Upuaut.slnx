@@ -5,6 +5,7 @@
     <Project Path="src/Upuaut.Core/Upuaut.Core.csproj" />
     <Project Path="src/Upuaut.Scout/Upuaut.Scout.csproj" />
     <Project Path="src/Upuaut.UI/Upuaut.UI.csproj" />
+    <Project Path="src/Upuaut.LogLab/Upuaut.LogLab.csproj" />
     <Project Path="src/Upuaut.Weigher/Upuaut.Weigher.csproj" />
   </Folder>
   <Folder Name="/tests/">

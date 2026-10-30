@@ -10,6 +10,22 @@ Upuaut is a Windows desktop toolkit for investigating Windows event logs, inspec
 
 Event and packet explanations expose their category, readable headline, tags, evidence, and suggested checks. These are deterministic rules and investigative guidance, not automated root-cause diagnoses.
 
+## Planned Features
+
+### General-purpose Log Lab — Phase 1 preview
+
+Phase 1 adds a preview workspace for importing and investigating logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked.
+
+The planned workspace includes:
+
+- **Phase 1 delivered — parsing and evidence extraction:** detect plain text, JSON, JSON Lines, XML, and CSV; extract timestamps, severity, event/message text, components, processes, error codes, identifiers, and other fields when present; retain source lines and explain the extraction basis. Imports are currently limited to 32 MiB and 200,000 entries.
+- **Phase 1 delivered — investigation workbench:** search parsed entries, filter by severity, inspect normalized fields and raw entry text, view the complete original source, and pretty-format JSON/XML in an editable view without changing the imported source.
+- **Human-readable analysis:** group findings into useful scenario categories such as success, warning, failure, error, crash, installation, service, security, and maintenance; provide readable headlines, tags, explanations, and recommended investigative checks with evidence and match-strength context.
+- **Next phases — deeper analysis and reporting:** classify findings into scenario categories, add evidence-grounded explanations and recommended checks, compare event sequences, and generate shareable reports.
+- **Extensibility:** add and preview parser profiles and format-specific rules so the engine can improve as new log dialects are encountered.
+
+Parsing remains best-effort: unfamiliar or incomplete logs may only support partial extraction. Phase 1 does not yet provide scenario classification, custom parser profiles, or report generation; those are planned follow-on work.
+
 ## Requirements and limitations
 
 - Windows x64 and the Microsoft WebView2 Runtime.

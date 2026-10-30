@@ -8,6 +8,7 @@ using Microsoft.FluentUI.AspNetCore.Components;
 using Upuaut.Chronicles.Services;
 using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
+using Upuaut.LogLab;
 using Upuaut.Scout.Services;
 
 namespace Upuaut.App;
@@ -105,6 +106,7 @@ public partial class MainWindow : Window
             services.AddSingleton<ICaptureEngine, ScoutManager>();
             services.AddSingleton<ScoutManager>(sp => (ScoutManager)sp.GetRequiredService<ICaptureEngine>());
             services.AddSingleton<Upuaut.UI.Shared.InvestigationContext>();
+            services.AddSingleton<ILogParsingEngine, LogParsingEngine>();
 
             blazorWebView.Services = services.BuildServiceProvider();
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");

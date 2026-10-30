@@ -4,7 +4,9 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+
+- **Log Lab Phase 1 preview:** new log import and investigation workspace with format detection for plain text, JSON, JSON Lines, XML, and CSV; normalized entry fields and source-line provenance; severity filtering and search; raw-source inspection; and non-destructive JSON/XML pretty formatting. Imports are bounded to 32 MiB and 200,000 entries.
 
 ## [0.2.0] - 2026-10-30
 

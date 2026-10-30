@@ -25,6 +25,7 @@
     <ProjectReference Include="..\Upuaut.Chronicles\Upuaut.Chronicles.csproj" />
     <ProjectReference Include="..\Upuaut.Scout\Upuaut.Scout.csproj" />
     <ProjectReference Include="..\Upuaut.Weigher\Upuaut.Weigher.csproj" />
+    <ProjectReference Include="..\Upuaut.LogLab\Upuaut.LogLab.csproj" />
     <ProjectReference Include="..\Upuaut.UI\Upuaut.UI.csproj" />
   </ItemGroup>
 

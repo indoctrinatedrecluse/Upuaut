@@ -38,6 +38,7 @@
                 <button class="cat-chip @(_selectedCategory == "getting-started" ? "active" : "")" @onclick='@(() => _selectedCategory = "getting-started")'>Getting Started</button>
                 <button class="cat-chip @(_selectedCategory == "arch" ? "active" : "")" @onclick='@(() => _selectedCategory = "arch")'>Architecture &amp; .NET 10</button>
                 <button class="cat-chip @(_selectedCategory == "chronicles" ? "active" : "")" @onclick='@(() => _selectedCategory = "chronicles")'>The Duat Chronicles</button>
+                <button class="cat-chip @(_selectedCategory == "log-lab" ? "active" : "")" @onclick='@(() => _selectedCategory = "log-lab")'>Log Lab</button>
                 <button class="cat-chip @(_selectedCategory == "scout" ? "active" : "")" @onclick='@(() => _selectedCategory = "scout")'>The Scout (Packet Capture)</button>
                 <button class="cat-chip @(_selectedCategory == "diagnostics" ? "active" : "")" @onclick='@(() => _selectedCategory = "diagnostics")'>Crash Reporter &amp; Logs</button>
                 <button class="cat-chip @(_selectedCategory == "vs2026" ? "active" : "")" @onclick='@(() => _selectedCategory = "vs2026")'>Development Guide</button>
@@ -172,6 +173,28 @@
                 <p>The Scales route places recent warning/error events beside packets already in Scout's buffer. Its percentage is only normalized time proximity within ±2.5 seconds, not causal confidence. Notes and the full event/packet matches can be saved as a case JSON or CSV.</p>
             ",
             RawText: "getting started user guide dashboard Chronicles event logs query severity provider event ID saved investigation JSON CSV preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap capture display filter IPv6 PCAPNG TCP follow stream conversation raw bytes shared time keyboard shortcuts Triage correlation preview notes temporal proximity"
+        ),
+        new(
+            Id: "general-purpose-log-lab",
+            Category: "log-lab",
+            CategoryName: "General-purpose Log Lab",
+            Title: "Import and inspect logs in Log Lab",
+            Summary: "Use the Phase 1 preview to import text and structured logs, search entries, inspect extracted fields, and format a working copy of JSON or XML.",
+            Icon: "⌕",
+            HtmlContent: @"
+                <p>Open <strong>Log Lab (Preview)</strong> from the navigation and import a log file. Phase 1 recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
+                <h4>Search and inspect</h4>
+                <ol>
+                    <li>Search across entry messages, raw lines, and extracted fields. Use the severity selector to narrow the list.</li>
+                    <li>Select an entry to see its source line or line range, normalized fields, and a short explanation of what the parser recognized.</li>
+                    <li>Choose <strong>Full Source</strong> to review the complete imported text. Select an entry again or choose <strong>Selected Entry</strong> to return to its raw content.</li>
+                </ol>
+                <h4>Format without changing the import</h4>
+                <p>The editor is a working view. Format JSON or XML to make it easier to read; use <strong>Reset Editor</strong> to restore the selected entry or original source. Formatting never changes the imported source used by the parser.</p>
+                <h4>Interpretation limits</h4>
+                <p>Extraction is best-effort and format detection can be uncertain. Review parser notes and compare fields with the raw source before drawing conclusions. Phase 1 does not yet classify scenarios, create reports, or support custom parser profiles. Those capabilities are planned for later phases.</p>
+            ",
+            RawText: "Log Lab general purpose log parsing preview import text plain text JSON JSONL NDJSON XML CSV source line provenance severity search fields raw editor full source pretty format JSON XML reset 32 MiB 200000 entries best effort parser notes limitations reports custom profiles"
         ),
         new(
             Id: "in-process-blazor-hybrid",

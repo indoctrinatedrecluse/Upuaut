@@ -1,0 +1,199 @@
+@page "/log-lab"
+@namespace Upuaut.UI.Pages
+@using Microsoft.Win32
+@using Upuaut.LogLab
+@using Upuaut.LogLab.Models
+@inject ILogParsingEngine ParsingEngine
+
+<PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
+
+<div class="log-lab-page">
+    <header class="log-lab-header">
+        <div>
+            <div class="log-lab-eyebrow"><span></span> UPUAUT // MULTIFORMAT LOG ANALYSIS</div>
+            <h1>General-purpose <span>Log Lab</span></h1>
+            <p>Import a text log, inspect what the parser can recognize, and follow every finding back to its source line.</p>
+        </div>
+        <button class="log-lab-import" @onclick="ImportFile">IMPORT LOG FILE <span>↗</span></button>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="log-lab-status @(_isError ? "is-error" : "")" role="status">@_statusMessage</div>
+    }
+
+    @if (_document is null)
+    {
+        <section class="log-lab-empty">
+            <div class="log-lab-empty-glyph">⌘</div>
+            <span class="log-lab-eyebrow">PHASE 1 // SOURCE INGESTION</span>
+            <h2>Bring a log into the Lab</h2>
+            <p>Import plain text, JSON, JSON Lines, XML, or CSV. Upuaut keeps the original text intact and builds a separate, best-effort view of entries and fields.</p>
+            <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML</span><span>CSV</span><span>UP TO 32 MB</span></div>
+            <button class="log-lab-import secondary" @onclick="ImportFile">SELECT A FILE</button>
+        </section>
+    }
+    else
+    {
+        <section class="log-lab-overview">
+            <div class="log-lab-filemark">LOG</div>
+            <div class="log-lab-filename"><strong>@_document.FileName</strong><span>@_document.SourcePath</span></div>
+            <div class="log-lab-stat"><small>FORMAT</small><strong>@FormatLabel(_document.Format)</strong></div>
+            <div class="log-lab-stat"><small>ENTRIES</small><strong>@_document.Entries.Count.ToString("N0")</strong></div>
+            <div class="log-lab-stat"><small>ENCODING</small><strong>@_document.DetectedEncoding</strong></div>
+            <div class="log-lab-stat"><small>SIZE</small><strong>@FormatBytes(_document.ByteLength)</strong></div>
+            <button class="log-lab-clear" title="Close imported log" @onclick="CloseDocument">×</button>
+        </section>
+
+        @if (_document.Warnings.Count > 0)
+        {
+            <section class="log-lab-warnings"><strong>Parser notes</strong><ul>@foreach (var warning in _document.Warnings.Take(8)) { <li>@warning</li> }</ul></section>
+        }
+
+        <div class="log-lab-toolbar">
+            <label class="log-lab-search"><span>⌕</span><input @bind="_searchQuery" @bind:event="oninput" placeholder="Search entries, fields, error codes, messages…" /></label>
+            <select class="log-lab-select" @bind="_severityFilter">
+                <option value="">All severities</option>
+                @foreach (var severity in Enum.GetValues<LogEntrySeverity>().Where(value => value != LogEntrySeverity.Unknown)) { <option value="@severity">@severity</option> }
+            </select>
+            <button class="log-lab-tool-btn" @onclick="FormatJson" title="Pretty-format the editor as JSON">FORMAT JSON</button>
+            <button class="log-lab-tool-btn" @onclick="FormatXml" title="Pretty-format the editor as XML">FORMAT XML</button>
+            <button class="log-lab-tool-btn" @onclick="ResetEditor">RESET EDITOR</button>
+        </div>
+
+        <div class="log-lab-workspace">
+            <section class="log-lab-entry-panel">
+                <div class="log-lab-panel-head"><div><span>PARSED ENTRIES</span><small>@FilteredEntries.Count.ToString("N0") shown of @_document.Entries.Count.ToString("N0")</small></div><span class="log-lab-count">@_document.Entries.Count.ToString("N0")</span></div>
+                @if (FilteredEntries.Count == 0)
+                {
+                    <div class="log-lab-no-results">No entries match the current search.</div>
+                }
+                else
+                {
+                    <div class="log-lab-entry-list">
+                        @foreach (var entry in FilteredEntries.Take(_entryLimit))
+                        {
+                            <button class="log-lab-entry @(_selectedEntry?.Index == entry.Index ? "selected" : "")" @onclick="() => SelectEntry(entry)">
+                                <span class="log-lab-entry-top"><span class="severity-mark @SeverityClass(entry.Severity)"></span><strong>@(entry.Severity == LogEntrySeverity.Unknown ? "UNCLASSIFIED" : entry.Severity.ToString().ToUpperInvariant())</strong><small>LINE @entry.SourceLine</small></span>
+                                <span class="log-lab-entry-message">@entry.Message</span>
+                                <span class="log-lab-entry-meta">@(entry.Timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "No timestamp decoded")@(string.IsNullOrWhiteSpace(entry.Source) ? "" : $" · {entry.Source}")</span>
+                            </button>
+                        }
+                    </div>
+                    @if (FilteredEntries.Count > _entryLimit) { <button class="log-lab-more" @onclick="ShowMore">SHOW NEXT @Math.Min(500, FilteredEntries.Count - _entryLimit) ENTRIES</button> }
+                }
+            </section>
+
+            <section class="log-lab-editor-panel">
+                <div class="log-lab-panel-head"><div><span>RAW SOURCE EDITOR</span><small>@(_showWholeDocument ? "Full imported source · edits are local and do not alter the imported document" : _selectedEntry is null ? "Select an entry to inspect its source" : $"Entry {_selectedEntry.Index} · source line {_selectedEntry.SourceLine}")</small></div><button class="log-lab-text-btn" @onclick="ToggleWholeDocument">@(_showWholeDocument ? "SELECTED ENTRY" : "FULL SOURCE")</button></div>
+                <textarea class="log-lab-editor" spellcheck="false" @bind="_editorText" placeholder="Select a parsed entry or open the full imported source…" aria-label="Log source editor"></textarea>
+                <div class="log-lab-editor-foot"><span>Imported source remains unchanged. Formatting changes this working editor only.</span><span>@_editorText.Length.ToString("N0") CHARS</span></div>
+            </section>
+
+            <section class="log-lab-detail-panel">
+                <div class="log-lab-panel-head"><div><span>FIELD INSPECTOR</span><small>@(_selectedEntry is null ? "No entry selected" : $"Parser basis · line {_selectedEntry.SourceLine}")</small></div><span class="log-lab-orbit">✦</span></div>
+                @if (_selectedEntry is { } selected)
+                {
+                    <div class="log-lab-detail-scroll">
+                        <div class="log-lab-headline"><span class="severity-chip @SeverityClass(selected.Severity)">@selected.Severity.ToString().ToUpperInvariant()</span><h2>@selected.Message</h2></div>
+                        <div class="log-lab-evidence-callout"><strong>HOW THIS WAS READ</strong><p>@selected.InterpretationBasis</p></div>
+                        <div class="log-lab-field-grid">
+                            @if (selected.Timestamp is { } timestamp) { <div class="log-lab-field"><small>DECODED TIME (UTC)</small><strong>@timestamp.ToUniversalTime().ToString("O")</strong></div> }
+                            @if (!string.IsNullOrWhiteSpace(selected.Source)) { <div class="log-lab-field"><small>RECORDED SOURCE</small><strong>@selected.Source</strong></div> }
+                            <div class="log-lab-field"><small>SOURCE RANGE</small><strong>Line @selected.SourceLine@(selected.SourceLineEnd > selected.SourceLine ? $"–{selected.SourceLineEnd}" : "")</strong></div>
+                        </div>
+                        @if (selected.Fields.Count > 0)
+                        {
+                            <div class="log-lab-fields-title">EXTRACTED FIELDS <span>@selected.Fields.Count</span></div>
+                            <dl class="log-lab-fields">@foreach (var (key, value) in selected.Fields) { <dt>@key</dt><dd>@value</dd> }</dl>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="log-lab-no-selection"><span>⌖</span><strong>Select an entry</strong><p>Parsed fields, source location, and the parser's reasoning will appear here.</p></div>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private LogDocument? _document;
+    private ParsedLogEntry? _selectedEntry;
+    private string _searchQuery = string.Empty;
+    private string _severityFilter = string.Empty;
+    private string _editorText = string.Empty;
+    private string _statusMessage = string.Empty;
+    private bool _isError;
+    private bool _showWholeDocument;
+    private int _entryLimit = 500;
+    private LogDocument? _filteredDocument;
+    private string? _filteredQuery;
+    private string? _filteredSeverity;
+    private List<ParsedLogEntry> _filteredEntries = new();
+
+    private List<ParsedLogEntry> FilteredEntries
+    {
+        get
+        {
+            if (_document is null) return new();
+            if (!ReferenceEquals(_filteredDocument, _document) || _filteredQuery != _searchQuery || _filteredSeverity != _severityFilter)
+            {
+                _filteredDocument = _document;
+                _filteredQuery = _searchQuery;
+                _filteredSeverity = _severityFilter;
+                _filteredEntries = ParsingEngine.Search(_document,
+                    new LogSearchOptions(_searchQuery, Enum.TryParse<LogEntrySeverity>(_severityFilter, out var level) ? level : null)).ToList();
+            }
+            return _filteredEntries;
+        }
+    }
+
+    private async Task ImportFile()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Import a log for analysis",
+            Filter = "Log and text files (*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv)|*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
+            _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
+            _selectedEntry = _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
+            _showWholeDocument = false; ResetEditor();
+            _statusMessage = $"Imported {_document.Entries.Count:N0} entries from {_document.FileName}. Original source is preserved.";
+        }
+        catch (Exception ex) { _statusMessage = $"Could not import this log: {ex.Message}"; _isError = true; }
+    }
+
+    private void SelectEntry(ParsedLogEntry entry)
+    {
+        _selectedEntry = entry; _showWholeDocument = false; _editorText = entry.RawText;
+    }
+
+    private void ToggleWholeDocument()
+    {
+        if (_document is null) return;
+        _showWholeDocument = !_showWholeDocument;
+        _editorText = _showWholeDocument ? _document.OriginalText : _selectedEntry?.RawText ?? string.Empty;
+    }
+
+    private void ResetEditor() => _editorText = _showWholeDocument ? _document?.OriginalText ?? string.Empty : _selectedEntry?.RawText ?? string.Empty;
+    private void FormatJson() => TryFormat(ParsingEngine.FormatJson, "JSON");
+    private void FormatXml() => TryFormat(ParsingEngine.FormatXml, "XML");
+    private void TryFormat(Func<string, string> formatter, string format)
+    {
+        try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
+        catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
+    }
+    private void CloseDocument() { _document = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; }
+    private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
+    private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", _ => format.ToString().ToUpperInvariant() };
+    private static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024d):0.#} MB" : $"{bytes / 1024d:0.#} KB";
+    private static string SeverityClass(LogEntrySeverity severity) => severity switch { LogEntrySeverity.Critical or LogEntrySeverity.Error => "is-error", LogEntrySeverity.Warning => "is-warning", LogEntrySeverity.Success => "is-success", LogEntrySeverity.Information => "is-info", _ => "is-unknown" };
+}
