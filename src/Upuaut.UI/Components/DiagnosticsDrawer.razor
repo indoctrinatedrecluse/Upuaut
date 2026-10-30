@@ -29,7 +29,7 @@
                     <span class="diag-env-val @(_isElevated ? "text-green" : "text-yellow")">
                         @(_isElevated ? "Administrator" : "Standard User")
                     </span>
-                    <span class="diag-env-sub">@(_isElevated ? "Full Security & ETW Access" : "Elevation Recommended")</span>
+                    <span class="diag-env-sub">@(_isElevated ? "Elevated · access still depends on channel and adapter" : "Some channels or capture modes may need elevation")</span>
                 </div>
 
                 <div class="diag-env-card">

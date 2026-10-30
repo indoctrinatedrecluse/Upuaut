@@ -30,16 +30,21 @@ public class LogExportService
     private static string GenerateCsv(IEnumerable<LogRecord> logs)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Timestamp,Level,EventID,Provider,Channel,ProcessID,TriageRating,Summary,Message");
+        sb.AppendLine("Timestamp,Level,EventID,Provider,Channel,ProcessID,TriageRating,Category,Headline,RuleMatchStrength,Summary,Message");
 
         foreach (var log in logs)
         {
-            var summary = EscapeCsv(log.Explanation?.Summary ?? string.Empty);
-            var msg = EscapeCsv(log.Message);
-            var provider = EscapeCsv(log.ProviderName);
-            var triage = log.Explanation?.TriageRating.ToString() ?? "Standard";
-
-            sb.AppendLine($"{log.Timestamp:O},{log.Level},{log.EventId},{provider},{log.Channel},{log.ProcessId},{triage},{summary},{msg}");
+            var explanation = log.Explanation;
+            var fields = new[]
+            {
+                log.Timestamp.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                log.Level.ToString(), log.EventId.ToString(System.Globalization.CultureInfo.InvariantCulture), log.ProviderName,
+                log.Channel, log.ProcessId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                explanation?.TriageRating.ToString() ?? "Standard", explanation?.Category ?? string.Empty,
+                explanation?.Headline ?? string.Empty, explanation?.RuleMatchStrength.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                explanation?.Summary ?? string.Empty, log.Message
+            };
+            sb.AppendLine(string.Join(",", fields.Select(EscapeCsv)));
         }
 
         return sb.ToString();
@@ -84,9 +89,19 @@ public class LogExportService
             foreach (var item in actionable)
             {
                 sb.AppendLine($"### ✦ [{item.Level}] Event {item.EventId} — {item.ProviderName}");
-                sb.AppendLine($"- **Timestamp:** `{item.Timestamp:yyyy-MM-dd HH:mm:ss.fff}`");
+                sb.AppendLine($"- **Timestamp (UTC):** `{item.Timestamp.ToUniversalTime():O}`");
                 sb.AppendLine($"- **Triage Rating:** `{item.Explanation?.TriageRating}`");
+                sb.AppendLine($"- **Category:** {item.Explanation?.Category}");
+                sb.AppendLine($"- **Headline:** {item.Explanation?.Headline}");
+                sb.AppendLine($"- **Rule Match Strength:** {item.Explanation?.RuleMatchStrength}% (rule match, not cause probability)");
+                sb.AppendLine($"- **Match Basis:** {item.Explanation?.MatchBasis}");
                 sb.AppendLine($"- **Plain English Summary:** {item.Explanation?.Summary}");
+                if (item.Explanation?.Evidence.Count > 0)
+                {
+                    sb.AppendLine("- **Evidence:**");
+                    foreach (var evidence in item.Explanation.Evidence)
+                        sb.AppendLine($"  - **{evidence.Label}:** {evidence.Value} — {evidence.Interpretation}");
+                }
 
                 if (!string.IsNullOrEmpty(item.Explanation?.DecodedStatusCode))
                 {
@@ -121,16 +136,17 @@ public class LogExportService
 
         // 3. Complete Event Log Listing
         sb.AppendLine("## 📜 Log Records Inventory");
-        sb.AppendLine("| Timestamp (UTC) | Severity | ID | Provider | Plain English Summary |");
-        sb.AppendLine("| :--- | :--- | :--- | :--- | :--- |");
+        sb.AppendLine("| Timestamp (UTC) | Severity | ID | Provider | Category | Headline |");
+        sb.AppendLine("| :--- | :--- | :--- | :--- | :--- | :--- |");
 
         foreach (var l in logList.Take(100))
         {
-            var summary = l.Explanation?.Summary ?? l.Message;
-            if (summary.Length > 80) summary = summary[..80] + "...";
-            summary = summary.Replace("|", "\\|");
+            var category = (l.Explanation?.Category ?? "Unclassified").Replace("|", "\\|");
+            var headline = l.Explanation?.Headline ?? l.Explanation?.Summary ?? l.Message;
+            if (headline.Length > 80) headline = headline[..80] + "...";
+            headline = headline.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
 
-            sb.AppendLine($"| `{l.Timestamp:HH:mm:ss.fff}` | {l.Level} | {l.EventId} | `{l.ProviderName}` | {summary} |");
+            sb.AppendLine($"| `{l.Timestamp.ToUniversalTime():HH:mm:ss.fff}` | {l.Level} | {l.EventId} | `{l.ProviderName}` | {category} | {headline} |");
         }
 
         if (logList.Count > 100)
@@ -143,10 +159,8 @@ public class LogExportService
 
     private static string EscapeCsv(string value)
     {
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
-        {
-            return $"\"{value.Replace("\"", "\"\"")}\"";
-        }
-        return value;
+        var firstMeaningfulCharacter = value.TrimStart(' ', '\t', '\r', '\n').FirstOrDefault();
+        if (firstMeaningfulCharacter is '=' or '+' or '-' or '@') value = "'" + value;
+        return $"\"{value.Replace("\"", "\"\"")}\"";
     }
 }

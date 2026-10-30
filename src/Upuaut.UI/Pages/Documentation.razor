@@ -54,7 +54,7 @@
                 <div class="no-docs-results">
                     <span class="empty-icon">📜</span>
                     <h3>No matching documentation found</h3>
-                    <p>Try searching with another keyword like "sockets", "crash", "ETW", or clear the search query.</p>
+                    <p>Try searching with another keyword like "sockets" or "crash", or clear the search query.</p>
                 </div>
             }
 
@@ -92,7 +92,7 @@
                 }
             </nav>
             <div class="toc-footer">
-                <span class="toc-note">Upuaut User &amp; Developer Guide v0.1.0</span>
+                <span class="toc-note">Upuaut User &amp; Developer Guide v@AppMetadata.DisplayVersion</span>
                 <span class="toc-note">Author: Abhishek Mitra</span>
             </div>
         </aside>
@@ -178,20 +178,20 @@
             Category: "arch",
             CategoryName: "Architecture & Runtime",
             Title: "In-Process Blazor Hybrid Architecture",
-            Summary: "Why Upuaut executes the frontend and backend in a unified in-process model, eliminating IPC overhead and unlocking raw Win32 pointer speed.",
+            Summary: "How the WPF host, Blazor Hybrid interface, and Windows diagnostic services fit together.",
             Icon: "⚡",
             HtmlContent: @"
-                <p>Traditional diagnostic tools and web-wrapper desktop apps (such as Electron or Tauri) segregate the user interface and native OS services across separate processes communicating over JSON-RPC or WebSocket IPC channels. For real-time forensic triage—where the OS may generate thousands of packet frames and ETW log entries per second—this architecture incurs severe serialization latency and memory copy penalties.</p>
+                <p>Upuaut is a Windows desktop application with a WPF host and a Blazor Hybrid interface rendered in WebView2. The interface calls the application's .NET services in-process, while Windows event logs and packet capture use the operating-system APIs available to the current capture mode.</p>
                 
                 <h4>The Upuaut In-Process Philosophy</h4>
-                <p>Upuaut runs <strong>in-process</strong> using <strong>Microsoft Blazor Hybrid with WPF and Microsoft WebView2</strong> on <strong>.NET 10 LTS</strong>. The C# business logic, native Win32 sockets, and the Blazor WebAssembly/HTML rendering loop share the same managed heap and address space:</p>
+                <p>Upuaut runs <strong>Microsoft Blazor Hybrid with WPF and WebView2</strong> on <strong>.NET 10</strong>. Razor components execute in the .NET desktop process; WebView2 renders the UI. This is not Blazor WebAssembly.</p>
                 <ul>
-                    <li><strong>Direct Memory Pointers:</strong> Raw packet byte arrays captured via Win32 sockets are stored in zero-allocation ring buffers and directly sliced for UI hex-dump inspection without crossing process boundaries.</li>
-                    <li><strong>Hardware Accelerated Rendering:</strong> WebView2 utilizes the system Chromium engine backed by Direct3D hardware acceleration for fluid 120 FPS data grid scrolling.</li>
-                    <li><strong>Direct Win32 API Interop:</strong> Upuaut calls <code>iphlpapi.dll</code>, <code>advapi32.dll</code>, and <code>wevtapi.dll</code> directly via P/Invoke with zero proxy services or inter-process daemons.</li>
+                    <li><strong>Native service access:</strong> Capture, event-log queries, and process attribution use .NET services and Windows APIs; permissions and selected capture backend determine what data is available.</li>
+                    <li><strong>Bounded capture memory:</strong> Scout keeps a bounded in-memory frame buffer, reports when older frames are evicted, and lets you save selected frames to PCAPNG.</li>
+                    <li><strong>Feature modules:</strong> UI components present results, while Core, Chronicles, Scout, and Weigher contain shared models and feature logic.</li>
                 </ul>
             ",
-            RawText: "In-Process Blazor Hybrid Architecture WPF WebView2 .NET 10 LTS Win32 PInvoke iphlpapi advapi32 zero-allocation ring buffer"
+            RawText: "Blazor Hybrid Architecture WPF WebView2 .NET 10 Windows APIs bounded capture buffer Core Chronicles Scout Weigher"
         ),
 
         new(
@@ -207,7 +207,7 @@
                 <h4>1. Optimized XPath Queries</h4>
                 <p>Instead of reading logs sequentially, Upuaut uses compiled XPath expressions evaluated directly by the Windows Eventing kernel subsystem (<code>wevtapi.dll</code>):</p>
                 <pre class=""docs-code""><code>*[System[(Level=1 or Level=2) and TimeCreated[timediff(@SystemTime) &lt;= 86400000]]]</code></pre>
-                <p>This allows scanning 50,000+ entries in under 200 milliseconds, fetching only Critical and Error events from the last 24 hours.</p>
+                <p>The service applies supported channel, severity, time, provider, and event ID filters before returning records. Query time depends on the selected channel, event volume, machine, and Windows Event Log service.</p>
 
                 <h4>2. Quick-Triage Presets</h4>
                 <p>One-click filters isolate the most urgent OS failures:</p>
@@ -219,8 +219,8 @@
                     <li><strong>🔐 Security:</strong> Tracks Event 4625 (Failed Logons) with Logon Type 2/3/10 and Sub-Status codes.</li>
                 </ul>
 
-                <h4>3. The Oracle Explanation &amp; 1-Click Remediation</h4>
-                <p>Every identified error is paired with a plain-English diagnosis, root cause hypothesis, and an immediate PowerShell command (such as DISM, SFC, or Netsh) ready to copy and execute.</p>
+                <h4>3. Evidence-based explanations</h4>
+                <p>Where a known event pattern matches, Chronicles provides a readable category and headline, the fields used as evidence, possible explanations, and investigation steps. Cause descriptions are hypotheses; a matched rule is not a probability. Commands are shown only when the event provides enough context to make a specific diagnostic command appropriate.</p>
 
                 <h4>4. Structured queries, presets &amp; cases</h4>
                 <p>Use Event ID, provider, severity, channel, time range (including a custom start/end), and free text together. Save a named filter preset in this Windows user profile for repeated queries. Save an investigation JSON case to preserve the filter and displayed event records; load it later to continue offline review. Filtered records can be exported as JSON or CSV.</p>
@@ -234,7 +234,7 @@
             Category: "scout",
             CategoryName: "The Scout",
             Title: "The Scout: Driverless Packet Capture & Process Attribution",
-            Summary: "Native IPv4 raw socket capture plus optional Npcap Ethernet capture, protocol filtering, packet inspection, and best-effort process attribution.",
+            Summary: "Native IPv4 raw socket capture plus optional Npcap Ethernet capture, protocol decoding, packet inspection, and best-effort process attribution.",
             Icon: "📡",
             HtmlContent: @"
                 <p>Scout provides two capture modes. Native IPv4 uses Windows raw sockets without an added capture driver. Ethernet mode uses Npcap to capture link-layer frames.</p>
@@ -259,7 +259,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
 
                 <h4>4. Filters, conversations &amp; packet inspection</h4>
                 <p>Capture filters are user-space predicates applied before buffering; they do not reduce packets delivered by the capture backend. Display filters support common fields joined with <code>&amp;&amp;</code>: <code>ip.src == 10.0.0.5</code>, <code>tcp.port == 443</code>, <code>udp.dstport == 53</code>, <code>dns.qry.name contains example</code>, <code>tls</code>, and <code>process contains chrome</code>. Unsupported syntax is reported inline.</p>
-                <p>The bounded live ring buffer retains 15,000 frames and reports FIFO overwrites, user-space filtered frames, parser rejects, and socket errors. Conversations group the filtered packets by endpoint pair. TCP Follow orders segments by sequence number, trims overlaps, and marks sequence gaps; it cannot restore packets that were never captured. TLS bytes remain encrypted.</p>
+                <p>The bounded live ring buffer retains up to 15,000 frames and reports FIFO overwrites, user-space filtered frames, parser rejects, and socket errors. Conversations group packets by endpoint pair. TCP Follow orders segments by sequence number, trims overlaps, and marks sequence gaps; it cannot restore packets that were never captured. The inspector decodes bounded DNS question/answer fields, selected HTTP metadata, and TLS ClientHello server names when those fields are present in a captured segment. Query strings and credential headers are omitted from HTTP evidence. TLS application data remains encrypted, and these decoders do not reassemble split application messages.</p>
                 <p>Open and save PCAPNG captures using Ethernet or raw IP link types. Imports accept IPv4/IPv6 raw packets and Ethernet, and are limited to 250,000 frames. The packet inspector shows decoded fields and full frame bytes.</p>
             ",
             RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless Ethernet Npcap IPv4 IPv6 ARP ICMPv6 TCP UDP DNS TLS filters capture display PCAPNG pcap follow stream conversation ring buffer IP Helper best effort PID attribution"
@@ -276,7 +276,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                 <p>Upuaut is designed with industrial-grade resilience. Diagnostic and forensic crash data are recorded continuously so that any failure can be analyzed post-mortem.</p>
 
                 <h4>1. Multi-Threaded Crash Hooks</h4>
-                <p>Upuaut traps unhandled exceptions across three critical lifecycle layers in <code>App.xaml.cs</code>:</p>
+                <p>Upuaut records crash details and recent diagnostic breadcrumbs when an exception reaches its configured crash handlers:</p>
                 <ul>
                     <li><code>WpfApp.DispatcherUnhandledException</code>: Traps UI thread faults without tearing down the native window.</li>
                     <li><code>AppDomain.CurrentDomain.UnhandledException</code>: Catches worker thread and background task exceptions.</li>
@@ -288,7 +288,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                 <ul>
                     <li><strong>Machine &amp; OS Telemetry:</strong> Windows Build, .NET runtime version, CPU architecture, elevation status, and physical RAM footprint.</li>
                     <li><strong>Exception Stack Trace:</strong> Full inner exception chain with source file line numbers.</li>
-                    <li><strong>Historical Breadcrumbs:</strong> The last 250 in-memory diagnostic events leading up to the exact millisecond of failure.</li>
+                    <li><strong>Recent Breadcrumbs:</strong> Up to the last 50 in-memory diagnostic events available when the report is created.</li>
                 </ul>
 
                 <h4>3. Daily Rolling Logs</h4>
@@ -327,9 +327,9 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                 </ul>
 
                 <h4>3. Code Standards &amp; Workload Manifest</h4>
-                <p>The repository includes <code>.editorconfig</code> enforcing C# 13 conventions (file-scoped namespaces, nullable reference types, expression-bodied members) and <code>.vsconfig</code> declaring the required Visual Studio workloads (<code>Microsoft.VisualStudio.Workload.ManagedDesktop</code>, <code>Microsoft.VisualStudio.ComponentGroup.Wpf.Prerequisites</code>, and <code>Microsoft.NetCore.Component.SDK</code>).</p>
+                <p>The repository includes <code>.editorconfig</code> for consistent C# formatting and nullable reference types, plus <code>.vsconfig</code> declaring the required Visual Studio workloads (<code>Microsoft.VisualStudio.Workload.ManagedDesktop</code>, <code>Microsoft.VisualStudio.ComponentGroup.Wpf.Prerequisites</code>, and <code>Microsoft.NetCore.Component.SDK</code>).</p>
             ",
-            RawText: "Visual Studio 2026 Enterprise Edition .slnx sln launchSettings.json .editorconfig .vsconfig elevated debugging F5 C# 13"
+            RawText: "Visual Studio .slnx sln launchSettings.json .editorconfig .vsconfig elevated debugging F5 C# nullable formatting"
         ),
 
         new(

@@ -14,7 +14,7 @@
             <span class="gold-accent">✦</span> Opener of the Ways
         </h1>
         <p class="page-subtitle" style="color: var(--upuaut-text-muted); font-size: 0.95rem; margin-top: 0.5rem; max-width: 750px;">
-            Windows System Diagnostic &amp; Network Telemetry Console. Scout the kernel, monitor event channels, and trace traffic on-demand.
+            Windows event-log investigation, network packet inspection, and signal triage.
         </p>
     </div>
 
@@ -25,7 +25,7 @@
                 <FluentIcon Value="@(new Icons.Regular.Size20.DocumentBulletListMultiple())" />
             </div>
             <div class="diag-card-value">Ready</div>
-            <div class="diag-card-sub">Channels: System, Application, Security &amp; ETW</div>
+            <div class="diag-card-sub">Windows channels and offline .evtx files</div>
         </div>
 
         <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("scout"))' title="Click to view Packet Sniffer">
@@ -70,7 +70,7 @@
                 <span>🐺</span> The Scout — Live Packet Sniffer &amp; Process Attribution
             </h3>
             <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
-                Capture live network traffic with native Windows Raw Sockets (no Npcap required). Every TCP and UDP packet is attributed to its originating process name and PID via native IP Helper interop.
+                Capture IPv4 with native Windows Raw Sockets or Ethernet frames with Npcap. Process attribution is best effort and depends on a current local socket match.
             </p>
             <FluentButton Appearance="ButtonAppearance.Outline" OnClick='@(() => NavigateTo("scout"))'>
                 Deploy Scout

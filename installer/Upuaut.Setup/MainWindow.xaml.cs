@@ -18,7 +18,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _uninstallMode = uninstallMode;
         InstallPathBox.Text = uninstallMode ? AppContext.BaseDirectory : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Upuaut");
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.2.0";
         VersionLabel.Text = $"VERSION {version}";
         if (uninstallMode)
         {
@@ -268,7 +268,7 @@ public partial class MainWindow : Window
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\Upuaut");
         key.SetValue("DisplayName", "Upuaut — Opener of the Ways");
-        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0");
+        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.2.0");
         key.SetValue("Publisher", "Upuaut Project");
         key.SetValue("InstallLocation", target);
         key.SetValue("DisplayIcon", Path.Combine(target, "Upuaut.App.exe"));

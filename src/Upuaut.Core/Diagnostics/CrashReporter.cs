@@ -81,7 +81,7 @@ public static class CrashReporter
         var report = new CrashReport(
             ReportId: reportId,
             TimestampUtc: timestamp,
-            AppVersion: Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.1.0",
+            AppVersion: Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? AppMetadata.FallbackVersion,
             FrameworkDescription: RuntimeInformation.FrameworkDescription,
             OsDescription: RuntimeInformation.OSDescription,
             OsArchitecture: RuntimeInformation.OSArchitecture.ToString(),

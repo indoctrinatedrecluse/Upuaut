@@ -104,7 +104,7 @@
             </div>
         </div>
         <p class="duat-text">
-            In Egyptian cosmology, the <strong>Duat</strong> was the realm through which the Sun Barque of Ra journeyed during the twelve hours of the night. It was not merely a domain of shadows, but a crucible of trial, transformation, and order where chaotic forces (<em>Apep</em>) sought to disrupt cosmic equilibrium. In modern computing, the Windows Kernel, Event Tracing for Windows (ETW), and low-level network sockets are the contemporary Duat: constantly churning with thousands of unseen operations every millisecond. Upuaut is designed to stand on the prow of your system's solar boat, illuminating hidden bottlenecks and opening the way to forensic clarity.
+            In Egyptian cosmology, the <strong>Duat</strong> was the realm through which the Sun Barque of Ra journeyed during the twelve hours of the night. Upuaut borrows that wayfinder imagery for a practical Windows toolkit: review recorded system events, inspect network packets, and compare signals that occur near one another in time.
         </p>
     </div>
 </div>
@@ -157,7 +157,7 @@
             Mythology: "Ancient jackal and wolf deity of Asyut (Lycopolis). Upuaut was revered as the royal vanguard who trod the uncharted terrain before the pharaoh and guided the sun barque through the perils of the Duat. He was not a guardian of death, but the master of paths, clearing insurmountable barriers so life and knowledge could advance.",
             SubsystemName: "The Scout & Network Vanguard",
             SubsystemShortName: "The Scout",
-            SubsystemRole: "Drives native driverless raw socket packet capture (SIO_RCVALL) on Windows, binding socket traffic directly to owning processes via iphlpapi.dll without requiring external drivers.",
+            SubsystemRole: "Captures IPv4 through Windows raw sockets or Ethernet frames through optional Npcap, then decodes packet fields and attempts best-effort process attribution.",
             TechTags: new[] { "Raw Sockets", "SIO_RCVALL", "iphlpapi.dll", "PID Attribution", "Dissector" },
             ActionRoute: "scout",
             IsPrimary: true
@@ -174,8 +174,8 @@
             Mythology: "Ibis- and baboon-headed patron of wisdom, mathematics, writing, astronomy, and divine law. Thoth maintained the cosmic records of all deeds in the universe, ensuring that no action, light or shadow, passed unrecorded. In the trial of souls, it was Thoth who penned the final indelible truth.",
             SubsystemName: "The Duat Chronicles & Event Log Engine",
             SubsystemShortName: "Chronicles",
-            SubsystemRole: "High-performance streaming engine for Windows Event Logs (.evtx), EventLogReader, XPath optimization, and deep historical telemetry ingestion.",
-            TechTags: new[] { "EventLogReader", "XPath Optimization", ".evtx Streaming", "ETW Reader", "System Logs" },
+            SubsystemRole: "Queries Windows Event Logs and offline .evtx files with structured filters, decoded event fields, clustering, and investigation exports.",
+            TechTags: new[] { "EventLogReader", "Structured Filters", ".evtx Loading", "Event Explanations", "System Logs" },
             ActionRoute: "chronicles"
         ),
 
@@ -188,10 +188,10 @@
             Category: "balance",
             Epithet: "The Feather of Truth · Mistress of Cosmic Harmony",
             Mythology: "Personification of universal balance, justice, order, and morality. In the Hall of Two Truths, the heart (Ib) of the deceased was placed on the golden scales against Ma'at's white ostrich feather. If burdened by chaos (Isfet) or discord, the scales tilted.",
-            SubsystemName: "The Scales & Triage Scoring Engine",
+            SubsystemName: "The Scales & Correlation Preview",
             SubsystemShortName: "The Scales",
             SubsystemRole: "Early correlation preview: lines up recent System/Application events with packets already captured by Scout when they fall within 2.5 seconds. Temporal proximity is not proof of causation; weighted anomaly scoring is not yet available.",
-            TechTags: new[] { "Weighted Scoring", "Anomaly Detection", "Entropy Analysis", "Health Matrix" },
+            TechTags: new[] { "Event/Packet Timeline", "±2.5 Second Window", "Investigation Notes", "JSON/CSV Cases" },
             ActionRoute: "weigher"
         ),
 
@@ -222,8 +222,8 @@
             Mythology: "Goddess of architecture, surveying, sacred geometry, and library archives. Crowned with a seven-pointed star-flower, Seshat stretched the golden measuring cord (pedj-shes) to lay foundations for sacred temples and inscribed the history of dynasties upon the leaves of the celestial Ished tree.",
             SubsystemName: "Sacred Documentation & Developer Portal",
             SubsystemShortName: "Documentation",
-            SubsystemRole: "The comprehensive architectural knowledge base, developer guides for Visual Studio 2026, CLI manual, and step-by-step diagnostic workflows.",
-            TechTags: new[] { "Architecture Manifest", "VS 2026 Workloads", "CLI Reference", "Forensic Manual" },
+            SubsystemRole: "Searchable in-app help and developer documentation for the current workspaces and project structure.",
+            TechTags: new[] { "Searchable Help", "User Guide", "Project Structure", "Troubleshooting" },
             ActionRoute: "docs"
         ),
 
@@ -236,10 +236,10 @@
             Category: "balance",
             Epithet: "The Purifier · Pourer of Celestial Libations",
             Mythology: "Daughter of Anubis, depicted as a divine serpent or ostrich offering cool water. Kebechet poured the crisp, purifying waters of liberation over the arriving dead, rinsing away accumulated dust, spiritual grime, and trivial noise before they entered the presence of the gods.",
-            SubsystemName: "Benign Noise Suppression & DCOM Filtering",
+            SubsystemName: "Curated Benign Event Filtering",
             SubsystemShortName: "Noise Filter",
-            SubsystemRole: "Filters out benign Windows noise that floods standard Event Viewer—such as DCOM 10016 permission notifications and ESENT database checkpoints—to highlight genuine system faults.",
-            TechTags: new[] { "Noise Suppression", "DCOM 10016 Filter", "ESENT Muter", "Signal-to-Noise Ratio" },
+            SubsystemRole: "Lets investigators hide events classified by curated rules as benign and shows how many records were hidden.",
+            TechTags: new[] { "Curated Event Rules", "Benign Classification", "Optional Filtering", "Visible Counts" },
             ActionRoute: "chronicles"
         ),
 
@@ -252,10 +252,10 @@
             Category: "preservation",
             Epithet: "Restorer of the Broken · Lord of the Mysterious Rites",
             Mythology: "Archaic falcon deity of craftsmen, metallurgy, and resurrection in the deepest caverns of the underworld (Ro-stau). Seker was revered for reforging broken implements, transforming inert matter, and restoring vigor to collapsed structures.",
-            SubsystemName: "1-Click Forensic Remediation Engine",
+            SubsystemName: "Evidence-based Investigation Guidance",
             SubsystemShortName: "Remediation",
-            SubsystemRole: "Synthesizes automated DISM, SFC, Netsh, WinRM, and service recovery commands directly corresponding to identified event codes, allowing instant remediation.",
-            TechTags: new[] { "DISM HealthScan", "SFC Repair", "Netsh Flush", "SCM Recovery", "PowerShell Fixes" },
+            SubsystemRole: "Explains matched event patterns, shows the fields used as evidence, and suggests checks. Recommendations are investigative guidance, not automatic repairs.",
+            TechTags: new[] { "Scenario Categories", "Evidence Fields", "Rule Match Basis", "Recommended Checks" },
             ActionRoute: "chronicles"
         )
     };

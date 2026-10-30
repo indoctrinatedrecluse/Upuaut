@@ -539,7 +539,7 @@
                     <FluentIcon Value="@(new Icons.Regular.Size24.DocumentBulletListMultiple())" />
                     <span style="font-weight: 600; color: var(--upuaut-sand);">Select an Event to Consult the Oracle</span>
                     <span style="font-size: 0.8rem; color: var(--upuaut-text-dim); text-align: center; max-width: 280px;">
-                        Upuaut decodes status codes, maps known issues, and translates cryptic Windows errors into actionable root causes.
+                        Upuaut labels known event patterns, decodes available status codes, and shows evidence and investigation steps. A matched pattern does not prove a root cause.
                     </span>
                 </div>
             }
@@ -548,6 +548,12 @@
 </div>
 
 @code {
+    private const int LiveEventBufferLimit = 5000;
+    private const int PendingLiveEventLimit = 5000;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<LogRecord> _pendingLiveLogs = new();
+    private readonly CancellationTokenSource _liveFlushCancellation = new();
+    private int _pendingLiveEventCount;
+    private long _droppedPendingLiveEvents;
     private enum ViewMode { Stream, Clusters }
     private enum OracleTab { Overview, Properties, RawXml }
 
@@ -588,6 +594,7 @@
     {
         ChroniclesService.LogReceived += OnLiveLogReceived;
         ChroniclesService.StatusChanged += OnServiceStatusChanged;
+        _ = FlushLiveLogQueueAsync(_liveFlushCancellation.Token);
 
         _filter.TimeRange = Investigation.TimeRange;
         _customStart = Investigation.Start?.ToLocalTime();
@@ -642,6 +649,10 @@
             _allLogs = logs.ToList();
             ProcessLogs();
         }
+        catch (Exception ex)
+        {
+            _statusMessage = $"Could not load the event log file: {ex.Message}";
+        }
         finally
         {
             _isLoading = false;
@@ -652,6 +663,7 @@
     private async Task OnChannelChanged()
     {
         _loadedFile = null;
+        if (_isLiveStreaming) await RestartLiveStreamAsync();
         await TriggerQueryAsync();
     }
 
@@ -706,7 +718,7 @@
         await TriggerQueryAsync();
     }
 
-    private void ToggleLevel(LogSeverityLevel level)
+    private async Task ToggleLevel(LogSeverityLevel level)
     {
         if (_filter.Levels.Contains(level))
         {
@@ -721,6 +733,7 @@
         }
 
         ProcessLogs();
+        if (_isLiveStreaming) await RestartLiveStreamAsync();
     }
 
     private void OnProviderFacetChanged()
@@ -759,6 +772,10 @@
             _allLogs = logs.ToList();
             ProcessLogs();
         }
+        catch (Exception ex)
+        {
+            _statusMessage = $"The event log query could not complete: {ex.Message}";
+        }
         finally
         {
             _isLoading = false;
@@ -770,24 +787,61 @@
     {
         if (_isLiveStreaming)
         {
-            await ChroniclesService.StopLiveStreamAsync();
-            _isLiveStreaming = false;
+            try { await ChroniclesService.StopLiveStreamAsync(); _isLiveStreaming = false; }
+            catch (Exception ex) { _statusMessage = $"Could not stop the live event stream: {ex.Message}"; }
         }
-        else
+        else await RestartLiveStreamAsync();
+    }
+
+    private async Task RestartLiveStreamAsync()
+    {
+        try
         {
             await ChroniclesService.StartLiveStreamAsync(_filter.Channel, _filter.Levels);
             _isLiveStreaming = true;
+        }
+        catch (Exception ex)
+        {
+            _isLiveStreaming = false;
+            _statusMessage = $"Could not start the live event stream with the current channel and severity filters: {ex.Message}";
         }
     }
 
     private void OnLiveLogReceived(object? sender, LogRecord log)
     {
-        InvokeAsync(() =>
+        _pendingLiveLogs.Enqueue(log);
+        if (Interlocked.Increment(ref _pendingLiveEventCount) > PendingLiveEventLimit && _pendingLiveLogs.TryDequeue(out _))
         {
-            _allLogs.Insert(0, log);
-            ProcessLogs();
-            StateHasChanged();
-        });
+            Interlocked.Decrement(ref _pendingLiveEventCount);
+            Interlocked.Increment(ref _droppedPendingLiveEvents);
+        }
+    }
+
+    private async Task FlushLiveLogQueueAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(200, cancellationToken);
+                if (_pendingLiveLogs.IsEmpty) continue;
+                await InvokeAsync(() =>
+                {
+                    var batch = new List<LogRecord>();
+                    while (_pendingLiveLogs.TryDequeue(out var log)) { batch.Add(log); Interlocked.Decrement(ref _pendingLiveEventCount); }
+                    if (batch.Count == 0) return;
+                    batch.Reverse();
+                    _allLogs.InsertRange(0, batch);
+                    if (_allLogs.Count > LiveEventBufferLimit) _allLogs.RemoveRange(LiveEventBufferLimit, _allLogs.Count - LiveEventBufferLimit);
+                    var dropped = Interlocked.Exchange(ref _droppedPendingLiveEvents, 0);
+                    if (dropped > 0) _statusMessage = $"Live stream is active. The pending UI queue dropped {dropped:N0} oldest event(s) during a burst; the displayed event list is bounded to {LiveEventBufferLimit:N0} records.";
+                    ProcessLogs();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (InvalidOperationException) when (cancellationToken.IsCancellationRequested) { }
     }
 
     private void OnServiceStatusChanged(object? sender, string status)
@@ -890,9 +944,19 @@
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"### 🐛 [{_selectedLog.Level}] Event {_selectedLog.EventId} — {_selectedLog.ProviderName}");
-        sb.AppendLine($"- **Timestamp:** `{_selectedLog.Timestamp:yyyy-MM-dd HH:mm:ss.fff UTC}`");
+        sb.AppendLine($"- **Timestamp (UTC):** `{_selectedLog.Timestamp.ToUniversalTime():O}`");
         sb.AppendLine($"- **Triage Rating:** `{_selectedLog.Explanation?.TriageRating}`");
+        sb.AppendLine($"- **Category:** {_selectedLog.Explanation?.Category}");
+        sb.AppendLine($"- **Headline:** {_selectedLog.Explanation?.Headline}");
+        sb.AppendLine($"- **Rule Match Strength:** {_selectedLog.Explanation?.RuleMatchStrength}% (not cause probability)");
+        sb.AppendLine($"- **Match Basis:** {_selectedLog.Explanation?.MatchBasis}");
         sb.AppendLine($"- **Oracle Summary:** {_selectedLog.Explanation?.Summary}");
+        if (_selectedLog.Explanation?.Tags.Count > 0) sb.AppendLine($"- **Tags:** {string.Join(", ", _selectedLog.Explanation.Tags)}");
+        if (_selectedLog.Explanation?.Evidence.Count > 0)
+        {
+            sb.AppendLine("\n**Evidence:**");
+            foreach (var item in _selectedLog.Explanation.Evidence) sb.AppendLine($"- **{item.Label}:** {item.Value} — {item.Interpretation}");
+        }
 
         if (!string.IsNullOrEmpty(_selectedLog.Explanation?.Subsystem))
         {
@@ -1088,9 +1152,12 @@
     {
         ChroniclesService.LogReceived -= OnLiveLogReceived;
         ChroniclesService.StatusChanged -= OnServiceStatusChanged;
+        _liveFlushCancellation.Cancel();
         if (_isLiveStreaming)
         {
-            ChroniclesService.StopLiveStreamAsync().GetAwaiter().GetResult();
+            try { ChroniclesService.StopLiveStreamAsync().GetAwaiter().GetResult(); }
+            catch { /* The view is already being disposed; keep teardown best-effort. */ }
         }
+        _liveFlushCancellation.Dispose();
     }
 }

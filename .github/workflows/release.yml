@@ -26,7 +26,11 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          if ($version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') { $version = '1.0.0' }
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') { throw "Tag '$env:GITHUB_REF_NAME' does not contain a valid semantic version." }
+          } else {
+            $version = '0.2.0'
+          }
           "UPUAUT_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Validate release video assets

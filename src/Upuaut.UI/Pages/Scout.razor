@@ -474,15 +474,19 @@
         catch (Exception ex)
         {
             _isCapturing = false;
-            await JSRuntime.InvokeVoidAsync("alert", $"Packet capture failed: {ex.Message}");
+            _filterError = $"Packet capture could not start: {ex.Message}";
         }
     }
 
     private async Task StopCaptureAsync()
     {
-        await ScoutService.StopCaptureAsync();
-        _isCapturing = false;
-        RefreshUI();
+        try
+        {
+            await ScoutService.StopCaptureAsync();
+            _isCapturing = false;
+            RefreshUI();
+        }
+        catch (Exception ex) { _filterError = $"Packet capture could not stop cleanly: {ex.Message}"; }
     }
 
     private void ClearBuffer()

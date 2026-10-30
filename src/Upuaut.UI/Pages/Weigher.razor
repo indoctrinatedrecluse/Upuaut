@@ -308,9 +308,15 @@
     {
         var dialog = new SaveFileDialog { Filter = "CSV file (*.csv)|*.csv", DefaultExt = ".csv", FileName = $"upuaut-triage-{DateTime.Now:yyyyMMdd-HHmmss}.csv" };
         if (dialog.ShowDialog() != true) return;
-        static string Q(string? value) => "\"" + (value ?? string.Empty).Replace("\"", "\"\"") + "\"";
+        static string Q(string? value)
+        {
+            var text = value ?? string.Empty;
+            if (text.TrimStart(' ', '\t', '\r', '\n').FirstOrDefault() is '=' or '+' or '-' or '@') text = "'" + text;
+            return "\"" + text.Replace("\"", "\"\"") + "\"";
+        }
         var rows = new List<string> { "Timestamp,Channel,Level,Provider,EventId,PacketProtocol,Source,Destination,DeltaMs,NearbyFrames,TemporalProximity,Note" };
-        rows.AddRange(VisibleItems.Select(item => string.Join(",", Q(item.Log.Timestamp.ToString("O")), Q(item.Log.Channel), Q(item.Log.Level.ToString()), Q(item.Log.ProviderName), item.Log.EventId, Q(item.NearestPacket?.TransportProtocol.ToString() ?? item.NearestPacket?.Protocol.ToString()), Q(item.NearestPacket?.SourceIp + Port(item.NearestPacket?.SourcePort)), Q(item.NearestPacket?.DestinationIp + Port(item.NearestPacket?.DestinationPort)), item.TimeDelta?.TotalMilliseconds.ToString("F1") ?? "", item.NearbyPacketCount, item.ProximityScore, Q(_notes.GetValueOrDefault(NoteKey(item.Log))))));
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        rows.AddRange(VisibleItems.Select(item => string.Join(",", Q(item.Log.Timestamp.ToUniversalTime().ToString("O", invariant)), Q(item.Log.Channel), Q(item.Log.Level.ToString()), Q(item.Log.ProviderName), item.Log.EventId.ToString(invariant), Q(item.NearestPacket?.TransportProtocol.ToString() ?? item.NearestPacket?.Protocol.ToString()), Q(item.NearestPacket?.SourceIp + Port(item.NearestPacket?.SourcePort)), Q(item.NearestPacket?.DestinationIp + Port(item.NearestPacket?.DestinationPort)), item.TimeDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", item.NearbyPacketCount.ToString(invariant), item.ProximityScore.ToString(invariant), Q(_notes.GetValueOrDefault(NoteKey(item.Log))))));
         try { File.WriteAllLines(dialog.FileName, rows); _statusMessage = $"Exported {rows.Count - 1:N0} rows."; } catch (Exception ex) { _statusMessage = $"CSV export failed: {ex.Message}"; }
     }
 
