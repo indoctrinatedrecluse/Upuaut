@@ -192,6 +192,7 @@ Upuaut/
     - ⚡ **Seker (Sokar):** Restorer of the Broken → *1-Click Forensic Remediation Engine*
 - [x] **Header Account & Pantheon Flyout Menu:** Fast access to the Architect profile, quick lore summaries, system documentation, and diagnostic drawers.
 - [x] **System Documentation Portal (`/docs`):** Complete searchable architectural specifications, forensic manuals, CLI reference, and code examples.
+- [x] **Help Menu:** Searchable in-app task guides plus an About dialog with the app brief and author profile links.
 - [x] **Visual Studio 2026 Enterprise Edition Support:**
   - Modern XML Solution format (`Upuaut.slnx`) partitioned into `/src/` and `/tests/` alongside classic `Upuaut.sln`.
   - `.editorconfig` enforcing C# 13 and Razor formatting conventions.
@@ -200,6 +201,7 @@ Upuaut/
 - [x] **About & Architect Specs (`/about`):** Detailed application specifications and background credentials.
 
 ### Phase 5: The Scales (Correlation & Anomaly Detection) ⚪
+- [ ] The `/weigher` route currently shows a work-in-progress notice; it does not report live triage results.
 - [ ] Correlated timeline view matching network drops to system event errors.
 - [ ] Automated heuristic triage (highlighting suspicious error bursts and timeouts).
 - [ ] Capture export (`.pcapng` and `.evtx` / structured `.json`).

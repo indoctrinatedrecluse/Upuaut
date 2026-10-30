@@ -44,6 +44,8 @@
                     <span>⚙️ Diagnostics &amp; Logs</span>
                 </button>
 
+                <HelpMenu />
+
                 <button class="motion-toggle @(_motionEnabled ? "motion-on" : "")"
                         @onclick="ToggleMotionAsync"
                         aria-pressed="@_motionEnabled"
@@ -118,11 +120,11 @@
                                         </div>
                                     </div>
 
-                                    <div class="acc-deity-item acc-deity-static" aria-disabled="true">
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("weigher"))'>
                                         <span class="acc-deity-icon">⚖️</span>
                                         <div class="acc-deity-text">
                                             <strong class="acc-deity-name">Ma'at</strong>
-                                            <span class="acc-deity-desc">The Feather of Truth → The Scales (Triage)</span>
+                                    <span class="acc-deity-desc">The Feather of Truth → The Scales (Triage · WIP)</span>
                                         </div>
                                     </div>
 

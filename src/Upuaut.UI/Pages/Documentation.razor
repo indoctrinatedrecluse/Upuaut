@@ -15,7 +15,7 @@
             Upuaut <span class="gold-accent">System Documentation</span>
         </h1>
         <p class="docs-subtitle">
-            Complete architectural manifest, forensic decoder manual, driverless wire-sniffing engine reference, and developer guide for Visual Studio 2026 Enterprise Edition.
+            Searchable user and developer reference for event-log review, packet capture, troubleshooting, and the Upuaut project structure.
         </p>
 
         <!-- Search & Category Filter Bar -->
@@ -35,11 +35,12 @@
 
             <div class="docs-category-chips">
                 <button class="cat-chip @(_selectedCategory == "all" ? "active" : "")" @onclick='@(() => _selectedCategory = "all")'>All Sections</button>
+                <button class="cat-chip @(_selectedCategory == "getting-started" ? "active" : "")" @onclick='@(() => _selectedCategory = "getting-started")'>Getting Started</button>
                 <button class="cat-chip @(_selectedCategory == "arch" ? "active" : "")" @onclick='@(() => _selectedCategory = "arch")'>Architecture &amp; .NET 10</button>
                 <button class="cat-chip @(_selectedCategory == "chronicles" ? "active" : "")" @onclick='@(() => _selectedCategory = "chronicles")'>The Duat Chronicles</button>
                 <button class="cat-chip @(_selectedCategory == "scout" ? "active" : "")" @onclick='@(() => _selectedCategory = "scout")'>The Scout (Packet Capture)</button>
                 <button class="cat-chip @(_selectedCategory == "diagnostics" ? "active" : "")" @onclick='@(() => _selectedCategory = "diagnostics")'>Crash Reporter &amp; Logs</button>
-                <button class="cat-chip @(_selectedCategory == "vs2026" ? "active" : "")" @onclick='@(() => _selectedCategory = "vs2026")'>Visual Studio 2026 Guide</button>
+                <button class="cat-chip @(_selectedCategory == "vs2026" ? "active" : "")" @onclick='@(() => _selectedCategory = "vs2026")'>Development Guide</button>
                 <button class="cat-chip @(_selectedCategory == "cli" ? "active" : "")" @onclick='@(() => _selectedCategory = "cli")'>CLI &amp; Automation</button>
             </div>
         </div>
@@ -91,7 +92,7 @@
                 }
             </nav>
             <div class="toc-footer">
-                <span class="toc-note">Upuaut Core Specification v0.2.0</span>
+                <span class="toc-note">Upuaut User &amp; Developer Guide v0.1.0</span>
                 <span class="toc-note">Author: Abhishek Mitra</span>
             </div>
         </aside>
@@ -139,6 +140,35 @@
 
     private readonly List<DocArticle> _articles = new()
     {
+        new(
+            Id: "getting-started",
+            Category: "getting-started",
+            CategoryName: "Getting Started",
+            Title: "Using Upuaut",
+            Summary: "A short guide to the dashboard, Chronicles event-log review, Scout packet capture, and the current Triage status.",
+            Icon: "✦",
+            HtmlContent: @"
+                <p>Upuaut is a Windows desktop toolkit for reviewing local Windows event logs and inspecting network traffic. The dashboard links to each workspace; Help in the top bar opens a searchable quick guide and About.</p>
+                <h4>Review event logs with Chronicles</h4>
+                <ol>
+                    <li>Choose a channel and time range, then select <strong>Query Logs</strong>.</li>
+                    <li>Filter by severity, provider, or search text. Quick Triage presets cover common crash, network, storage, and security investigations.</li>
+                    <li>Select an event to inspect it, switch to Failure Clusters to group related records, or export a triage report.</li>
+                    <li>To inspect an offline log, select <strong>Load .evtx</strong> and enter its full file path.</li>
+                </ol>
+                <h4>Inspect network traffic with Scout</h4>
+                <ol>
+                    <li>Choose an adapter and a capture mode before starting.</li>
+                    <li><strong>Native IPv4</strong> uses Windows raw sockets and requires administrator privileges. <strong>Ethernet</strong> uses Npcap and captures link-layer frames.</li>
+                    <li>Select <strong>Start Capture</strong>, then filter by protocol, process, IP address, port, domain, or payload.</li>
+                    <li>Select a packet to inspect its details. Select <strong>Stop Capture</strong> to end collection; <strong>Clear</strong> clears the in-memory buffer.</li>
+                </ol>
+                <p>Capture visibility depends on adapter, permissions, and mode. Ethernet dissection currently covers IPv4 and ARP. Process attribution depends on matching traffic to a current local socket.</p>
+                <h4>Triage status</h4>
+                <p>The Scales route currently displays a work-in-progress notice. Unified event and packet correlation and weighted anomaly scoring are not active.</p>
+            ",
+            RawText: "getting started user guide dashboard Chronicles event logs query severity provider preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap filter protocol IP port domain payload stop clear Triage work in progress"
+        ),
         new(
             Id: "in-process-blazor-hybrid",
             Category: "arch",
@@ -196,30 +226,33 @@
             Category: "scout",
             CategoryName: "The Scout",
             Title: "The Scout: Driverless Packet Capture & Process Attribution",
-            Summary: "Driverless wire sniffing via Windows native SIO_RCVALL raw sockets with real-time socket-to-process attribution via iphlpapi.dll.",
+            Summary: "Native IPv4 raw socket capture plus optional Npcap Ethernet capture, protocol filtering, packet inspection, and best-effort process attribution.",
             Icon: "📡",
             HtmlContent: @"
-                <p>Most network sniffers on Windows require third-party kernel drivers such as Npcap or WinPcap. Upuaut eliminates this requirement entirely through a driverless Windows native architecture.</p>
+                <p>Scout provides two capture modes. Native IPv4 uses Windows raw sockets without an added capture driver. Ethernet mode uses Npcap to capture link-layer frames.</p>
 
                 <h4>1. Driverless Capture via SIO_RCVALL</h4>
                 <p>When running with administrative privileges, Upuaut binds a standard .NET <code>System.Net.Sockets.Socket</code> configured as:</p>
                 <pre class=""docs-code""><code>var socket = new Socket(AddressFamily.InterNetwork, SocketType.Raw, ProtocolType.IP);
 socket.Bind(new IPEndPoint(localIp, 0));
 socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[] { 1, 0, 0, 0 });</code></pre>
-                <p>This instructs the Windows TCP/IP stack to deliver all inbound and outbound IPv4 packets directly into Upuaut's user-mode ring buffer without installing any external driver or kernel extension.</p>
+                <p>This asks the Windows TCP/IP stack to deliver IPv4 traffic visible to the selected interface. Raw-socket access requires elevated permissions; adapter and Windows filtering affect which traffic is visible.</p>
 
-                <h4>2. Real-Time Process Attribution (iphlpapi.dll)</h4>
-                <p>Unlike standard packet capture tools that only display IP addresses and port numbers, Upuaut maps every network frame to the exact Windows executable that initiated or received it. By invoking <code>GetExtendedTcpTable</code> and <code>GetExtendedUdpTable</code> from <code>iphlpapi.dll</code>, Upuaut resolves:</p>
+                <h4>2. Optional Ethernet Capture</h4>
+                <p>Select <strong>Ethernet frames (Npcap)</strong> when Npcap is installed and its capture service is available. This mode exposes link-layer details and currently dissects IPv4 and ARP. IPv6 dissection is not included.</p>
+
+                <h4>3. Process Attribution (iphlpapi.dll)</h4>
+                <p>Scout consults the Windows TCP and UDP endpoint tables to associate packets with local processes where a current socket matches the packet endpoints. Attribution may be unavailable for unmatched or closed sockets. Resolved details can include:</p>
                 <ul>
                     <li>Process ID (PID) and Process Name (e.g. <code>chrome.exe</code>, <code>teams.exe</code>, <code>svchost.exe</code>).</li>
                     <li>Full executable image path on disk.</li>
                     <li>Active TCP state (Established, TimeWait, CloseWait, Listen).</li>
                 </ul>
 
-                <h4>3. Protocol Dissectors &amp; Anomaly Detection</h4>
-                <p>Zero-allocation binary dissectors parse IPv4, TCP (SYN, ACK, FIN, RST, PSH, URG), UDP, ICMP, and DNS query domain names. Out-of-order TCP RST flags and rapid reset bursts are automatically flagged as anomalies.</p>
+                <h4>4. Filters &amp; Packet Inspection</h4>
+                <p>Use protocol buttons and the search field to filter visible packets. Select a packet to inspect decoded fields and available raw bytes. Packet export is not included in this release.</p>
             ",
-            RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless iphlpapi GetExtendedTcpTable GetExtendedUdpTable PID attribution TCP UDP DNS ICMP"
+            RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless Ethernet Npcap IPv4 ARP IPv6 iphlpapi GetExtendedTcpTable GetExtendedUdpTable best effort PID attribution TCP UDP DNS ICMP filters packet inspection"
         ),
 
         new(
@@ -272,7 +305,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                     <li><code>src/Upuaut.Core</code>: Shared models, diagnostic logging (AppLogger), and crash reporter (CrashReporter).</li>
                     <li><code>src/Upuaut.Chronicles</code>: Windows Event Log ingestion engine, XPath query compiler, and The Oracle forensic decoder.</li>
                     <li><code>src/Upuaut.Scout</code>: Driverless raw socket capture engine, IP Helper P/Invoke, and protocol dissectors.</li>
-                    <li><code>src/Upuaut.Weigher</code>: planned system anomaly correlation work; the Scales tab is not part of the v0.1.0 release.</li>
+                    <li><code>src/Upuaut.Weigher</code>: system anomaly correlation work in progress; its route shows a work-in-progress notice.</li>
                     <li><code>tests/Upuaut.Tests</code>: Unit test suite for dissectors, log decoders, and forensic heuristics.</li>
                 </ul>
 

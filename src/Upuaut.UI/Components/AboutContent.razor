@@ -1,0 +1,39 @@
+@namespace Upuaut.UI.Components
+
+<div class="about-content">
+    <div class="about-brand-mark" aria-hidden="true">𓃥</div>
+    <p class="about-overline">OPENER OF THE WAYS · WINDOWS SYSTEM TOOLKIT</p>
+    <h2>Upuaut</h2>
+    <p class="about-brief">
+        Upuaut brings Windows event-log review and network packet inspection into one desktop workspace.
+        Use Chronicles to investigate system events, Scout to inspect live IPv4 traffic, and the Scales page
+        to follow the Triage work in progress.
+    </p>
+    <div class="about-version">VERSION <strong>0.1.0</strong></div>
+    <div class="about-author">
+        <span class="about-avatar">AM</span>
+        <div>
+            <span class="about-overline">CREATED BY</span>
+            <strong>indoctrinatedrecluse / Abhishek Mitra</strong>
+        </div>
+    </div>
+    <div class="about-links">
+        <a href="https://github.com/indoctrinatedrecluse/" target="_blank" rel="noopener noreferrer" @onclick='() => OpenExternal("https://github.com/indoctrinatedrecluse/")' @onclick:preventDefault="true">
+            <span aria-hidden="true">⌘</span> GitHub profile <span class="about-link-url">github.com/indoctrinatedrecluse</span>
+        </a>
+        <a href="https://portfolio-flutter-78bcf.web.app/" target="_blank" rel="noopener noreferrer" @onclick='() => OpenExternal("https://portfolio-flutter-78bcf.web.app/")' @onclick:preventDefault="true">
+            <span aria-hidden="true">↗</span> Portfolio <span class="about-link-url">portfolio-flutter-78bcf.web.app</span>
+        </a>
+    </div>
+</div>
+
+@code {
+    private static void OpenExternal(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch { }
+    }
+}

@@ -1,37 +1,23 @@
+@page "/weigher"
 @namespace Upuaut.UI.Pages
+@inject NavigationManager Navigation
 
-<PageTitle>Upuaut — The Scales of Ma'at</PageTitle>
+<PageTitle>Upuaut — The Scales of Ma'at · Work in Progress</PageTitle>
 
-<div class="page-container">
-    <div class="page-header" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-            <h1 class="page-title" style="margin: 0; font-size: 1.5rem; color: var(--upuaut-sand);">
-                ⚖️ The Scales of Ma'at
-            </h1>
-            <span style="color: var(--upuaut-text-muted); font-size: 0.85rem;">
-                Correlated System Triage &amp; Root Cause Heuristics
-            </span>
-        </div>
-
-        <div>
-            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Sparkle())">
-                Weigh Anomalies
-            </FluentButton>
-        </div>
-    </div>
-
-    <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <span style="font-size: 0.85rem; color: var(--upuaut-text-muted); font-weight: 600;">CORRELATION MATRIX</span>
-            <span class="badge-chip">Window: ± 2500ms</span>
-        </div>
-
-        <div style="min-height: 350px; display: flex; align-items: center; justify-content: center; color: var(--upuaut-text-dim); flex-direction: column; gap: 0.5rem;">
-            <FluentIcon Value="@(new Icons.Regular.Size24.Scales())" />
-            <span>No active anomalies detected across captured network frames and system logs.</span>
-        </div>
-    </FluentCard>
+<div class="wip-backdrop" role="presentation">
+    <section class="wip-dialog" role="dialog" aria-modal="true" aria-labelledby="wip-title">
+        <div class="wip-sigil" aria-hidden="true">⚖</div>
+        <span class="wip-kicker">THE SCALES // DEVELOPMENT CHAMBER</span>
+        <h1 id="wip-title">This subsystem is still in progress</h1>
+        <p>
+            Ma’at’s Triage interface is under active development. Its correlation and anomaly-scoring features are not
+            available yet, so this page does not display live findings.
+        </p>
+        <div class="wip-status"><span></span> WORK IN PROGRESS <b>·</b> NOT AVAILABLE IN THIS BUILD</div>
+        <button class="wip-return" @onclick="ReturnToDashboard">Return to the dashboard <span aria-hidden="true">→</span></button>
+    </section>
 </div>
 
 @code {
+    private void ReturnToDashboard() => Navigation.NavigateTo("/");
 }

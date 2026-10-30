@@ -1,0 +1,131 @@
+@namespace Upuaut.UI.Components
+@inject NavigationManager Navigation
+
+<div class="help-menu" @onclick:stopPropagation="true">
+    <button class="help-menu-trigger" aria-haspopup="menu" aria-expanded="@_menuOpen" @onclick="ToggleMenu">
+        <span aria-hidden="true">?</span> HELP <span class="help-caret">@(_menuOpen ? "▲" : "▼")</span>
+    </button>
+    @if (_menuOpen)
+    {
+        <div class="help-menu-panel" role="menu">
+            <span class="help-menu-label">UPUAUT REFERENCE</span>
+            <button role="menuitem" @onclick="OpenDocumentation"><span>⌕</span><span><strong>Documentation</strong><small>Search feature guides and workflows</small></span></button>
+            <button role="menuitem" @onclick="OpenAbout"><span>✦</span><span><strong>About Upuaut</strong><small>App details and author links</small></span></button>
+        </div>
+    }
+</div>
+
+@if (_showDocumentation)
+{
+    <div class="help-modal-backdrop" @onclick="CloseDialogs">
+        <section class="help-modal-panel documentation-modal" role="dialog" aria-modal="true" aria-labelledby="help-doc-title" @onclick:stopPropagation="true">
+            <header class="help-modal-header">
+                <div><span class="help-menu-label">FIELD GUIDE · SESHTATU</span><h2 id="help-doc-title">Upuaut Documentation</h2></div>
+                <button class="help-modal-close" aria-label="Close documentation" @onclick="CloseDialogs">×</button>
+            </header>
+            <p class="help-modal-intro">Search practical steps for investigating Windows events and inspecting network traffic.</p>
+            <div class="help-doc-search">
+                <span aria-hidden="true">⌕</span>
+                <input type="search" placeholder="Search: event logs, DNS, Npcap, permissions…" @bind="_query" @bind:event="oninput" aria-label="Search documentation" />
+                @if (!string.IsNullOrWhiteSpace(_query))
+                {
+                    <button aria-label="Clear search" @onclick='() => _query = ""'>×</button>
+                }
+            </div>
+            <div class="help-doc-results" aria-live="polite">
+                @if (!VisibleTopics.Any())
+                {
+                    <div class="help-doc-empty"><strong>No matching guide</strong><span>Try a feature name such as “Scout”, “Chronicles”, or “Npcap”.</span></div>
+                }
+                @foreach (var topic in VisibleTopics)
+                {
+                    <article class="help-doc-topic">
+                        <span class="help-topic-category">@topic.Category</span>
+                        <h3>@topic.Title</h3>
+                        <p>@topic.Intro</p>
+                        <ol>
+                            @foreach (var step in topic.Steps)
+                            {
+                                <li>@step</li>
+                            }
+                        </ol>
+                    </article>
+                }
+            </div>
+            <footer class="help-modal-footer">
+                <span>More technical detail and project structure are available in the full reference.</span>
+                <button class="help-modal-secondary" @onclick="OpenFullReference">Open full documentation →</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showAbout)
+{
+    <div class="help-modal-backdrop" @onclick="CloseDialogs">
+        <section class="help-modal-panel about-modal" role="dialog" aria-modal="true" aria-labelledby="help-about-title" @onclick:stopPropagation="true">
+            <button class="help-modal-close about-close" aria-label="Close About" @onclick="CloseDialogs">×</button>
+            <AboutContent />
+        </section>
+    </div>
+}
+
+@code {
+    private bool _menuOpen;
+    private bool _showDocumentation;
+    private bool _showAbout;
+    private string _query = "";
+
+    private IEnumerable<HelpTopic> VisibleTopics => string.IsNullOrWhiteSpace(_query)
+        ? _topics
+        : _topics.Where(topic =>
+            topic.Title.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+            topic.Category.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+            topic.Intro.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+            topic.Steps.Any(step => step.Contains(_query, StringComparison.OrdinalIgnoreCase)));
+
+    private void ToggleMenu() => _menuOpen = !_menuOpen;
+
+    private void OpenDocumentation()
+    {
+        _menuOpen = false;
+        _query = "";
+        _showDocumentation = true;
+    }
+
+    private void OpenAbout()
+    {
+        _menuOpen = false;
+        _showAbout = true;
+    }
+
+    private void CloseDialogs()
+    {
+        _showDocumentation = false;
+        _showAbout = false;
+    }
+
+    private void OpenFullReference()
+    {
+        CloseDialogs();
+        Navigation.NavigateTo("docs");
+    }
+
+    private sealed record HelpTopic(string Category, string Title, string Intro, string[] Steps);
+
+    private readonly HelpTopic[] _topics =
+    [
+        new("GETTING STARTED", "Choose a workspace", "The dashboard is the launch point for Upuaut’s available tools.",
+        ["Open Chronicles to query local Windows event logs or load an exported .evtx file.", "Open Scout to inspect live network traffic. Choose a capture mode and adapter before starting.", "Use the Scales (Triage) entry to view its current work-in-progress status."]),
+        new("CHRONICLES · EVENT LOGS", "Investigate Windows events", "Chronicles filters event records and helps group related failures.",
+        ["Choose a channel such as System or Application and a time range, then select Query Logs.", "Narrow the results by severity, provider, or text; use a Quick Triage preset for common crash, network, storage, or security issues.", "Select an event to inspect its details. Switch to Failure Clusters to group similar events, or use Export Triage Report to save the current findings.", "To inspect a saved log, select Load .evtx and enter the full path to the file."]),
+        new("SCOUT · PACKET CAPTURE", "Capture and inspect traffic", "Scout offers native IPv4 capture and optional Ethernet capture through Npcap.",
+        ["Select Native IPv4 for driver-free capture, or Ethernet frames when Npcap is installed. Select the adapter before starting.", "Native IPv4 raw-socket capture needs elevated permissions. Ethernet capture needs Npcap and may also require elevation depending on the adapter and driver setup.", "Select Start Capture, then filter by protocol, process, IP address, port, domain, or payload. Select a row to inspect frame details and bytes.", "Select Stop Capture to end the session. Clear removes the current in-memory packet buffer."]),
+        new("SCOUT · TROUBLESHOOTING", "If packets are missing", "Capture visibility depends on the selected interface, mode, privileges, and protocol support.",
+        ["Check that the chosen adapter is active and is the interface carrying the traffic.", "For Native IPv4, restart Upuaut with administrator privileges if Windows denies raw-socket capture.", "For Ethernet mode, install Npcap and confirm its capture service is running; this mode currently dissects IPv4 and ARP.", "Process attribution can be unavailable for packets that do not match a current local TCP/UDP socket."]),
+        new("DISPLAY & PERFORMANCE", "Adjust the app canvas", "The animated background can be disabled for reduced motion or slower computers.",
+        ["Use the prominent Canvas Motion switch in the top bar to turn the animated canvas and launch splash on or off.", "Open Diagnostics & Logs from the top bar when you need application logs or crash-reporting information."]),
+        new("TRIAGE · WORK IN PROGRESS", "The Scales status", "The Triage route is available as a status page while its correlation and scoring features are being developed.",
+        ["The WIP page does not show live findings or imply that anomaly scoring is active.", "Chronicles and Scout remain separate tools; no unified event-and-packet correlation is included yet."])
+    ];
+}
