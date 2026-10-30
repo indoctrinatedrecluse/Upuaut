@@ -179,10 +179,10 @@
             Category: "log-lab",
             CategoryName: "General-purpose Log Lab",
             Title: "Import and inspect logs in Log Lab",
-            Summary: "Use the Phase 1 preview to import text and structured logs, search entries, inspect extracted fields, and format a working copy of JSON or XML.",
+            Summary: "Use the Phase 2 preview to import logs, inspect extracted fields, and review evidence-backed scenario labels and investigative checks.",
             Icon: "⌕",
             HtmlContent: @"
-                <p>Open <strong>Log Lab (Preview)</strong> from the navigation and import a log file. Phase 1 recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
+                <p>Open <strong>Log Lab (Preview)</strong> from the navigation and import a log file. Log Lab recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
                 <h4>Search and inspect</h4>
                 <ol>
                     <li>Search across entry messages, raw lines, and extracted fields. Use the severity selector to narrow the list.</li>
@@ -191,8 +191,11 @@
                 </ol>
                 <h4>Format without changing the import</h4>
                 <p>The editor is a working view. Format JSON or XML to make it easier to read; use <strong>Reset Editor</strong> to restore the selected entry or original source. Formatting never changes the imported source used by the parser.</p>
+                <h4>Review scenario analysis</h4>
+                <p>Each entry receives a best-effort scenario label where supported, such as crash, setup, update, authentication, security, network, storage, service, performance, maintenance, or success. The analysis shows the phrase signals and source fields that matched, tags, and suggested checks. Filter entries by scenario using the summary chips or selector.</p>
+                <p><strong>Match strength</strong> indicates how many rule signals matched the entry. It is not confidence in a root cause, proof of a security incident, or confirmation that a reported operation succeeded. Compare the finding with the raw source and surrounding entries.</p>
                 <h4>Interpretation limits</h4>
-                <p>Extraction is best-effort and format detection can be uncertain. Review parser notes and compare fields with the raw source before drawing conclusions. Phase 1 does not yet classify scenarios, create reports, or support custom parser profiles. Those capabilities are planned for later phases.</p>
+                <p>Extraction and classification are best-effort and format detection can be uncertain. Review parser notes and compare fields with the raw source before drawing conclusions. Report generation, custom parser profiles, and event-sequence analysis are planned for later phases.</p>
             ",
             RawText: "Log Lab general purpose log parsing preview import text plain text JSON JSONL NDJSON XML CSV source line provenance severity search fields raw editor full source pretty format JSON XML reset 32 MiB 200000 entries best effort parser notes limitations reports custom profiles"
         ),

@@ -4,6 +4,7 @@
 @using Upuaut.LogLab
 @using Upuaut.LogLab.Models
 @inject ILogParsingEngine ParsingEngine
+@inject ILogAnalysisEngine AnalysisEngine
 
 <PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
 
@@ -12,7 +13,7 @@
         <div>
             <div class="log-lab-eyebrow"><span></span> UPUAUT // MULTIFORMAT LOG ANALYSIS</div>
             <h1>General-purpose <span>Log Lab</span></h1>
-            <p>Import a text log, inspect what the parser can recognize, and follow every finding back to its source line.</p>
+            <p>Import a log, inspect extracted fields, and review evidence-backed scenario signals and suggested investigative checks.</p>
         </div>
         <button class="log-lab-import" @onclick="ImportFile">IMPORT LOG FILE <span>↗</span></button>
     </header>
@@ -26,7 +27,7 @@
     {
         <section class="log-lab-empty">
             <div class="log-lab-empty-glyph">⌘</div>
-            <span class="log-lab-eyebrow">PHASE 1 // SOURCE INGESTION</span>
+            <span class="log-lab-eyebrow">PHASE 2 // EVIDENCE-GROUNDED ANALYSIS</span>
             <h2>Bring a log into the Lab</h2>
             <p>Import plain text, JSON, JSON Lines, XML, or CSV. Upuaut keeps the original text intact and builds a separate, best-effort view of entries and fields.</p>
             <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML</span><span>CSV</span><span>UP TO 32 MB</span></div>
@@ -50,11 +51,32 @@
             <section class="log-lab-warnings"><strong>Parser notes</strong><ul>@foreach (var warning in _document.Warnings.Take(8)) { <li>@warning</li> }</ul></section>
         }
 
+        @if (_analysis is not null)
+        {
+            <section class="log-lab-analysis-overview">
+                <div class="analysis-stat"><small>ANALYZED</small><strong>@_analysis.EntryCount.ToString("N0")</strong><span>entries</span></div>
+                <div class="analysis-stat is-error"><small>ERROR SIGNALS</small><strong>@_analysis.ErrorCount.ToString("N0")</strong><span>by parsed severity</span></div>
+                <div class="analysis-stat is-warning"><small>WARNINGS</small><strong>@_analysis.WarningCount.ToString("N0")</strong><span>by parsed severity</span></div>
+                <div class="analysis-category-tray"><small>SCENARIO GROUPS · SELECT TO FILTER</small><div>
+                    @foreach (var category in _analysis.CategoryCounts.Take(7))
+                    {
+                        <button class="analysis-category-chip @(_categoryFilter == category.Category.ToString() ? "active" : "")" @onclick="() => SetCategoryFilter(category.Category)">@category.Category <b>@category.Count</b></button>
+                    }
+                    @if (!string.IsNullOrEmpty(_categoryFilter)) { <button class="analysis-category-reset" @onclick="() => _categoryFilter = string.Empty">CLEAR FILTER</button> }
+                </div></div>
+            </section>
+            <div class="log-lab-analysis-note">Rule match strength describes how many specific text signals matched. It is not confidence in a root cause; check each entry's evidence against the raw source.</div>
+        }
+
         <div class="log-lab-toolbar">
             <label class="log-lab-search"><span>⌕</span><input @bind="_searchQuery" @bind:event="oninput" placeholder="Search entries, fields, error codes, messages…" /></label>
             <select class="log-lab-select" @bind="_severityFilter">
                 <option value="">All severities</option>
                 @foreach (var severity in Enum.GetValues<LogEntrySeverity>().Where(value => value != LogEntrySeverity.Unknown)) { <option value="@severity">@severity</option> }
+            </select>
+            <select class="log-lab-select" @bind="_categoryFilter">
+                <option value="">All scenarios</option>
+                @foreach (var category in Enum.GetValues<LogScenarioCategory>()) { <option value="@category">@category</option> }
             </select>
             <button class="log-lab-tool-btn" @onclick="FormatJson" title="Pretty-format the editor as JSON">FORMAT JSON</button>
             <button class="log-lab-tool-btn" @onclick="FormatXml" title="Pretty-format the editor as XML">FORMAT XML</button>
@@ -74,8 +96,9 @@
                         @foreach (var entry in FilteredEntries.Take(_entryLimit))
                         {
                             <button class="log-lab-entry @(_selectedEntry?.Index == entry.Index ? "selected" : "")" @onclick="() => SelectEntry(entry)">
-                                <span class="log-lab-entry-top"><span class="severity-mark @SeverityClass(entry.Severity)"></span><strong>@(entry.Severity == LogEntrySeverity.Unknown ? "UNCLASSIFIED" : entry.Severity.ToString().ToUpperInvariant())</strong><small>LINE @entry.SourceLine</small></span>
+                                <span class="log-lab-entry-top"><span class="severity-mark @SeverityClass(entry.Severity)"></span><strong>@(entry.Severity == LogEntrySeverity.Unknown ? "UNCLASSIFIED" : entry.Severity.ToString().ToUpperInvariant())</strong><span class="scenario-pill">@AnalysisFor(entry).Category</span><small>LINE @entry.SourceLine</small></span>
                                 <span class="log-lab-entry-message">@entry.Message</span>
+                                <span class="log-lab-entry-headline">@AnalysisFor(entry).Headline</span>
                                 <span class="log-lab-entry-meta">@(entry.Timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "No timestamp decoded")@(string.IsNullOrWhiteSpace(entry.Source) ? "" : $" · {entry.Source}")</span>
                             </button>
                         }
@@ -96,6 +119,22 @@
                 {
                     <div class="log-lab-detail-scroll">
                         <div class="log-lab-headline"><span class="severity-chip @SeverityClass(selected.Severity)">@selected.Severity.ToString().ToUpperInvariant()</span><h2>@selected.Message</h2></div>
+                        @if (_analysis?.Entries.TryGetValue(selected.Index, out var finding) == true)
+                        {
+                            <div class="scenario-analysis-card">
+                                <div class="scenario-analysis-title"><span>@finding.Category.ToString().ToUpperInvariant()</span><b class="match-strength @finding.MatchStrength.ToString().ToLowerInvariant()">@(finding.MatchStrength switch { RuleMatchStrength.NoRuleMatched => "NO RULE MATCHED", _ => $"{finding.MatchStrength.ToString().ToUpperInvariant()} SIGNAL MATCH" })</b></div>
+                                <h3>@finding.Headline</h3>
+                                <p>@finding.Explanation</p>
+                                <div class="analysis-tags">@foreach (var tag in finding.Tags) { <span>@tag</span> }</div>
+                                @if (finding.Evidence.Count > 0)
+                                {
+                                    <div class="analysis-subhead">MATCHED EVIDENCE</div>
+                                    @foreach (var evidence in finding.Evidence) { <div class="analysis-evidence"><small>@evidence.Field</small><span>@evidence.Value</span></div> }
+                                }
+                                <div class="analysis-subhead">SUGGESTED CHECKS</div>
+                                <ul class="analysis-recommendations">@foreach (var recommendation in finding.Recommendations) { <li>@recommendation</li> }</ul>
+                            </div>
+                        }
                         <div class="log-lab-evidence-callout"><strong>HOW THIS WAS READ</strong><p>@selected.InterpretationBasis</p></div>
                         <div class="log-lab-field-grid">
                             @if (selected.Timestamp is { } timestamp) { <div class="log-lab-field"><small>DECODED TIME (UTC)</small><strong>@timestamp.ToUniversalTime().ToString("O")</strong></div> }
@@ -128,9 +167,12 @@
     private bool _isError;
     private bool _showWholeDocument;
     private int _entryLimit = 500;
+    private string _categoryFilter = string.Empty;
+    private LogAnalysisReport? _analysis;
     private LogDocument? _filteredDocument;
     private string? _filteredQuery;
     private string? _filteredSeverity;
+    private string? _filteredCategory;
     private List<ParsedLogEntry> _filteredEntries = new();
 
     private List<ParsedLogEntry> FilteredEntries
@@ -138,13 +180,18 @@
         get
         {
             if (_document is null) return new();
-            if (!ReferenceEquals(_filteredDocument, _document) || _filteredQuery != _searchQuery || _filteredSeverity != _severityFilter)
+            if (!ReferenceEquals(_filteredDocument, _document) || _filteredQuery != _searchQuery || _filteredSeverity != _severityFilter || _filteredCategory != _categoryFilter)
             {
                 _filteredDocument = _document;
                 _filteredQuery = _searchQuery;
                 _filteredSeverity = _severityFilter;
-                _filteredEntries = ParsingEngine.Search(_document,
-                    new LogSearchOptions(_searchQuery, Enum.TryParse<LogEntrySeverity>(_severityFilter, out var level) ? level : null)).ToList();
+                _filteredCategory = _categoryFilter;
+                var severity = Enum.TryParse<LogEntrySeverity>(_severityFilter, out var level) ? level : (LogEntrySeverity?)null;
+                var query = _searchQuery.Trim();
+                _filteredEntries = ParsingEngine.Search(_document, new LogSearchOptions(string.Empty, severity))
+                    .Where(entry => (_categoryFilter.Length == 0 || AnalysisFor(entry).Category.ToString() == _categoryFilter) &&
+                        (query.Length == 0 || MatchesAnalysis(entry, query)))
+                    .ToList();
             }
             return _filteredEntries;
         }
@@ -164,7 +211,12 @@
         {
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
+            _analysis = null;
+            _statusMessage = "Grouping scenario signals and preparing evidence...";
+            await InvokeAsync(StateHasChanged);
+            _analysis = await Task.Run(() => AnalysisEngine.Analyze(_document));
             _selectedEntry = _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
+            _categoryFilter = string.Empty;
             _showWholeDocument = false; ResetEditor();
             _statusMessage = $"Imported {_document.Entries.Count:N0} entries from {_document.FileName}. Original source is preserved.";
         }
@@ -191,9 +243,21 @@
         try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
         catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
-    private void CloseDocument() { _document = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; }
+    private void CloseDocument() { _document = null; _analysis = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
     private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", _ => format.ToString().ToUpperInvariant() };
+    private LogEntryAnalysis AnalysisFor(ParsedLogEntry entry) => _analysis?.Entries.GetValueOrDefault(entry.Index) ?? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Analysis pending", "", RuleMatchStrength.NoRuleMatched, [], [], []);
+    private bool MatchesAnalysis(ParsedLogEntry entry, string query)
+    {
+        var finding = AnalysisFor(entry);
+        return entry.Message.Contains(query, StringComparison.OrdinalIgnoreCase) || entry.RawText.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            entry.Fields.Any(field => field.Key.Contains(query, StringComparison.OrdinalIgnoreCase) || field.Value.Contains(query, StringComparison.OrdinalIgnoreCase)) ||
+            finding.Headline.Contains(query, StringComparison.OrdinalIgnoreCase) || finding.Category.ToString().Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            finding.Tags.Any(tag => tag.Contains(query, StringComparison.OrdinalIgnoreCase)) || finding.Explanation.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            finding.Recommendations.Any(recommendation => recommendation.Contains(query, StringComparison.OrdinalIgnoreCase)) ||
+            finding.Evidence.Any(evidence => evidence.Field.Contains(query, StringComparison.OrdinalIgnoreCase) || evidence.Value.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+    private void SetCategoryFilter(LogScenarioCategory category) => _categoryFilter = _categoryFilter == category.ToString() ? string.Empty : category.ToString();
     private static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024d):0.#} MB" : $"{bytes / 1024d:0.#} KB";
     private static string SeverityClass(LogEntrySeverity severity) => severity switch { LogEntrySeverity.Critical or LogEntrySeverity.Error => "is-error", LogEntrySeverity.Warning => "is-warning", LogEntrySeverity.Success => "is-success", LogEntrySeverity.Information => "is-info", _ => "is-unknown" };
 }
