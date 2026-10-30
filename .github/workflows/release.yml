@@ -9,10 +9,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  # One release run per ref: a re-push cannot race another run over the same release asset.
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   package:
-    if: github.event.deleted != true
     runs-on: windows-latest
+    # Bounds the whole release: without an explicit limit a stalled restore or asset
+    # upload keeps the run "in progress" for GitHub's six-hour default.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -24,12 +31,21 @@ jobs:
 
       - name: Resolve release version
         shell: pwsh
+        timeout-minutes: 2
         run: |
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          # Directory.Build.props is the single source of truth for the version metadata.
+          $versionNodes = @(Select-Xml -LiteralPath 'Directory.Build.props' -XPath '/Project/PropertyGroup/Version' -ErrorAction Stop)
+          if ($versionNodes.Count -eq 0) { throw 'Directory.Build.props must declare a Version property.' }
+          $declared = $versionNodes[0].Node.InnerText.Trim()
+          if ($declared -notmatch '^\d+\.\d+\.\d+$') { throw "Directory.Build.props must declare a MAJOR.MINOR.PATCH Version; found '$declared'." }
+
           if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $version = $env:GITHUB_REF_NAME -replace '^v', ''
             if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$env:GITHUB_REF_NAME' must use the vMAJOR.MINOR.PATCH release format." }
+            if ($version -ne $declared) { throw "Tag '$env:GITHUB_REF_NAME' does not match Version '$declared' in Directory.Build.props. Bump the version metadata before tagging." }
           } else {
-            $version = '0.6.0'
+            $version = $declared
+            Write-Host "Manual dispatch: using version $version from Directory.Build.props."
           }
           "UPUAUT_VERSION=$version" >> $env:GITHUB_ENV
 
@@ -47,13 +63,16 @@ jobs:
           }
 
       - name: Publish Upuaut app
+        timeout-minutes: 20
         run: dotnet publish src/Upuaut.App/Upuaut.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ env.UPUAUT_VERSION }} -o artifacts/payload
 
       - name: Publish installer
+        timeout-minutes: 15
         run: dotnet publish installer/Upuaut.Setup/Upuaut.Setup.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=${{ env.UPUAUT_VERSION }} -o artifacts/package
 
       - name: Assemble themed setup package
         shell: pwsh
+        timeout-minutes: 10
         run: |
           $stage = Join-Path $PWD 'artifacts/package'
           New-Item -ItemType Directory -Force -Path (Join-Path $stage 'payload'), (Join-Path $stage 'media') | Out-Null
@@ -71,6 +90,7 @@ jobs:
 
       - name: Prepare release notes from this version only
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $version = $env:UPUAUT_VERSION
           $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw
@@ -86,6 +106,7 @@ jobs:
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
+        timeout-minutes: 20
         uses: softprops/action-gh-release@v3
         with:
           name: Upuaut v${{ env.UPUAUT_VERSION }}
@@ -95,6 +116,7 @@ jobs:
 
       - name: Upload workflow artifact
         if: github.event_name == 'workflow_dispatch'
+        timeout-minutes: 15
         uses: actions/upload-artifact@v7
         with:
           name: Upuaut-Setup-win-x64-v${{ env.UPUAUT_VERSION }}
