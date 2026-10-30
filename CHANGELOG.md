@@ -4,6 +4,27 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
+### Added
+
+- **Crash Forensics workspace:** inspect Windows user-mode minidumps and `.wer` crash reports locally. Extract bounded system, exception, module, thread, and available managed-runtime evidence; explain common Windows exception codes with cautious next checks; identify kernel dumps and hand off deep kernel analysis to WinDbg.
+- **Log Lab crash handoff:** open a crash-specific finding in Crash Forensics with the selected log entry carried as context. WER report interpretation reuses Log Lab's parser and the shipped, source-attributed knowledge dataset.
+- **Expanded offline Log Lab knowledge:** ship additional Python, Node.js, database, cloud, API, container, Kubernetes, .NET, Windows service/storage, and Java signatures, with deterministic matching, source links, evidence labels, and investigative recommendations.
+- **Crash Forensics verification fixture:** add a synthetic WER report and representative signature set for repeatable parser/knowledge coverage.
+
+### Changed
+
+- Add searchable Crash Forensics usage documentation and connect Anpu's Pantheon card to the workspace.
+- Advance app, setup, and workflow fallback version metadata to `0.5.0`.
+- GitHub release messages now contain only the matching version section from `CHANGELOG.md`.
+
+### Verification
+
+- Windows Release builds completed with 0 warnings and 0 errors for the desktop app and setup project.
+- Self-contained Windows x64 publishes completed for the app and single-file installer.
+- Automated suite passed: 55 tests, including minidump bounds, WER knowledge reuse, and runtime Log Lab knowledge matching.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added

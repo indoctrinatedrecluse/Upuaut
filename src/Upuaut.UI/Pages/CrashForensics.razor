@@ -1,0 +1,293 @@
+@page "/crash-forensics"
+@namespace Upuaut.UI.Pages
+@using Microsoft.Win32
+@using Upuaut.CrashForensics
+@using Upuaut.CrashForensics.Models
+@using Microsoft.Extensions.Logging
+@using System.Text
+@inject ICrashArtifactAnalyzer Analyzer
+@inject CrashForensicsHandoff Handoff
+@inject ILogger<CrashForensics> Logger
+@inject IJSRuntime JS
+
+<PageTitle>Upuaut — Crash Forensics</PageTitle>
+
+<div class="crash-forensics-page">
+    <header class="cf-hero">
+        <div>
+            <div class="cf-eyebrow"><span></span> ANPU // POST-MORTEM ARTIFACT ANALYSIS</div>
+            <h1>Crash <span>Forensics</span></h1>
+            <p>Inspect Windows user-mode minidumps and WER reports. See the recorded evidence, its limits, and the next useful checks.</p>
+        </div>
+        <div class="cf-hero-mark" aria-hidden="true">𓃣</div>
+    </header>
+
+    @if (_linkedLog is not null)
+    {
+        <section class="cf-linked-log">
+            <div class="cf-linked-heading"><span>LOG LAB EVIDENCE HANDOFF</span><button class="cf-quiet-button" @onclick="ClearLinkedLog">DISMISS</button></div>
+            <div class="cf-linked-meta"><strong>@_linkedLog.Headline</strong><span>@_linkedLog.FileName · line @_linkedLog.SourceLine@(string.IsNullOrWhiteSpace(_linkedLog.Severity) ? "" : $" · {_linkedLog.Severity}")</span></div>
+            <p>@_linkedLog.Message</p>
+            <small>@_linkedLog.Explanation</small>
+            <div class="cf-linked-foot">This selected entry is context for the dump review; it does not prove that the log event caused the crash.</div>
+        </section>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_status))
+    {
+        <div class="cf-status @(_isError ? "is-error" : "")" role="status">@_status</div>
+    }
+
+    <section class="cf-ingest-panel">
+        <div class="cf-ingest-symbol">DMP</div>
+        <div class="cf-ingest-copy">
+            <strong>@(_result?.FileName ?? "SELECT A CRASH ARTIFACT")</strong>
+            <span>@(_result is null ? "Windows user-mode dump · Windows Error Reporting .wer · managed .NET dump" : $"{_result.Kind} · {FormatBytes(_result.FileSizeBytes)}")</span>
+        </div>
+        <button class="cf-select-button" @onclick="SelectArtifact">@(_result is null ? "OPEN ARTIFACT" : "CHOOSE ANOTHER") <span>↗</span></button>
+        @if (_result?.Kind == CrashArtifactKind.WindowsMinidump)
+        {
+            <label class="cf-symbol-toggle"><input type="checkbox" @bind="_resolveSymbols" disabled="@_busy" /> <span><strong>RESOLVE MANAGED SYMBOLS</strong><small>Optional network lookup to Microsoft's HTTPS symbol server; off by default.</small></span></label>
+        }
+        @if (_selectedPath is not null && !_busy)
+        {
+            <button class="cf-analyze-button" @onclick="AnalyzeSelected">ANALYZE LOCALLY <span>⟶</span></button>
+        }
+        @if (_busy)
+        {
+            <div class="cf-loading" role="status"><span class="cf-pulse"></span><span>READING DUMP STRUCTURE · KEEPING THE SOURCE UNCHANGED</span></div>
+        }
+    </section>
+
+    <div class="cf-privacy-note"><strong>LOCAL ANALYSIS</strong><span>Crash dumps can contain credentials, personal data, and private memory. Upuaut does not upload the dump. Symbol lookup is an explicit opt-in and sends symbol requests only; no dump contents are sent.</span></div>
+
+    @if (_result is null)
+    {
+        <section class="cf-empty-state">
+            <span class="cf-empty-glyph">✦</span>
+            <h2>Read the failure record</h2>
+            <p>Choose a <code>.dmp</code>, <code>.mdmp</code>, or <code>.wer</code> file. Upuaut checks the artifact signature before parsing and keeps unsupported or damaged files untouched.</p>
+            <div class="cf-capability-grid">
+                <article><b>01</b><strong>MINIDUMP STRUCTURE</strong><span>Architecture, Windows version, exception record, process ID, modules, and thread metadata.</span></article>
+                <article><b>02</b><strong>MANAGED EVIDENCE</strong><span>Optional .NET runtime and managed thread stacks when the matching runtime data is available.</span></article>
+                <article><b>03</b><strong>WER REPORTS</strong><span>Preserve report fields and reuse Log Lab's deterministic, source-backed scenario knowledge.</span></article>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="cf-summary-panel">
+            <div class="cf-summary-heading"><div><span>ARTIFACT READOUT</span><h2>@_result.Summary</h2></div><span class="cf-kind-badge">@KindLabel(_result.Kind)</span></div>
+            <div class="cf-metadata-grid">
+                <div><small>ARCHITECTURE</small><strong>@(_result.Architecture ?? "Not present")</strong></div>
+                <div><small>OPERATING SYSTEM</small><strong>@(_result.OperatingSystem ?? "Not present")</strong></div>
+                <div><small>DUMP TIME · UTC</small><strong>@(_result.DumpTimestampUtc?.ToString("yyyy-MM-dd HH:mm:ss 'UTC'") ?? "Not present")</strong></div>
+                <div><small>PROCESS ID</small><strong>@(_result.ProcessId?.ToString() ?? "Not present")</strong></div>
+                <div><small>EXCEPTION</small><strong>@ExceptionLabel(_result.Exception)</strong></div>
+                <div><small>MODULES / THREADS</small><strong>@_result.Modules.Count / @_result.Threads.Count</strong></div>
+            </div>
+            @if (_result.Exception is { } exception)
+            {
+                <div class="cf-exception-row"><span>EXCEPTION RECORD</span><code>@exception.CodeText</code><strong>@CrashArtifactAnalyzer.ExceptionName(exception.Code)</strong><small>thread @exception.ThreadId · instruction 0x@exception.Address.ToString("X")</small></div>
+            }
+        </section>
+
+        @if (_result.IsKernelDump)
+        {
+            <section class="cf-kernel-handoff"><span>EXTERNAL DEBUGGER REQUIRED</span><h2>Kernel dump recognized; deep analysis stays with WinDbg</h2><p>Kernel dumps can contain multi-gigabyte virtual memory layouts, missing pages, and architecture-specific structures. Upuaut identifies this format without making unsupported driver or bugcheck claims.</p><div><button class="cf-quiet-button" @onclick="CopyPath">COPY DUMP PATH</button><a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/analyzing-a-kernel-mode-dump-file-with-windbg" target="_blank" rel="noopener noreferrer">WINDBG ANALYSIS GUIDE ↗</a></div></section>
+        }
+
+        @if (_result.Findings.Count > 0)
+        {
+            <section class="cf-findings-panel"><div class="cf-section-heading"><div><span>INTERPRETATION DECK</span><h2>What the artifact records</h2></div><small>Evidence labels organize review; they do not establish root cause.</small></div>
+                <div class="cf-findings-grid">
+                    @foreach (var finding in _result.Findings.Take(16))
+                    {
+                        <article class="cf-finding-card"><div><span>@finding.Code</span><small>SOURCE-ATTRIBUTED SIGNAL</small></div><h3>@finding.Headline</h3><p>@finding.Explanation</p><ul>@foreach (var check in finding.Checks.Take(6)) { <li>@check</li> }</ul></article>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (_result.ManagedRuntimes.Count > 0)
+        {
+            <section class="cf-managed-panel"><div class="cf-section-heading"><div><span>CLRMD · MANAGED THREAD INSPECTION</span><h2>Runtime frames</h2></div><small>Frames may be incomplete without matching diagnostic libraries and symbols.</small></div>
+                @foreach (var runtime in _result.ManagedRuntimes)
+                {
+                    <details class="cf-runtime-card"><summary>@runtime.Flavor @runtime.Version <span>@runtime.Threads.Count managed thread(s)</span></summary>
+                        @foreach (var thread in runtime.Threads)
+                        {
+                            <div class="cf-thread-card"><strong>OS THREAD @thread.OsThreadId · MANAGED @thread.ManagedThreadId @(!thread.IsAlive ? "· EXITED" : "")</strong>
+                                @if (thread.Frames.Count == 0) { <p>No managed frames were available for this thread.</p> }
+                                <ol>@foreach (var frame in thread.Frames.Take(48)) { <li><code>@frame</code></li> }</ol>
+                            </div>
+                        }
+                    </details>
+                }
+            </section>
+        }
+
+        @if (_result.Modules.Count > 0)
+        {
+            <details class="cf-list-panel"><summary>LOADED MODULES <span>@_result.Modules.Count</span></summary><div class="cf-module-list">
+                @foreach (var module in _result.Modules.Take(256))
+                {
+                    <div><strong>@module.Name</strong><code>0x@module.BaseAddress.ToString("X") · @FormatBytes(module.ImageSize)</code></div>
+                }
+            </div></details>
+        }
+
+        @if (_result.ReportFields.Count > 0)
+        {
+            <details class="cf-list-panel"><summary>WER REPORT FIELDS <span>@_result.ReportFields.Count</span></summary><dl class="cf-field-list">@foreach (var pair in _result.ReportFields.Take(256)) { <dt>@pair.Key</dt><dd>@pair.Value</dd> }</dl></details>
+        }
+
+        @if (_result.LogEvidence.Count > 0)
+        {
+            <section class="cf-log-evidence"><div class="cf-section-heading"><div><span>WER ENTRY REVIEW</span><h2>Source lines and Log Lab signals</h2></div></div>
+                @foreach (var evidence in _result.LogEvidence.Take(64))
+                {
+                    <article><div><span>LINE @evidence.SourceLine · @evidence.Severity</span>@if (!string.IsNullOrWhiteSpace(evidence.Headline)) { <strong>@evidence.Headline</strong> }</div><p>@evidence.Message</p>@if (!string.IsNullOrWhiteSpace(evidence.Explanation)) { <small>@evidence.Explanation</small> }@if (!string.IsNullOrWhiteSpace(evidence.SourceUrl)) { <a href="@evidence.SourceUrl" target="_blank" rel="noopener noreferrer">SOURCE REFERENCE ↗</a> }</article>
+                }
+            </section>
+        }
+
+        @if (_result.Warnings.Count > 0)
+        {
+            <details class="cf-warning-panel" open><summary>PARTIAL READ / LIMITATIONS <span>@_result.Warnings.Count</span></summary><ul>@foreach (var warning in _result.Warnings.Take(24)) { <li>@warning</li> }</ul></details>
+        }
+
+        <div class="cf-report-actions"><span>Analysis is reproducible from the artifact and the displayed evidence.</span><button class="cf-quiet-button" @onclick="SaveReport">EXPORT INVESTIGATION REPORT · MD</button><button class="cf-quiet-button" @onclick="ClearArtifact">CLOSE ARTIFACT</button></div>
+    }
+</div>
+
+@code {
+    private string? _selectedPath;
+    private CrashAnalysisResult? _result;
+    private CrashLogContext? _linkedLog;
+    private string _status = string.Empty;
+    private bool _isError;
+    private bool _busy;
+    private bool _resolveSymbols;
+
+    protected override void OnInitialized() => _linkedLog = Handoff.Take();
+
+    private void SelectArtifact()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a crash dump or Windows Error Reporting file",
+            Filter = "Crash artifacts (*.dmp;*.mdmp;*.wer;*.core;*.dump)|*.dmp;*.mdmp;*.wer;*.core;*.dump|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+        if (dialog.ShowDialog() != true) return;
+        _selectedPath = dialog.FileName;
+        _result = null;
+        _status = "Artifact selected. Choose Analyze Locally to inspect it.";
+        _isError = false;
+    }
+
+    private async Task AnalyzeSelected()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPath) || _busy) return;
+        _busy = true;
+        _status = "Checking the artifact signature and bounded metadata streams…";
+        _isError = false;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            _result = await Analyzer.AnalyzeAsync(_selectedPath, _resolveSymbols);
+            _status = _result.Warnings.Count == 0 ? "Artifact analysis complete." : "Partial analysis complete. Review the parser limits and unavailable evidence below.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Crash Forensics could not analyze {ArtifactPath}", _selectedPath);
+            _result = null;
+            _status = $"Analysis could not complete: {ex.Message}. The source artifact was left unchanged.";
+            _isError = true;
+        }
+        finally { _busy = false; }
+    }
+
+    private void ClearArtifact()
+    {
+        _selectedPath = null; _result = null; _status = string.Empty; _isError = false; _resolveSymbols = false;
+    }
+
+    private void ClearLinkedLog() => _linkedLog = null;
+
+    private async Task CopyPath()
+    {
+        if (_selectedPath is null) return;
+        try { await JS.InvokeVoidAsync("upuautLogEditor.copyText", _selectedPath); _status = "Dump path copied."; _isError = false; }
+        catch (Exception ex) { Logger.LogWarning(ex, "Could not copy selected dump path"); _status = "Could not copy the dump path. Select and copy it from the artifact header."; _isError = true; }
+    }
+
+    private void SaveReport()
+    {
+        if (_result is null) return;
+        var dialog = new SaveFileDialog { Title = "Save Crash Forensics report", Filter = "Markdown report (*.md)|*.md", FileName = Path.GetFileNameWithoutExtension(_result.FileName) + "-upuaut-crash-report.md", AddExtension = true, DefaultExt = "md" };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            File.WriteAllText(dialog.FileName, BuildMarkdownReport(_result, _linkedLog));
+            _status = $"Saved report to {dialog.FileName}. Review sensitive evidence before sharing.";
+            _isError = false;
+        }
+        catch (Exception ex) { Logger.LogError(ex, "Could not save Crash Forensics report"); _status = $"Report could not be saved: {ex.Message}"; _isError = true; }
+    }
+
+    private static string BuildMarkdownReport(CrashAnalysisResult result, CrashLogContext? linkedLog)
+    {
+        var output = new StringBuilder()
+            .AppendLine("# Upuaut Crash Forensics Report")
+            .AppendLine()
+            .AppendLine($"- **Artifact:** {Markdown(result.FileName)}")
+            .AppendLine($"- **Type:** {Markdown(KindLabel(result.Kind))}")
+            .AppendLine($"- **Size:** {FormatBytes(result.FileSizeBytes)}")
+            .AppendLine($"- **Summary:** {Markdown(result.Summary)}")
+            .AppendLine($"- **Architecture:** {Markdown(result.Architecture ?? "Not present")}")
+            .AppendLine($"- **Operating system:** {Markdown(result.OperatingSystem ?? "Not present")}")
+            .AppendLine();
+        if (linkedLog is not null) output.AppendLine("## Linked Log Lab evidence").AppendLine().AppendLine($"- {Markdown(linkedLog.FileName)} line {linkedLog.SourceLine}: {Markdown(linkedLog.Message)}").AppendLine();
+        if (result.Exception is { } exception) output.AppendLine("## Exception record").AppendLine().AppendLine($"- **Code:** {exception.CodeText} ({CrashArtifactAnalyzer.ExceptionName(exception.Code)})").AppendLine($"- **Thread:** {exception.ThreadId}").AppendLine($"- **Instruction:** 0x{exception.Address:X}").AppendLine();
+        if (result.Findings.Count > 0)
+        {
+            output.AppendLine("## Evidence and suggested checks").AppendLine();
+            foreach (var finding in result.Findings.Take(16))
+            {
+                output.AppendLine($"### {Markdown(finding.Headline)}").AppendLine().AppendLine(Markdown(finding.Explanation)).AppendLine();
+                foreach (var check in finding.Checks.Take(8)) output.AppendLine($"- {Markdown(check)}");
+                output.AppendLine();
+            }
+        }
+        if (result.ManagedRuntimes.Count > 0)
+        {
+            output.AppendLine("## Managed runtimes").AppendLine();
+            foreach (var runtime in result.ManagedRuntimes.Take(8))
+            {
+                output.AppendLine($"### {Markdown(runtime.Flavor)} {Markdown(runtime.Version)}").AppendLine();
+                foreach (var thread in runtime.Threads.Take(64))
+                {
+                    output.AppendLine($"#### OS thread {thread.OsThreadId} · managed thread {thread.ManagedThreadId}").AppendLine();
+                    foreach (var frame in thread.Frames.Take(48)) output.AppendLine($"- `{Markdown(frame)}`");
+                    output.AppendLine();
+                }
+            }
+        }
+        if (result.Warnings.Count > 0)
+        {
+            output.AppendLine("## Partial analysis and limitations").AppendLine();
+            foreach (var warning in result.Warnings.Take(32)) output.AppendLine($"- {Markdown(warning)}");
+            output.AppendLine();
+        }
+        output.AppendLine("> Analysis is best-effort. A matching debugger, symbols, binaries, and surrounding logs may be required to establish a root cause.");
+        return output.ToString();
+    }
+
+    private static string Markdown(string value) => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("|", "\\|", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+    private static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024 ? $"{bytes / (1024d * 1024 * 1024):0.##} GiB" : bytes >= 1024L * 1024 ? $"{bytes / (1024d * 1024):0.##} MiB" : $"{bytes / 1024d:0.##} KiB";
+    private static string KindLabel(CrashArtifactKind kind) => kind switch { CrashArtifactKind.WindowsMinidump => "Windows user-mode minidump", CrashArtifactKind.WindowsKernelDump => "Windows kernel dump", CrashArtifactKind.WindowsErrorReport => "Windows Error Reporting report", _ => "Unknown artifact" };
+    private static string ExceptionLabel(CrashExceptionEvidence? exception) => exception is null ? "Not present" : $"{exception.CodeText} · {CrashArtifactAnalyzer.ExceptionName(exception.Code)}";
+}

@@ -1,0 +1,154 @@
+﻿@implements IDisposable
+@using Markdig
+@using Markdig.Renderers
+@using Microsoft.Extensions.Logging
+@using Upuaut.Core.Updates
+@inject UpdateDialogCoordinator Coordinator
+@inject IUpdateService UpdateService
+@inject Microsoft.Extensions.Logging.ILogger<UpdateDialogHost> Logger
+
+@if (_showUpdates)
+{
+    <div class="help-modal-backdrop update-modal-backdrop" @onclick="CloseUpdates">
+        <section class="help-modal-panel update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title" @onclick:stopPropagation="true">
+            <header class="help-modal-header">
+                <div><span class="help-modal-kicker">UPUAUT RELEASE CHANNEL</span><h2 id="update-title">Check for Updates</h2></div>
+                <button class="help-modal-close" aria-label="Close updates" @onclick="CloseUpdates">×</button>
+            </header>
+            <p class="update-status">@_updateMessage</p>
+            @if (_updateRelease is { } release)
+            {
+                <div class="update-release-card">
+                    <span class="help-topic-category">NEW RELEASE · v@release.Version</span>
+                    <h3>@release.Name</h3>
+                    @if (!string.IsNullOrWhiteSpace(release.Notes))
+                    {
+                        <article class="update-markdown">@((MarkupString)RenderMarkdown(release.Notes))</article>
+                    }
+                </div>
+            }
+            @if (_updateBusy)
+            {
+                <div class="update-progress-track"><div style="width:@($"{_updateProgress:0}%")"></div></div>
+                <small class="update-progress-label">@(_updateProgress > 0 ? $"DOWNLOADING · {_updateProgress:0}%" : "CONTACTING RELEASE CHANNEL…")</small>
+            }
+            <footer class="help-modal-footer">
+                <span>Updates are downloaded from the official Upuaut GitHub releases.</span>
+                @if (_updateRelease is not null && !_updateBusy)
+                {
+                    <button class="update-install-button" @onclick="DownloadAndInstall">DOWNLOAD &amp; INSTALL</button>
+                }
+                else if (!_updateBusy)
+                {
+                    <button class="help-modal-secondary" @onclick="CheckForUpdates">CHECK AGAIN</button>
+                }
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly MarkdownPipeline ReleaseNotesPipeline = new MarkdownPipelineBuilder().UsePipeTables().UseTaskLists().DisableHtml().Build();
+    private const int MaximumReleaseNotesCharacters = 100_000;
+    private bool _showUpdates;
+    private bool _updateBusy;
+    private double _updateProgress;
+    private UpdateRelease? _updateRelease;
+    private string _updateMessage = "Compare this installation with the latest stable release.";
+
+    protected override void OnInitialized() => Coordinator.OpenRequested += HandleOpenRequested;
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _ = CheckForStartupUpdate();
+        return Task.CompletedTask;
+    }
+
+    private static string RenderMarkdown(string markdown)
+    {
+        var bounded = markdown.Length > MaximumReleaseNotesCharacters ? markdown[..MaximumReleaseNotesCharacters] + "\n\n_Release notes truncated by Upuaut._" : markdown;
+        var document = Markdig.Markdown.Parse(bounded, ReleaseNotesPipeline);
+        using var writer = new StringWriter();
+        var renderer = new Markdig.Renderers.HtmlRenderer(writer) { LinkRewriter = RewriteReleaseLink };
+        ReleaseNotesPipeline.Setup(renderer);
+        renderer.Render(document);
+        return System.Text.RegularExpressions.Regex.Replace(writer.ToString(), "<img\\b[^>]*>", string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromMilliseconds(100));
+    }
+
+    private static string RewriteReleaseLink(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
+            return absolute.Scheme is "https" or "http" or "mailto" ? url : string.Empty;
+        return url.StartsWith('#') ? url : string.Empty;
+    }
+
+    private void HandleOpenRequested() => _ = InvokeAsync(OpenUpdates);
+
+    private async Task OpenUpdates()
+    {
+        _showUpdates = true;
+        await CheckForUpdates();
+    }
+
+    private async Task CheckForStartupUpdate()
+    {
+        try
+        {
+            var release = await UpdateService.CheckForUpdateAsync();
+            if (release is not null)
+            {
+                _updateRelease = release;
+                _updateMessage = $"Upuaut v{release.Version} is ready. Review the release notes, then choose whether to download and install it.";
+                _showUpdates = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Automatic update check failed during startup"); }
+    }
+
+    private async Task CheckForUpdates()
+    {
+        _updateBusy = true;
+        _updateRelease = null;
+        _updateMessage = "Contacting the release channel…";
+        try
+        {
+            _updateRelease = await UpdateService.CheckForUpdateAsync();
+            _updateMessage = _updateRelease is null
+                ? "This installation is up to date. The path is clear."
+                : $"Upuaut v{_updateRelease.Version} is available. Review the release notes, then choose whether to download and install it.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Manual update check failed");
+            _updateMessage = $"The release channel could not be reached: {ex.Message}";
+        }
+        finally { _updateBusy = false; }
+    }
+
+    private async Task DownloadAndInstall()
+    {
+        if (_updateRelease is not { } release) return;
+        _updateBusy = true;
+        _updateProgress = 0;
+        _updateMessage = "Downloading and verifying the setup bundle. The installer will open when staging is complete.";
+        try
+        {
+            var progress = new Progress<double>(value => { _updateProgress = value; _ = InvokeAsync(StateHasChanged); });
+            await UpdateService.DownloadAndLaunchInstallerAsync(release, progress);
+            _updateMessage = "Setup is ready. Upuaut is closing so the installer can update its files.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not download or launch update v{Version}", release.Version);
+            _updateMessage = $"Update could not be staged: {ex.Message}";
+            _updateBusy = false;
+        }
+    }
+
+    private void CloseUpdates() { if (!_updateBusy) _showUpdates = false; }
+
+    public void Dispose() => Coordinator.OpenRequested -= HandleOpenRequested;
+}

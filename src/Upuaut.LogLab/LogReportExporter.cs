@@ -50,6 +50,7 @@ public sealed class LogReportExporter : ILogReportExporter
             {
                 output.AppendLine($"### Line {entry.SourceLine} · {entry.Severity} · {finding.Category}").AppendLine($"**{Escape(finding.Headline)}** — {Escape(entry.Message)}")
                     .AppendLine($"Tags: {string.Join(", ", finding.Tags.Select(Escape))} · Match strength: {finding.MatchStrength}");
+                if (finding.KnowledgeId is not null) output.AppendLine($"Knowledge rule: {Escape(finding.KnowledgeId)} · Reference: {Escape(finding.KnowledgeSource ?? string.Empty)}");
                 var keyDetails = KeyDetails(entry);
                 if (keyDetails.Count > 0) output.AppendLine($"**Key details:** {string.Join(" · ", keyDetails.Select(pair => $"{Escape(pair.Key)}: {Escape(pair.Value)}"))}");
                 output.AppendLine($"**Interpretation:** {Escape(entry.InterpretationBasis)}");
@@ -76,7 +77,7 @@ public sealed class LogReportExporter : ILogReportExporter
         var notable = (options.IncludeNotableEntries ? GetNotableEntries(document, analysis) : []).Take(MaximumFindingsInReport)
             .Select(pair => new ExportedEntry(pair.Entry.Index, pair.Entry.SourceLine, pair.Entry.Timestamp, pair.Entry.Severity, pair.Entry.Source,
                 pair.Entry.Message, pair.Entry.SourceLineEnd, KeyDetails(pair.Entry), pair.Entry.InterpretationBasis, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence,
-                options.IncludeRecommendations ? pair.Finding.Recommendations : Array.Empty<string>())).ToArray();
+                options.IncludeRecommendations ? pair.Finding.Recommendations : Array.Empty<string>(), pair.Finding.KnowledgeId, pair.Finding.KnowledgeSource)).ToArray();
         var payload = new
         {
             schemaVersion = 1,
@@ -126,5 +127,5 @@ public sealed class LogReportExporter : ILogReportExporter
         .Replace("|", "\\|").Replace("`", "\\`").Replace("\r", " ").Replace("\n", " ");
     private sealed record ExportedEntry(int Index, int SourceLine, DateTimeOffset? Timestamp, LogEntrySeverity Severity, string? Source,
         string Message, int SourceLineEnd, IReadOnlyDictionary<string, string> KeyDetails, string InterpretationBasis, LogScenarioCategory Category, string Headline, RuleMatchStrength MatchStrength, IReadOnlyList<string> Tags,
-        IReadOnlyList<LogEvidence> Evidence, IReadOnlyList<string> Recommendations);
+        IReadOnlyList<LogEvidence> Evidence, IReadOnlyList<string> Recommendations, string? KnowledgeId, string? KnowledgeSource);
 }

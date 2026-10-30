@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Upuaut.App/Upuaut.App.csproj" />
+    <Project Path="src/Upuaut.CrashForensics/Upuaut.CrashForensics.csproj" />
     <Project Path="src/Upuaut.Chronicles/Upuaut.Chronicles.csproj" />
     <Project Path="src/Upuaut.Core/Upuaut.Core.csproj" />
     <Project Path="src/Upuaut.Scout/Upuaut.Scout.csproj" />

@@ -1,8 +1,23 @@
-.update-modal { max-width: 660px; }
+.update-modal-backdrop { z-index: 12000; }
+.update-modal { width: min(760px, 92vw); max-width: 760px; max-height: min(82vh, 820px); margin: auto; }
 .update-status { color: #c7c8ce; line-height: 1.65; margin: 20px 0; }
 .update-release-card { border: 1px solid #776337; background: linear-gradient(135deg, #19170f, #101116); border-radius: 8px; padding: 18px; max-height: 270px; overflow: auto; }
 .update-release-card h3 { color: #f0d997; margin: 9px 0; }
-.update-release-card p { color: #aeb0b8; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
+.update-markdown { color: #b9bbc3; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.update-markdown > :first-child { margin-top: 0; }
+.update-markdown > :last-child { margin-bottom: 0; }
+.update-markdown h1,.update-markdown h2,.update-markdown h3,.update-markdown h4 { margin: 1rem 0 .4rem; color: #f0d997; line-height: 1.3; }
+.update-markdown h1 { font-size: 1.3rem; }.update-markdown h2 { font-size: 1.14rem; }.update-markdown h3,.update-markdown h4 { font-size: 1rem; }
+.update-markdown p { margin: .55rem 0; white-space: normal; }
+.update-markdown ul,.update-markdown ol { margin: .45rem 0; padding-left: 1.4rem; }
+.update-markdown li { margin: .2rem 0; }
+.update-markdown a { color: #e8d28f; text-decoration-color: rgba(232,210,143,.45); }
+.update-markdown code { padding: .08rem .24rem; border: 1px solid rgba(212,175,55,.16); border-radius: 3px; color: #e6d7aa; background: rgba(5,7,10,.68); font: .9em Consolas,monospace; }
+.update-markdown pre { max-width: 100%; padding: .7rem; overflow: auto; border: 1px solid rgba(212,175,55,.18); border-radius: 5px; background: rgba(5,7,10,.76); }
+.update-markdown pre code { padding: 0; border: 0; background: transparent; }
+.update-markdown blockquote { margin: .55rem 0; padding: .2rem .7rem; border-left: 2px solid #94753b; color: #999ca6; }
+.update-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.update-markdown th,.update-markdown td { padding: .35rem .5rem; border: 1px solid rgba(212,175,55,.2); text-align: left; }
 .update-progress-track { height: 4px; border-radius: 5px; background: #272830; overflow: hidden; margin: 23px 0 8px; }
 .update-progress-track div { height: 100%; background: linear-gradient(90deg, #94753b, #f4d984); transition: width 160ms linear; }
 .update-progress-label { color: #cbb778; font: 10px Consolas, monospace; letter-spacing: .12em; }

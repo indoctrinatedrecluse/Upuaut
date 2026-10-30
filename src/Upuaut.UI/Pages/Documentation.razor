@@ -39,6 +39,7 @@
                 <button class="cat-chip @(_selectedCategory == "arch" ? "active" : "")" @onclick='@(() => _selectedCategory = "arch")'>Architecture &amp; .NET 10</button>
                 <button class="cat-chip @(_selectedCategory == "chronicles" ? "active" : "")" @onclick='@(() => _selectedCategory = "chronicles")'>The Duat Chronicles</button>
                 <button class="cat-chip @(_selectedCategory == "log-lab" ? "active" : "")" @onclick='@(() => _selectedCategory = "log-lab")'>Log Lab</button>
+                <button class="cat-chip @(_selectedCategory == "crash-forensics" ? "active" : "")" @onclick='@(() => _selectedCategory = "crash-forensics")'>Crash Forensics</button>
                 <button class="cat-chip @(_selectedCategory == "scout" ? "active" : "")" @onclick='@(() => _selectedCategory = "scout")'>The Scout (Packet Capture)</button>
                 <button class="cat-chip @(_selectedCategory == "diagnostics" ? "active" : "")" @onclick='@(() => _selectedCategory = "diagnostics")'>Crash Reporter &amp; Logs</button>
                 <button class="cat-chip @(_selectedCategory == "vs2026" ? "active" : "")" @onclick='@(() => _selectedCategory = "vs2026")'>Development Guide</button>
@@ -209,6 +210,24 @@
                 <p>Extraction, classification, and sequence grouping are best-effort, and format detection can be uncertain. Review parser notes and compare fields with the raw source before drawing conclusions.</p>
             ",
             RawText: "Log Lab general purpose log parsing robust raw fallback unknown format malformed binary import text plain text JSON JSONL NDJSON XML CSV source line provenance severity search fields raw editor full source pretty format JSON XML reset 32 MiB 200000 entries best effort parser notes scenario classification evidence tags recommendations sequence repeated failures warning error recovery reports Markdown JSON custom regex parser profiles field extraction timeout built-in .NET console Apache error Nginx access RFC 3164 syslog side by side report sections timeline UTC time buckets component filter source filter time range saved search filter presets sequence window same component"
+        ),
+        new(
+            Id: "crash-forensics",
+            Category: "crash-forensics",
+            CategoryName: "Crash Forensics",
+            Title: "Inspect Windows crash artifacts",
+            Summary: "Read Windows user-mode minidumps and WER reports with bounded local parsing and source-backed interpretation.",
+            Icon: "ð“ƒ£",
+            HtmlContent: @"
+                <p>Open <strong>Crash Forensics</strong> and choose a Windows <code>.dmp</code>, <code>.mdmp</code>, or <code>.wer</code> report. Upuaut checks file signatures before parsing, reads the source without modifying it, and keeps dump content on this computer.</p>
+                <h4>Review a minidump</h4>
+                <p>The reader extracts available architecture, Windows version, timestamp, process ID, exception code and parameters, module metadata, and thread metadata. If a managed CLR runtime is present, Upuaut attempts bounded managed thread and stack inspection. Dumps often omit memory, runtime, or symbol data; missing evidence is reported as a warning rather than inferred.</p>
+                <p>Managed symbol lookup is optional and off by default. Enabling it permits requests to Microsoft's HTTPS symbol server and stores symbols in the current user's local Upuaut cache. The dump itself is not uploaded. Kernel dump signatures are identified, but reliable kernel/driver analysis is handed off to WinDbg.</p>
+                <h4>Review a WER report and link log evidence</h4>
+                <p>Windows Error Reporting <code>.wer</code> files reuse Log Lab's parser and versioned knowledge set. Extracted fields, source lines, and matching explanations are displayed alongside recognized exception codes. In Log Lab, choose a crash-specific entry and use <strong>Open this finding in Crash Forensics</strong> to carry a concise copy as contextual evidence. That relationship is a review aid, not proof that the entry caused the crash.</p>
+                <p>Export a Markdown report after reviewing it for usernames, local paths, and other sensitive information. Input sizes are capped, metadata lists and stack frames are bounded, and corrupt or unsupported artifacts produce a clear error while leaving the original file untouched.</p>
+            ",
+            RawText: "Crash Forensics Windows minidump .dmp .mdmp WER .wer exception code access violation modules threads managed CLR stacks symbols Microsoft HTTPS local analysis offline WinDbg kernel dump Log Lab handoff evidence source lines report"
         ),
         new(
             Id: "in-process-blazor-hybrid",

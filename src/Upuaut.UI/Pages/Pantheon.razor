@@ -204,11 +204,11 @@
             Category: "preservation",
             Epithet: "Guardian of the Threshold · He Who Embalms",
             Mythology: "The black jackal guardian of souls, tombs, and sacred mummification. Anubis carefully embalmed, preserved, and sealed the physical vessel so that decay and oblivion could never destroy its essence, allowing the soul to be analyzed intact across eternity.",
-            SubsystemName: "The Crash Reporter & Forensic Dump Vault",
-            SubsystemShortName: "Crash Reporter",
-            SubsystemRole: "Traps unhandled exceptions across WPF Dispatcher, AppDomain, and TaskScheduler threads. Generates structured JSON and Markdown forensic post-mortem logs in %LocalAppData%\\Upuaut\\Crashes.",
-            TechTags: new[] { "Crash Dumper", "Thread Traps", "Forensic Post-Mortems", "Breadcrumb Ring Buffer" },
-            ActionRoute: ""
+            SubsystemName: "Crash Reporter & Crash Forensics",
+            SubsystemShortName: "Crash Forensics",
+            SubsystemRole: "Preserves Upuaut's own crash reports and inspects Windows user-mode dumps and WER reports with bounded local parsing, managed stack evidence, and careful interpretation.",
+            TechTags: new[] { "Windows Minidumps", "WER Reports", "Managed Stacks", "Local Evidence", "Crash Vault" },
+            ActionRoute: "crash-forensics"
         ),
 
         new(

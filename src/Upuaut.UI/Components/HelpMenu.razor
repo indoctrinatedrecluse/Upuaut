@@ -1,8 +1,6 @@
-@namespace Upuaut.UI.Components
-@using Microsoft.Extensions.Logging
+﻿@namespace Upuaut.UI.Components
 @inject NavigationManager Navigation
-@inject Upuaut.Core.Updates.IUpdateService UpdateService
-@inject Microsoft.Extensions.Logging.ILogger<HelpMenu> Logger
+@inject UpdateDialogCoordinator UpdateDialog
 
 <div class="help-menu" @onclick:stopPropagation="true">
     <button class="help-menu-trigger" aria-haspopup="menu" aria-expanded="@_menuOpen" @onclick="ToggleMenu">
@@ -27,7 +25,7 @@
                 <div><span class="help-menu-label">FIELD GUIDE · SESHTATU</span><h2 id="help-doc-title">Upuaut Documentation</h2></div>
                 <button class="help-modal-close" aria-label="Close documentation" @onclick="CloseDialogs">×</button>
             </header>
-            <p class="help-modal-intro">Search practical steps for investigating Windows events and inspecting network traffic.</p>
+            <p class="help-modal-intro">Search practical steps for investigating Windows events, logs, crash artifacts, and network traffic.</p>
             <div class="help-doc-search">
                 <span aria-hidden="true">⌕</span>
                 <input type="search" placeholder="Search: event logs, DNS, Npcap, permissions…" @bind="_query" @bind:event="oninput" aria-label="Search documentation" />
@@ -74,55 +72,10 @@
     </div>
 }
 
-@if (_showUpdates)
-{
-    <div class="help-modal-backdrop" @onclick="CloseUpdates">
-        <section class="help-modal-panel update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title" @onclick:stopPropagation="true">
-            <header class="help-modal-header">
-                <div><span class="help-modal-kicker">UPUAUT RELEASE CHANNEL</span><h2 id="update-title">Check for Updates</h2></div>
-                <button class="help-modal-close" aria-label="Close updates" @onclick="CloseUpdates">×</button>
-            </header>
-            <p class="update-status">@_updateMessage</p>
-            @if (_updateRelease is { } release)
-            {
-                <div class="update-release-card">
-                    <span class="help-topic-category">NEW RELEASE · v@release.Version</span>
-                    <h3>@release.Name</h3>
-                    @if (!string.IsNullOrWhiteSpace(release.Notes))
-                    {
-                        <p>@release.Notes</p>
-                    }
-                </div>
-            }
-            @if (_updateBusy)
-            {
-                <div class="update-progress-track"><div style="width:@($"{_updateProgress:0}%")"></div></div>
-                <small class="update-progress-label">@(_updateProgress > 0 ? $"DOWNLOADING · {_updateProgress:0}%" : "CONTACTING RELEASE CHANNEL…")</small>
-            }
-            <footer class="help-modal-footer">
-                <span>Updates are downloaded from the official Upuaut GitHub releases.</span>
-                @if (_updateRelease is not null && !_updateBusy)
-                {
-                    <button class="update-install-button" @onclick="DownloadAndInstall">DOWNLOAD &amp; INSTALL</button>
-                }
-                else if (!_updateBusy)
-                {
-                    <button class="help-modal-secondary" @onclick="CheckForUpdates">CHECK AGAIN</button>
-                }
-            </footer>
-        </section>
-    </div>
-}
-
 @code {
     private bool _menuOpen;
     private bool _showDocumentation;
     private bool _showAbout;
-    private bool _showUpdates;
-    private bool _updateBusy;
-    private double _updateProgress;
-    private Upuaut.Core.Updates.UpdateRelease? _updateRelease;
-    private string _updateMessage = "Compare this installation with the latest stable release.";
     private string _query = "";
 
     private IEnumerable<HelpTopic> VisibleTopics => string.IsNullOrWhiteSpace(_query)
@@ -135,76 +88,7 @@
 
     private void ToggleMenu() => _menuOpen = !_menuOpen;
 
-    protected override Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) _ = CheckForStartupUpdate();
-        return Task.CompletedTask;
-    }
-
-    private async Task CheckForStartupUpdate()
-    {
-        try
-        {
-            var release = await UpdateService.CheckForUpdateAsync();
-            if (release is not null)
-            {
-                _updateRelease = release;
-                _updateMessage = $"Upuaut v{release.Version} is ready. Review the release notes, then choose whether to download and install it.";
-                _showUpdates = true;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch (Exception ex) { Logger.LogWarning(ex, "Automatic update check failed during startup"); }
-    }
-
-    private async Task OpenUpdates()
-    {
-        _menuOpen = false;
-        _showUpdates = true;
-        await CheckForUpdates();
-    }
-
-    private async Task CheckForUpdates()
-    {
-        _updateBusy = true;
-        _updateRelease = null;
-        _updateMessage = "Contacting the release channel…";
-        try
-        {
-            _updateRelease = await UpdateService.CheckForUpdateAsync();
-            _updateMessage = _updateRelease is null
-                ? "This installation is up to date. The path is clear."
-                : $"Upuaut v{_updateRelease.Version} is available. Review the release notes, then choose whether to download and install it.";
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Manual update check failed");
-            _updateMessage = $"The release channel could not be reached: {ex.Message}";
-        }
-        finally { _updateBusy = false; }
-    }
-
-    private async Task DownloadAndInstall()
-    {
-        if (_updateRelease is not { } release) return;
-        _updateBusy = true;
-        _updateProgress = 0;
-        _updateMessage = "Downloading and verifying the setup bundle. The installer will open when staging is complete.";
-        try
-        {
-            var progress = new Progress<double>(value => { _updateProgress = value; _ = InvokeAsync(StateHasChanged); });
-            await UpdateService.DownloadAndLaunchInstallerAsync(release, progress);
-            _updateMessage = "Setup is ready. Upuaut is closing so the installer can update its files.";
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Could not download or launch update v{Version}", release.Version);
-            _updateMessage = $"Update could not be staged: {ex.Message}";
-            _updateBusy = false;
-        }
-    }
-
-    private void CloseUpdates() { if (!_updateBusy) _showUpdates = false; }
+    private void OpenUpdates() { _menuOpen = false; UpdateDialog.Open(); }
 
     private void OpenDocumentation()
     {
@@ -247,6 +131,8 @@
         ["Use the prominent Canvas Motion switch in the top bar to enable or disable the animated app canvas. The static poster remains as the background, and the launch splash still appears at startup.", "Open Diagnostics & Logs from the top bar when you need application logs or crash-reporting information."]),
         new("UPDATES", "Install a new Upuaut release", "Upuaut checks the latest stable GitHub release at startup and lets you decide when to install.",
         ["If an update is found, review its release notes in the update window. You can also open Help and choose Check for Updates at any time.", "Choose Download & Install to stage the official Windows setup bundle. The themed setup program opens and Upuaut closes so its files can be updated.", "The installer updates the current per-user installation. Keep the setup window open until installation completes."]),
+        new("CRASH FORENSICS", "Inspect a crash dump or WER report", "Crash Forensics reads Windows user-mode minidumps and Windows Error Reporting files locally, and reuses Log Lab's curated knowledge for WER entries.",
+        ["Open Crash Forensics and choose a .dmp, .mdmp, or .wer file. The original file is read-only and is never uploaded.", "Review the exception, process, modules, threads, warnings, and any managed runtime stacks that are available. Missing dump streams or runtime metadata produce partial results.", "For managed stack inspection, optionally enable Microsoft symbol lookup. It is off by default and uses Microsoft's HTTPS symbol server; dump contents are not sent.", "Kernel dumps are identified but require WinDbg for reliable kernel and driver analysis. Select a crash-specific finding in Log Lab to carry that entry into Crash Forensics as context.", "Export a Markdown report after reviewing it for sensitive paths, usernames, and exception details."]),
         new("TRIAGE · EARLY PREVIEW", "Compare events with nearby packets", "The Scales can query recent System/Application warnings and errors and compare them with packets already in Scout’s buffer.",
         ["Choose event channels and a time window, then select Analyze Available Signals. This does not start packet capture.", "An event is paired with its nearest buffered packet when their timestamps are within 2.5 seconds.", "The display indicates temporal proximity only. It does not determine that a packet caused an event; weighted anomaly scoring is not implemented yet."])
     ];

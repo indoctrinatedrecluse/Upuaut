@@ -128,11 +128,11 @@
                                         </div>
                                     </div>
 
-                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("pantheon"))'>
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("crash-forensics"))'>
                                         <span class="acc-deity-icon">🛡️</span>
                                         <div class="acc-deity-text">
                                             <strong class="acc-deity-name">Anpu (Anubis)</strong>
-                                            <span class="acc-deity-desc">Guardian of the Vessel → Crash Dumper</span>
+                                            <span class="acc-deity-desc">Guardian of the Vessel → Crash Forensics</span>
                                         </div>
                                     </div>
 
@@ -187,6 +187,8 @@
         </main>
     </div>
 </div>
+
+<UpdateDialogHost />
 
 @if (_showSplash)
 {

@@ -6,11 +6,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.FluentUI.AspNetCore.Components;
 using Upuaut.Chronicles.Services;
+using Upuaut.CrashForensics;
 using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
 using Upuaut.LogLab;
+using Upuaut.LogLab.Models;
 using Upuaut.Scout.Services;
 using Upuaut.Core.Updates;
+using Upuaut.UI.Components;
+using Upuaut.UI.Services;
 
 namespace Upuaut.App;
 
@@ -114,7 +118,11 @@ public partial class MainWindow : Window
             services.AddSingleton<ILogParserProfileService, LogParserProfileService>();
             services.AddSingleton<ILogTimelineAnalysisEngine, LogTimelineAnalysisEngine>();
             services.AddSingleton<ILogSearchPresetService, LogSearchPresetService>();
+            services.AddSingleton<ILlmAssistantService, LocalLlmAssistantService>();
+            services.AddSingleton<ICrashArtifactAnalyzer, CrashArtifactAnalyzer>();
+            services.AddSingleton<CrashForensicsHandoff>();
             services.AddSingleton<IUpdateService, GitHubUpdateService>();
+            services.AddSingleton<UpdateDialogCoordinator>();
 
             blazorWebView.Services = services.BuildServiceProvider();
             blazorWebView.Services.GetRequiredService<IUpdateService>().InstallerLaunched +=

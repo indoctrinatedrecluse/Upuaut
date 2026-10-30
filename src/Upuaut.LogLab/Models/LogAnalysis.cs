@@ -31,7 +31,13 @@ public sealed record LogEntryAnalysis(
     RuleMatchStrength MatchStrength,
     IReadOnlyList<string> Tags,
     IReadOnlyList<LogEvidence> Evidence,
-    IReadOnlyList<string> Recommendations);
+    IReadOnlyList<string> Recommendations)
+{
+    /// <summary>Stable identifier for a curated, source-backed pattern when one matched.</summary>
+    public string? KnowledgeId { get; init; }
+    /// <summary>Primary documentation reference supporting the interpretation.</summary>
+    public string? KnowledgeSource { get; init; }
+}
 
 public sealed record LogCategoryCount(LogScenarioCategory Category, int Count);
 

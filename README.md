@@ -8,6 +8,10 @@ Upuaut is a Windows desktop toolkit for investigating Windows event logs, inspec
 - **Scout** captures IPv4 traffic through Windows raw sockets or Ethernet frames through Npcap. Ethernet mode dissects IPv4, IPv6, VLAN, ARP, TCP, UDP, ICMP, and ICMPv6. The inspector provides protocol details, bounded DNS question/answer data, selected HTTP metadata, TLS ClientHello SNI, and captured bytes. Scout also supports display and user-space capture filters, endpoint conversations, TCP Follow, and PCAPNG import/export.
 - **Scales** is an early correlation preview. It places recent System/Application warning and error events beside packets already in Scout's buffer when they fall within ±2.5 seconds. The score is time proximity only; it does not establish causation or threat probability. Notes and case data can be saved as JSON or CSV.
 - **Log Lab** imports operational, server, installer, diagnostic, and crash logs; extracts structured evidence when possible; provides scenario, sequence, and timeline analysis; and preserves an editable raw-source view when the format is unfamiliar or analysis fails.
+- **Crash Forensics** inspects Windows user-mode minidumps and WER reports locally, extracts exception and available managed-runtime evidence, and reuses Log Lab's curated knowledge. Crash findings in Log Lab can be handed to this workspace with the source entry attached. Kernel dumps are identified and referred to WinDbg for deep analysis.
+- **Crash Forensics** inspects Windows user-mode minidumps and WER reports locally, extracts exception and available managed-runtime evidence, and reuses Log Lab's curated knowledge. Crash findings in Log Lab can be handed to this workspace with the source entry attached. Kernel dumps are identified and referred to WinDbg for deep analysis.
+
+Log Lab's built-in scenario knowledge is a versioned offline dataset of source-attributed error patterns, representative signatures, evidence labels, uncertainty-aware explanations, and safe investigation steps. The parser loads these patterns directly into its runtime rules, with fixture tests checking real matches; it is extended from primary vendor and project documentation and tested with synthetic examples. Third-party production log corpora are not redistributed. An optional AI second opinion supports DeepSeek, Gemini, and OpenAI-compatible endpoints. It is manual-only, sends only the selected entry when requested, and stores the API key encrypted for the current Windows account.
 
 Event and packet explanations expose their category, readable headline, tags, evidence, and suggested checks. These are deterministic rules and investigative guidance, not automated root-cause diagnoses.
 
@@ -29,7 +33,9 @@ The workspace currently includes:
 - **Phase 5 delivered — timeline and query presets:** browse timestamped events in bounded UTC buckets, click a bucket to filter the entry list, combine text/severity/scenario/component/time criteria, and save or reuse up to 50 named filters per Windows account.
 - **Phase 5 delivered — sequence pivots:** choose the time window and optionally constrain warning/error/recovery comparisons to the same parsed component. Reports record the sequence settings and can include the timeline trend table.
 - **Raw fallback and recovery:** unfamiliar, malformed, mixed, or binary-like imports remain available in the raw editor when structured parsing cannot confidently proceed. Analysis failures are recorded in Upuaut diagnostics and preserve the original decoded source.
-- **Future extensions:** expand the built-in dialect library and add further time-series metrics and parser-specific pivots.
+- **Knowledge-base growth:** add source-attributed entries to `src/Upuaut.LogLab/Knowledge/log-knowledge-base.json`. Each entry should include stable signals, a category, conservative explanation, bounded remediation guidance, an authoritative source URL, and a representative example. Keep test fixtures synthetic unless a source dataset's license explicitly permits redistribution.
+- **Optional AI review:** provider settings remain local; only the selected entry is sent after the user presses **Request AI Review**. The API key is protected with Windows DPAPI for the current account. AI output is advisory and separate from the deterministic findings.
+- **Future extensions:** expand the built-in dialect and knowledge libraries and add further time-series metrics and parser-specific pivots.
 
 Parsing, classification, and sequence grouping remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Profile regexes run with time limits and can stop early on large or expensive inputs; parser profiles remain user-authored rules rather than automatic format discovery.
 
@@ -56,11 +62,13 @@ Run the desktop host:
 dotnet run --project src/Upuaut.App/Upuaut.App.csproj
 ```
 
+For a build-and-launch workflow that requests Administrator privileges for Security event-log access and raw-socket capture, use `.\run.ps1`. Pass `-NoElevate` to continue as a standard user, `-Configuration Release` for a Release build, `-NoBuild` to launch an existing build, or `-Wait` to keep the terminal attached.
+
 See the searchable in-app Documentation page for workspace workflows and `installer/README.md` for setup, uninstall, and video asset details.
 
 ## Release
 
-Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.4.0`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
+Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.5.0`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. Release notes contain only that version's section from `CHANGELOG.md`. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [LICENSE](LICENSE) for the MIT license.
 

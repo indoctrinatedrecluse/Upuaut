@@ -4,4 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Knowledge\log-knowledge-base.json" LogicalName="Upuaut.LogLab.Knowledge.log-knowledge-base.json" />
+  </ItemGroup>
 </Project>

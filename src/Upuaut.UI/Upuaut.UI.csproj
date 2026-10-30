@@ -13,9 +13,11 @@
     <ProjectReference Include="..\Upuaut.Scout\Upuaut.Scout.csproj" />
     <ProjectReference Include="..\Upuaut.Weigher\Upuaut.Weigher.csproj" />
     <ProjectReference Include="..\Upuaut.LogLab\Upuaut.LogLab.csproj" />
+    <ProjectReference Include="..\Upuaut.CrashForensics\Upuaut.CrashForensics.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.5.1" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.12" />
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.1" />
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="5.0.1" />

@@ -3,6 +3,8 @@
 @using Microsoft.Win32
 @using Upuaut.LogLab
 @using Upuaut.LogLab.Models
+@using Upuaut.CrashForensics
+@using Upuaut.CrashForensics.Models
 @using System.Globalization
 @using Microsoft.Extensions.Logging
 @inject ILogParsingEngine ParsingEngine
@@ -12,6 +14,9 @@
 @inject ILogParserProfileService ProfileService
 @inject ILogTimelineAnalysisEngine TimelineAnalysisEngine
 @inject ILogSearchPresetService SearchPresetService
+@inject ILlmAssistantService LlmAssistant
+@inject CrashForensicsHandoff CrashHandoff
+@inject NavigationManager Navigation
 @inject Microsoft.Extensions.Logging.ILogger<LogLab> Logger
 @inject Microsoft.JSInterop.IJSRuntime JS
 
@@ -31,6 +36,18 @@
     {
         <div class="log-lab-status @(_isError ? "is-error" : "")" role="status">@_statusMessage</div>
     }
+
+    <details class="llm-settings-panel">
+        <summary>OPTIONAL AI REVIEW <span>MANUAL ONLY Â· API KEY ENCRYPTED FOR THIS WINDOWS ACCOUNT</span></summary>
+        <div class="llm-settings-grid">
+            <label>PROVIDER<select class="log-lab-select" @bind="_llmProvider" @bind:after="ProviderChanged"><option value="@LlmProvider.DeepSeek">DeepSeek</option><option value="@LlmProvider.Gemini">Google Gemini</option><option value="@LlmProvider.OpenAiCompatible">OpenAI-compatible endpoint</option></select></label>
+            <label>MODEL<input @bind="_llmModel" maxlength="128" placeholder="Provider model ID" /></label>
+            <label class="llm-endpoint">API BASE / ENDPOINT URL<input @bind="_llmEndpoint" maxlength="2048" spellcheck="false" placeholder="https://..." /></label>
+            <label>API KEY<input @bind="_llmApiKey" type="password" autocomplete="new-password" maxlength="4096" placeholder="@(_llmConfiguration.HasApiKey ? "Saved securely Â· enter to replace" : "Paste provider API key")" /></label>
+            <div class="llm-settings-actions"><button class="log-lab-tool-btn" @onclick="SaveLlmSettings">SAVE SECURELY</button><button class="log-lab-tool-btn danger" @onclick="ClearLlmKey" disabled="@(!_llmConfiguration.HasApiKey)">REMOVE SAVED KEY</button><span>@(_llmConfiguration.HasApiKey ? "KEY CONFIGURED Â· NEVER SHOWN" : "NO KEY SAVED Â· AI REVIEW DISABLED")</span></div>
+        </div>
+        <p class="llm-privacy-note">AI review is never automatic. When requested, only the selected entry and its line/source metadata (maximum 24,000 characters) are sent to the endpoint above. Avoid sending secrets or personal data. Provider usage, retention, and charges follow that provider's terms. DeepSeek and Gemini use their native request formats; the compatible option uses chat completions.</p>
+    </details>
 
     @if (_document is null)
     {
@@ -254,6 +271,7 @@
                                 <div class="scenario-analysis-title"><span>@finding.Category.ToString().ToUpperInvariant()</span><b class="match-strength @finding.MatchStrength.ToString().ToLowerInvariant()">@(finding.MatchStrength switch { RuleMatchStrength.NoRuleMatched => "NO RULE MATCHED", _ => $"{finding.MatchStrength.ToString().ToUpperInvariant()} SIGNAL MATCH" })</b></div>
                                 <h3>@finding.Headline</h3>
                                 <p>@finding.Explanation</p>
+                                @if (!string.IsNullOrWhiteSpace(finding.KnowledgeSource)) { <a class="knowledge-source-link" href="@finding.KnowledgeSource" target="_blank" rel="noopener noreferrer">SOURCE REFERENCE · @finding.KnowledgeId ↗</a> }
                                 <div class="analysis-tags">@foreach (var tag in finding.Tags) { <span>@tag</span> }</div>
                                 @if (finding.Evidence.Count > 0)
                                 {
@@ -262,7 +280,19 @@
                                 }
                                 <div class="analysis-subhead">SUGGESTED CHECKS</div>
                                 <ul class="analysis-recommendations">@foreach (var recommendation in finding.Recommendations) { <li>@recommendation</li> }</ul>
+                                @if (IsCrashSpecific(selected, finding))
+                                {
+                                    <button class="cf-log-handoff-button" @onclick="() => OpenCrashForensics(selected, finding)"><span>𓃣</span> OPEN THIS FINDING IN CRASH FORENSICS <b>↗</b></button>
+                                }
                             </div>
+                            <section class="llm-review-card">
+                                <div class="llm-review-heading"><span>AI SECOND OPINION</span><small>@(_llmConfiguration.HasApiKey ? _llmConfiguration.Provider.ToString().ToUpperInvariant() + " Â· ON REQUEST" : "DISABLED Â· CONFIGURE A KEY ABOVE")</small></div>
+                                <button class="log-lab-tool-btn llm-review-button" @onclick="RequestLlmReview" disabled="@(_llmBusy || !_llmConfiguration.HasApiKey)">@(_llmBusy ? "ANALYZING SELECTED ENTRY..." : "REQUEST AI REVIEW")</button>
+                                <p>Only this selected entry is submitted. The local rule-based findings above remain available without an API key.</p>
+                                @if (_llmBusy) { <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER Â· WAITING FOR ANALYSIS</div> }
+                                @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmResult)) { <article class="llm-review-result"><div>AI RESPONSE Â· VERIFY AGAINST ORIGINAL LOG</div><pre>@_llmResult</pre></article> }
+                                @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmError)) { <div class="llm-review-error" role="alert">@_llmError</div> }
+                            </section>
                         }
                         <div class="log-lab-evidence-callout"><strong>HOW THIS WAS READ</strong><p>@selected.InterpretationBasis</p></div>
                         <div class="log-lab-field-grid">
@@ -333,6 +363,15 @@
     }
     private string _statusMessage = string.Empty;
     private bool _isError;
+    private LlmAssistantConfiguration _llmConfiguration = new(LlmProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
+    private LlmProvider _llmProvider = LlmProvider.DeepSeek;
+    private string _llmEndpoint = "https://api.deepseek.com/chat/completions";
+    private string _llmModel = "deepseek-flash";
+    private string _llmApiKey = string.Empty;
+    private bool _llmBusy;
+    private string _llmResult = string.Empty;
+    private string _llmError = string.Empty;
+    private int? _llmResultEntryIndex;
     private bool _showWholeDocument;
     private int _entryLimit = 500;
     private string _categoryFilter = string.Empty;
@@ -410,8 +449,57 @@
 
     protected override void OnInitialized()
     {
-        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); _searchPresets = SearchPresetService.Load(); }
+        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); _searchPresets = SearchPresetService.Load(); _llmConfiguration = LlmAssistant.LoadConfiguration(); _llmProvider = _llmConfiguration.Provider; _llmEndpoint = _llmConfiguration.EndpointUrl; _llmModel = _llmConfiguration.Model; }
         catch (Exception ex) { _statusMessage = ex.Message; _isError = true; }
+    }
+
+    private void ProviderChanged()
+    {
+        switch (_llmProvider)
+        {
+            case LlmProvider.DeepSeek: _llmEndpoint = "https://api.deepseek.com/chat/completions"; _llmModel = "deepseek-flash"; break;
+            case LlmProvider.Gemini: _llmEndpoint = "https://generativelanguage.googleapis.com/v1beta"; _llmModel = "gemini-3.8-flash"; break;
+            case LlmProvider.OpenAiCompatible: _llmEndpoint = "https://api.openai.com/v1"; _llmModel = ""; break;
+        }
+    }
+
+    private void SaveLlmSettings()
+    {
+        try
+        {
+            LlmAssistant.SaveConfiguration(new LlmAssistantConfiguration(_llmProvider, _llmEndpoint, _llmModel, _llmConfiguration.HasApiKey), _llmApiKey);
+            _llmApiKey = string.Empty; _llmConfiguration = LlmAssistant.LoadConfiguration();
+            _statusMessage = "AI provider settings saved locally. The API key is encrypted for this Windows account."; _isError = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not save AI settings: {ex.Message}"; _isError = true; }
+    }
+
+    private void ClearLlmKey()
+    {
+        try { LlmAssistant.ClearApiKey(); _llmApiKey = string.Empty; _llmConfiguration = LlmAssistant.LoadConfiguration(); _llmResult = string.Empty; _llmError = string.Empty; _statusMessage = "Saved AI API key removed. Local log analysis remains available."; _isError = false; }
+        catch (Exception ex) { _statusMessage = $"Could not remove the saved API key: {ex.Message}"; _isError = true; }
+    }
+
+    private async Task RequestLlmReview()
+    {
+        if (_selectedEntry is null || !_llmConfiguration.HasApiKey || _llmBusy) return;
+        var selected = _selectedEntry;
+        var context = $"File type: {_document?.FileTypeLabel ?? "unknown"}\nFormat: {_document?.Format.ToString() ?? "unknown"}\nSource: {selected.Source ?? "unknown"}\nSource line: {selected.SourceLine}\nSeverity: {selected.Severity}\n\nRaw entry:\n{selected.RawText}";
+        _llmBusy = true; _llmResult = string.Empty; _llmError = string.Empty; _llmResultEntryIndex = selected.Index;
+        try { _llmResult = await LlmAssistant.AnalyzeAsync(context); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("Manual AI review failed ({ErrorType}); provider response details and log contents are omitted from application logs.", ex.GetType().Name);
+            _llmError = ex switch
+            {
+                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
+                HttpRequestException => $"AI provider request failed: {ex.Message}",
+                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
+                InvalidOperationException => ex.Message,
+                _ => "AI review failed unexpectedly. The local analysis and original log are still available. Check the application log for the error type."
+            };
+        }
+        finally { _llmBusy = false; }
     }
 
     private List<ParsedLogEntry> FilteredEntries
@@ -488,6 +576,21 @@
     private void SelectEntry(ParsedLogEntry entry)
     {
         _selectedEntry = entry; _showWholeDocument = false; _editorText = entry.RawText; _editorDirty = false; _editorStatus = string.Empty; _editorFindPosition = 0; _resetEditorScrollAfterRender = true;
+    }
+
+    private static bool IsCrashSpecific(ParsedLogEntry entry, LogEntryAnalysis finding)
+    {
+        if (finding.Category == LogScenarioCategory.Crash) return true;
+        var text = $"{entry.Message}\n{entry.RawText}";
+        return new[] { "unhandled exception", "application error", "application crash", "faulting application", "faulting module", "bugcheck", "bug check", "bsod", "minidump", "memory.dmp", ".wer", "exception code", "exception 0x" }
+            .Any(signal => text.Contains(signal, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OpenCrashForensics(ParsedLogEntry entry, LogEntryAnalysis finding)
+    {
+        CrashHandoff.Set(new CrashLogContext(_document?.FileName ?? "Imported log", _document?.SourcePath ?? string.Empty,
+            entry.SourceLine, entry.Timestamp, entry.Severity.ToString(), finding.Headline, finding.Explanation, entry.RawText));
+        Navigation.NavigateTo("crash-forensics");
     }
 
     private void ToggleWholeDocument()

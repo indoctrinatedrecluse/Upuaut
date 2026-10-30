@@ -3,9 +3,10 @@
     Builds and launches Upuaut — Opener of the Ways.
 
 .DESCRIPTION
-    Compiles the Upuaut solution and starts the desktop application.
-    Runs with Administrator privileges by default (via UAC prompt) to enable full
-    access to the Security event log, raw sockets, and kernel ETW trace sessions.
+    Builds the Upuaut desktop app and starts it.
+    Requests Administrator privileges by default (via UAC prompt) for access to
+    the Security event log and native raw-socket packet capture. Use -NoElevate
+    to run as a standard user.
 
 .PARAMETER Configuration
     Build configuration: 'Debug' (default) or 'Release'.
@@ -94,6 +95,10 @@ if ($Clean) {
     $slnPath = Join-Path $solutionRoot "Upuaut.slnx"
     if (-not (Test-Path $slnPath)) { $slnPath = Join-Path $solutionRoot "Upuaut.sln" }
     dotnet clean $slnPath -c $Configuration --nologo -v quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[X] Clean failed with exit code $LASTEXITCODE." -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
 }
 
 # Build unless -NoBuild specified
@@ -101,7 +106,7 @@ if (-not $NoBuild) {
     Write-Host "[*] Compiling Upuaut ($Configuration)..." -ForegroundColor Cyan
     $buildStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     
-    $buildResult = dotnet build $appProjectPath -c $Configuration --nologo
+    dotnet build $appProjectPath -c $Configuration --nologo
     $buildStopwatch.Stop()
 
     if ($LASTEXITCODE -ne 0) {

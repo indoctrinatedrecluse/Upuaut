@@ -1,0 +1,13 @@
+﻿Version=1
+EventType=APPCRASH
+EventTime=134069832000000000
+ReportIdentifier=00000000-1111-2222-3333-444444444444
+AppName=FixtureApp.exe
+AppPath=C:\Example\FixtureApp.exe
+NsAppName=FixtureApp.exe
+Sig[0].Name=Application Name
+Sig[0].Value=FixtureApp.exe
+Sig[5].Name=Exception Code
+Sig[5].Value=0xc0000005
+DynamicSig[1].Name=OS Version
+DynamicSig[1].Value=10.0.26100.1

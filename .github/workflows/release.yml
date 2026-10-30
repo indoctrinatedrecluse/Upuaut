@@ -29,7 +29,7 @@ jobs:
           if ($env:GITHUB_REF -like 'refs/tags/*') {
             if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$env:GITHUB_REF_NAME' must use the vMAJOR.MINOR.PATCH release format." }
           } else {
-            $version = '0.4.0'
+            $version = '0.5.0'
           }
           "UPUAUT_VERSION=$version" >> $env:GITHUB_ENV
 
@@ -69,13 +69,28 @@ jobs:
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal -Force
           "UPUAUT_ARCHIVE=$archive" >> $env:GITHUB_ENV
 
+      - name: Prepare release notes from this version only
+        shell: pwsh
+        run: |
+          $version = $env:UPUAUT_VERSION
+          $changelog = Get-Content -LiteralPath 'CHANGELOG.md' -Raw
+          $marker = "## [$version]"
+          $start = $changelog.IndexOf($marker, [StringComparison]::Ordinal)
+          if ($start -lt 0) { throw "CHANGELOG.md has no section for $version." }
+          $section = $changelog.Substring($start)
+          $next = [regex]::Match($section.Substring($marker.Length), '(?m)^## \[')
+          if ($next.Success) { $section = $section.Substring(0, $marker.Length + $next.Index) }
+          $notesPath = 'artifacts/release-notes.md'
+          Set-Content -LiteralPath $notesPath -Value $section.Trim() -Encoding utf8
+          "UPUAUT_RELEASE_NOTES=$notesPath" >> $env:GITHUB_ENV
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           name: Upuaut v${{ env.UPUAUT_VERSION }}
-          body_path: CHANGELOG.md
-          generate_release_notes: true
+          body_path: ${{ env.UPUAUT_RELEASE_NOTES }}
+          generate_release_notes: false
           files: ${{ env.UPUAUT_ARCHIVE }}
 
       - name: Upload workflow artifact
