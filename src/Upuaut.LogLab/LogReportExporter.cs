@@ -9,45 +9,77 @@ public sealed class LogReportExporter : ILogReportExporter
     private const int MaximumFindingsInReport = 10_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public string ExportMarkdown(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences)
+    public string ExportMarkdown(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogReportOptions? options = null)
     {
+        options ??= new LogReportOptions();
         var output = new StringBuilder();
         output.AppendLine("# Upuaut Log Lab Investigation Report").AppendLine();
         output.AppendLine($"- **Source:** {Escape(document.FileName)}").AppendLine($"- **Generated:** {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
-            .AppendLine($"- **Format:** {document.Format} · **Encoding:** {Escape(document.DetectedEncoding)} · **Size:** {document.ByteLength:N0} bytes")
-            .AppendLine($"- **Entries:** {analysis.EntryCount:N0} · **Errors:** {analysis.ErrorCount:N0} · **Warnings:** {analysis.WarningCount:N0}")
-            .AppendLine("- **Interpretation:** scenario labels and sequence groupings are rule-based review aids, not root-cause conclusions.").AppendLine();
-        output.AppendLine("## Scenario summary").AppendLine().AppendLine("| Category | Entries |").AppendLine("|---|---:|");
-        foreach (var category in analysis.CategoryCounts) output.AppendLine($"| {category.Category} | {category.Count:N0} |");
-        output.AppendLine().AppendLine("## Sequence findings").AppendLine();
-        if (sequences.Count == 0) output.AppendLine("No supported short sequence or repeated-failure pattern was found.").AppendLine();
-        foreach (var finding in sequences.Take(200))
-            output.AppendLine($"### {Escape(finding.Headline)}").AppendLine($"- **Type:** {finding.Kind} · **Source lines:** {string.Join(", ", finding.SourceLines)}")
-                .AppendLine($"- {Escape(finding.Explanation)}").AppendLine($"- **Evidence:** {Escape(finding.Evidence)}").AppendLine();
-        output.AppendLine("## Notable entries").AppendLine();
-        var notable = GetNotableEntries(document, analysis).Take(200).ToArray();
-        foreach (var (entry, finding) in notable)
-            output.AppendLine($"### Line {entry.SourceLine} · {entry.Severity} · {finding.Category}").AppendLine($"**{Escape(finding.Headline)}** — {Escape(entry.Message)}")
-                .AppendLine($"Tags: {string.Join(", ", finding.Tags.Select(Escape))} · Match strength: {finding.MatchStrength}").AppendLine();
-        if (GetNotableEntries(document, analysis).Skip(notable.Length).Any()) output.AppendLine("_Additional notable entries are omitted from this compact Markdown report._").AppendLine();
+            .AppendLine($"- **Format:** {document.Format} · **Encoding:** {Escape(document.DetectedEncoding)} · **Size:** {document.ByteLength:N0} bytes");
+        if (options.IncludeSummary) output.AppendLine($"- **Entries:** {analysis.EntryCount:N0} · **Errors:** {analysis.ErrorCount:N0} · **Warnings:** {analysis.WarningCount:N0}");
+        output.AppendLine("- **Interpretation:** scenario labels and sequence groupings are rule-based review aids, not root-cause conclusions.").AppendLine();
+        if (options.IncludeCategorySummary)
+        {
+            output.AppendLine("## Scenario summary").AppendLine().AppendLine("| Category | Entries |").AppendLine("|---|---:|");
+            foreach (var category in analysis.CategoryCounts) output.AppendLine($"| {category.Category} | {category.Count:N0} |");
+            output.AppendLine();
+        }
+        if (options.IncludeSequenceFindings)
+        {
+            output.AppendLine("## Sequence findings").AppendLine();
+            if (sequences.Count == 0) output.AppendLine("No supported short sequence or repeated-failure pattern was found.").AppendLine();
+            foreach (var finding in sequences.Take(200))
+                output.AppendLine($"### {Escape(finding.Headline)}").AppendLine($"- **Type:** {finding.Kind} · **Source lines:** {string.Join(", ", finding.SourceLines)}")
+                    .AppendLine($"- {Escape(finding.Explanation)}").AppendLine($"- **Evidence:** {Escape(finding.Evidence)}").AppendLine();
+        }
+        if (options.IncludeNotableEntries)
+        {
+            output.AppendLine("## Notable entries").AppendLine();
+            var notable = GetNotableEntries(document, analysis).Take(200).ToArray();
+            foreach (var (entry, finding) in notable)
+            {
+                output.AppendLine($"### Line {entry.SourceLine} · {entry.Severity} · {finding.Category}").AppendLine($"**{Escape(finding.Headline)}** — {Escape(entry.Message)}")
+                    .AppendLine($"Tags: {string.Join(", ", finding.Tags.Select(Escape))} · Match strength: {finding.MatchStrength}");
+                foreach (var evidence in finding.Evidence) output.AppendLine($"- Evidence ({Escape(evidence.Field)}): {Escape(evidence.Value)}");
+                if (options.IncludeRecommendations) foreach (var recommendation in finding.Recommendations) output.AppendLine($"- Suggested check: {Escape(recommendation)}");
+                output.AppendLine();
+            }
+            if (GetNotableEntries(document, analysis).Skip(notable.Length).Any()) output.AppendLine("_Additional notable entries are omitted from this compact Markdown report._").AppendLine();
+        }
+        if (options.IncludeParserNotes && document.Warnings.Count > 0)
+        {
+            output.AppendLine("## Parser notes").AppendLine();
+            foreach (var warning in document.Warnings.Take(100)) output.AppendLine($"- {Escape(warning)}");
+            output.AppendLine();
+        }
         output.AppendLine("## Limitations").AppendLine().AppendLine("Parsing and analysis are best-effort. Verify findings against the original log and surrounding records.");
         return output.ToString();
     }
 
-    public string ExportJson(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences)
+    public string ExportJson(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogReportOptions? options = null)
     {
-        var notable = GetNotableEntries(document, analysis).Take(MaximumFindingsInReport)
+        options ??= new LogReportOptions();
+        var notable = (options.IncludeNotableEntries ? GetNotableEntries(document, analysis) : []).Take(MaximumFindingsInReport)
             .Select(pair => new ExportedEntry(pair.Entry.Index, pair.Entry.SourceLine, pair.Entry.Timestamp, pair.Entry.Severity, pair.Entry.Source,
-                pair.Entry.Message, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence, pair.Finding.Recommendations)).ToArray();
+                pair.Entry.Message, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence,
+                options.IncludeRecommendations ? pair.Finding.Recommendations : Array.Empty<string>())).ToArray();
         var payload = new
         {
             schemaVersion = 1,
             generatedAt = DateTimeOffset.UtcNow,
             source = new { document.FileName, document.Format, document.DetectedEncoding, document.ByteLength, parserProfile = document.Entries.FirstOrDefault()?.Fields.GetValueOrDefault("ParserProfile") },
-            summary = new { analysis.EntryCount, analysis.ClassifiedCount, analysis.ErrorCount, analysis.WarningCount, analysis.CategoryCounts },
+            options,
+            summary = options.IncludeSummary || options.IncludeCategorySummary ? new
+            {
+                entryCount = options.IncludeSummary ? analysis.EntryCount : (int?)null,
+                classifiedCount = options.IncludeSummary ? analysis.ClassifiedCount : (int?)null,
+                errorCount = options.IncludeSummary ? analysis.ErrorCount : (int?)null,
+                warningCount = options.IncludeSummary ? analysis.WarningCount : (int?)null,
+                categoryCounts = options.IncludeCategorySummary ? analysis.CategoryCounts : null
+            } : null,
             interpretationNote = "Rule-based labels and sequences are review aids; they do not establish root cause.",
-            parserNotes = document.Warnings,
-            sequenceFindings = sequences.Take(500),
+            parserNotes = options.IncludeParserNotes ? document.Warnings : [],
+            sequenceFindings = options.IncludeSequenceFindings ? sequences.Take(500) : [],
             entriesIncluded = notable.Length,
             entriesOmitted = Math.Max(0, document.Entries.Count - notable.Length),
             notableEntries = notable

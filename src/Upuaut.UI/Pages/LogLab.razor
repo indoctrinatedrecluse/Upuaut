@@ -78,9 +78,27 @@
                 <div class="sequence-list">
                     @foreach (var sequence in _sequenceFindings.Take(12))
                     {
-                        <button class="sequence-item" @onclick="() => FocusSequence(sequence)"><span class="sequence-kind">@sequence.Kind.ToString().Replace("RepeatedFailure", "REPEATED FAILURE").Replace("WarningEscalated", "WARNING → ERROR").Replace("ErrorFollowedByRecovery", "ERROR → SUCCESS")</span><strong>@sequence.Headline</strong><span>@sequence.Evidence</span><small>SOURCE LINES @string.Join(", ", sequence.SourceLines)</small></button>
+                        <button class="sequence-item @(_selectedSequence == sequence ? "active" : "")" @onclick="() => FocusSequence(sequence)"><span class="sequence-kind">@sequence.Kind.ToString().Replace("RepeatedFailure", "REPEATED FAILURE").Replace("WarningEscalated", "WARNING → ERROR").Replace("ErrorFollowedByRecovery", "ERROR → SUCCESS")</span><strong>@sequence.Headline</strong><span>@sequence.Evidence</span><small>SOURCE LINES @string.Join(", ", sequence.SourceLines)</small></button>
                     }
                 </div>
+                @if (_selectedSequence is not null)
+                {
+                    <div class="sequence-compare-title"><span>EVENT SEQUENCE SIDE-BY-SIDE</span><small>@_selectedSequence.Headline</small></div>
+                    <div class="sequence-compare-grid">
+                        @foreach (var sequenceEntry in SelectedSequenceEntries)
+                        {
+                            var comparison = AnalysisFor(sequenceEntry);
+                            <article class="sequence-compare-card">
+                                <div class="sequence-compare-meta"><span>LINE @sequenceEntry.SourceLine · @sequenceEntry.Severity</span><b>@comparison.Category</b></div>
+                                <h3>@comparison.Headline</h3>
+                                <p>@sequenceEntry.Message</p>
+                                <div class="analysis-subhead">EVIDENCE</div>
+                                @foreach (var evidence in comparison.Evidence.Take(3)) { <div class="analysis-evidence"><small>@evidence.Field</small><span>@evidence.Value</span></div> }
+                                <button class="log-lab-text-btn" @onclick="() => FocusSequenceEntry(sequenceEntry.Index)">OPEN IN INSPECTOR</button>
+                            </article>
+                        }
+                    </div>
+                }
             </section>
         }
 
@@ -104,7 +122,7 @@
         <details class="log-lab-profile-panel">
             <summary>USER PARSER PROFILES <span>REGEX RULES HAVE A 50 MS MATCH TIMEOUT · PROFILES STAY ON THIS WINDOWS ACCOUNT</span></summary>
             <div class="profile-controls">
-                <select class="log-lab-select" @bind="_selectedProfileName"><option value="">Choose a saved profile</option>@foreach (var profile in _savedProfiles) { <option value="@profile.Name">@profile.Name</option> }</select>
+                <select class="log-lab-select" @bind="_selectedProfileName"><option value="">Choose a profile</option><optgroup label="Built-in profiles">@foreach (var profile in _builtInProfiles) { <option value="builtin:@profile.Name">@profile.Name</option> }</optgroup><optgroup label="Saved profiles">@foreach (var profile in _savedProfiles) { <option value="saved:@profile.Name">@profile.Name</option> }</optgroup></select>
                 <button class="log-lab-tool-btn" @onclick="LoadSelectedProfile">LOAD PROFILE JSON</button>
                 <button class="log-lab-tool-btn" @onclick="SaveProfile">SAVE PROFILE</button>
                 <button class="log-lab-tool-btn" @onclick="ApplyProfile">APPLY TO ORIGINAL SOURCE</button>
@@ -112,6 +130,17 @@
             </div>
             <textarea class="profile-json-editor" @bind="_profileJson" spellcheck="false" aria-label="Custom parser profile JSON"></textarea>
             <p>Profiles match one source line at a time. Define a <code>linePattern</code>, then field patterns with named capture groups (default group name: <code>value</code>). Applying a profile creates a derived view and keeps the original import available.</p>
+        </details>
+        <details class="log-lab-report-options">
+            <summary>REPORT CONTENT OPTIONS</summary>
+            <div>
+                <label><input type="checkbox" @bind="_includeSummary" /> Overview counts</label>
+                <label><input type="checkbox" @bind="_includeCategorySummary" /> Scenario breakdown</label>
+                <label><input type="checkbox" @bind="_includeSequenceFindings" /> Sequence findings</label>
+                <label><input type="checkbox" @bind="_includeNotableEntries" /> Notable entries</label>
+                <label><input type="checkbox" @bind="_includeRecommendations" /> Suggested checks</label>
+                <label><input type="checkbox" @bind="_includeParserNotes" /> Parser notes</label>
+            </div>
         </details>
         <div class="report-privacy-note">Reports include log messages, extracted evidence, source line references, and analysis notes. Review the saved file before sharing it.</div>
 
@@ -203,9 +232,17 @@
     private string _categoryFilter = string.Empty;
     private LogAnalysisReport? _analysis;
     private IReadOnlyList<LogSequenceFinding> _sequenceFindings = [];
+    private LogSequenceFinding? _selectedSequence;
     private IReadOnlyList<LogParserProfile> _savedProfiles = [];
+    private IReadOnlyList<LogParserProfile> _builtInProfiles = [];
     private string _selectedProfileName = string.Empty;
     private string _profileJson = DefaultProfileJson;
+    private bool _includeSummary = true;
+    private bool _includeCategorySummary = true;
+    private bool _includeSequenceFindings = true;
+    private bool _includeNotableEntries = true;
+    private bool _includeParserNotes = true;
+    private bool _includeRecommendations = true;
     private LogDocument? _filteredDocument;
     private string? _filteredQuery;
     private string? _filteredSeverity;
@@ -227,7 +264,7 @@
 
     protected override void OnInitialized()
     {
-        try { _savedProfiles = ProfileService.LoadProfiles(); }
+        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); }
         catch (Exception ex) { _statusMessage = ex.Message; _isError = true; }
     }
 
@@ -268,7 +305,7 @@
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
             _sourceDocument = _document;
-            _analysis = null; _sequenceFindings = []; _selectedEntry = null; _filteredDocument = null;
+            _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null;
             _statusMessage = "Grouping scenario signals and preparing evidence...";
             await InvokeAsync(StateHasChanged);
             await AnalyzeCurrentDocumentAsync();
@@ -300,7 +337,7 @@
         try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
         catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
-    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; }
+    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
     private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", LogDocumentFormat.CustomProfile => "CUSTOM PROFILE", _ => format.ToString().ToUpperInvariant() };
     private LogEntryAnalysis AnalysisFor(ParsedLogEntry entry) => _analysis?.Entries.GetValueOrDefault(entry.Index) ?? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Analysis pending", "", RuleMatchStrength.NoRuleMatched, [], [], []);
@@ -326,8 +363,15 @@
     private void FocusSequence(LogSequenceFinding finding)
     {
         if (_document is null || finding.EntryIndices.Count == 0) return;
+        _selectedSequence = finding;
+        FocusSequenceEntry(finding.EntryIndices[0]);
+    }
+
+    private void FocusSequenceEntry(int entryIndex)
+    {
+        if (_document is null) return;
         _searchQuery = string.Empty; _severityFilter = string.Empty; _categoryFilter = string.Empty;
-        _selectedEntry = _document.Entries.FirstOrDefault(entry => entry.Index == finding.EntryIndices[0]);
+        _selectedEntry = _document.Entries.FirstOrDefault(entry => entry.Index == entryIndex);
         _showWholeDocument = false;
         _editorText = _selectedEntry?.RawText ?? string.Empty;
         _filteredDocument = null;
@@ -337,8 +381,12 @@
 
     private void LoadSelectedProfile()
     {
-        var profile = _savedProfiles.FirstOrDefault(item => item.Name == _selectedProfileName);
-        if (profile is null) { _statusMessage = "Choose a saved profile first."; _isError = true; return; }
+        var isBuiltIn = _selectedProfileName.StartsWith("builtin:", StringComparison.Ordinal);
+        var prefix = isBuiltIn ? "builtin:" : "saved:";
+        if (!isBuiltIn && !_selectedProfileName.StartsWith(prefix, StringComparison.Ordinal)) { _statusMessage = "Choose a built-in or saved profile first."; _isError = true; return; }
+        var name = _selectedProfileName[prefix.Length..];
+        var profile = isBuiltIn ? _builtInProfiles.FirstOrDefault(item => item.Name == name) : _savedProfiles.FirstOrDefault(item => item.Name == name);
+        if (profile is null) { _statusMessage = "The selected profile is no longer available."; _isError = true; return; }
         _profileJson = ProfileService.Serialize(profile); _statusMessage = $"Loaded profile '{profile.Name}' into the editor."; _isError = false;
     }
 
@@ -348,7 +396,7 @@
         {
             var profile = ProfileService.ParseAndValidate(_profileJson);
             ProfileService.SaveProfile(profile);
-            _savedProfiles = ProfileService.LoadProfiles(); _selectedProfileName = profile.Name;
+            _savedProfiles = ProfileService.LoadProfiles(); _selectedProfileName = $"saved:{profile.Name}";
             _profileJson = ProfileService.Serialize(profile); _statusMessage = $"Saved parser profile '{profile.Name}' to this Windows account."; _isError = false;
         }
         catch (Exception ex) { _statusMessage = $"Could not save parser profile: {ex.Message}"; _isError = true; }
@@ -360,7 +408,7 @@
         try
         {
             var profile = ProfileService.ParseAndValidate(_profileJson);
-            _analysis = null; _sequenceFindings = []; _selectedEntry = null; _filteredDocument = null;
+            _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null;
             _statusMessage = $"Applying '{profile.Name}' to the original source..."; _isError = false;
             await InvokeAsync(StateHasChanged);
             var result = await Task.Run(() => ProfileService.Apply(_sourceDocument, profile));
@@ -375,17 +423,19 @@
 
     private void DeleteProfile()
     {
-        if (string.IsNullOrWhiteSpace(_selectedProfileName)) { _statusMessage = "Choose a saved profile to delete."; _isError = true; return; }
+        if (!_selectedProfileName.StartsWith("saved:", StringComparison.Ordinal)) { _statusMessage = "Choose a saved profile to delete."; _isError = true; return; }
         try
         {
-            ProfileService.DeleteProfile(_selectedProfileName); _statusMessage = $"Deleted profile '{_selectedProfileName}'.";
+            var name = _selectedProfileName["saved:".Length..];
+            ProfileService.DeleteProfile(name); _statusMessage = $"Deleted profile '{name}'.";
             _savedProfiles = ProfileService.LoadProfiles(); _selectedProfileName = string.Empty; _isError = false;
         }
         catch (Exception ex) { _statusMessage = $"Could not delete profile: {ex.Message}"; _isError = true; }
     }
 
-    private void ExportMarkdown() => SaveReport("md", "Markdown report (*.md)|*.md", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportMarkdown(_document, _analysis, _sequenceFindings));
-    private void ExportJson() => SaveReport("json", "JSON report (*.json)|*.json", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportJson(_document, _analysis, _sequenceFindings));
+    private LogReportOptions ReportOptions => new(_includeSummary, _includeCategorySummary, _includeSequenceFindings, _includeNotableEntries, _includeParserNotes, _includeRecommendations);
+    private void ExportMarkdown() => SaveReport("md", "Markdown report (*.md)|*.md", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportMarkdown(_document, _analysis, _sequenceFindings, ReportOptions));
+    private void ExportJson() => SaveReport("json", "JSON report (*.json)|*.json", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportJson(_document, _analysis, _sequenceFindings, ReportOptions));
     private void SaveReport(string extension, string filter, Func<string> contentFactory)
     {
         if (_document is null || _analysis is null) { _statusMessage = "Import a log before creating a report."; _isError = true; return; }
@@ -396,4 +446,5 @@
     }
     private static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024d):0.#} MB" : $"{bytes / 1024d:0.#} KB";
     private static string SeverityClass(LogEntrySeverity severity) => severity switch { LogEntrySeverity.Critical or LogEntrySeverity.Error => "is-error", LogEntrySeverity.Warning => "is-warning", LogEntrySeverity.Success => "is-success", LogEntrySeverity.Information => "is-info", _ => "is-unknown" };
+    private IReadOnlyList<ParsedLogEntry> SelectedSequenceEntries => _document is null || _selectedSequence is null ? [] : _selectedSequence.EntryIndices.Take(2).Select(index => _document.Entries.FirstOrDefault(entry => entry.Index == index)).Where(entry => entry is not null).Cast<ParsedLogEntry>().ToArray();
 }

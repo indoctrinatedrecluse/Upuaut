@@ -12,9 +12,9 @@ Event and packet explanations expose their category, readable headline, tags, ev
 
 ## Planned Features
 
-### General-purpose Log Lab — Phase 3 preview
+### General-purpose Log Lab — Phase 4 preview
 
-The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 2 added deterministic scenario labels; Phase 3 adds source-order sequence review, shareable reports, and user-defined regex parser profiles.
+The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 4 adds built-in dialect profiles, side-by-side sequence review, and selectable report sections.
 
 The planned workspace includes:
 
@@ -23,7 +23,9 @@ The planned workspace includes:
 - **Phase 2 delivered — human-readable analysis:** group findings into scenario categories including crash, installation, update, authentication, security, network, storage, service, performance, maintenance, success, failure, warning, and operational; provide readable headlines, tags, evidence, and suggested checks. Match strength reflects matched text signals, not root-cause confidence.
 - **Phase 3 delivered — sequence review and reports:** group repeated error signatures, surface nearby warning→error and error→success sequences, and save compact Markdown or JSON investigation reports with scenario summaries, evidence, and source-line links.
 - **Phase 3 delivered — custom parser profiles:** define line-matching and field-extraction regex rules in JSON, validate and save up to 30 profiles per Windows account, then apply one to the original imported log to create a separate derived view. Pattern length, match time, field count, and total application time are bounded.
-- **Future extensions:** expand the profile library and supported log dialects, add user-tunable report sections, and provide richer side-by-side sequence exploration.
+- **Phase 4 delivered — profile library:** built-in profiles cover Microsoft .NET console logs, Apache error logs, Nginx access errors, and RFC 3164 syslog. They appear alongside saved profiles and can be loaded, edited, applied, or saved as a starting point for a custom parser.
+- **Phase 4 delivered — report and sequence workbench:** choose which summary, sequence, notable-entry, parser-note, and suggested-check sections appear in exports; compare two linked events side by side and open either event in the inspector.
+- **Future extensions:** grow the built-in dialect library and add richer sequence pivots, including time-window and component-based comparison.
 
 Parsing, classification, and sequence grouping remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Profile regexes run with time limits and can stop early on large or expensive inputs; parser profiles remain user-authored rules rather than automatic format discovery.
 

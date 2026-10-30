@@ -34,6 +34,8 @@ public sealed class LogParserProfileService : ILogParserProfileService
         }
     }
 
+    public IReadOnlyList<LogParserProfile> GetBuiltInProfiles() => BuiltInLogParserProfiles.All;
+
     public LogParserProfile ParseAndValidate(string json)
     {
         if (string.IsNullOrWhiteSpace(json) || json.Length > 64 * 1024) throw new InvalidDataException("Profile JSON must be present and no larger than 64 KiB.");
@@ -101,6 +103,8 @@ public sealed class LogParserProfileService : ILogParserProfileService
             var message = GetField(fields, "message", "msg", "description", "event", "text") ?? line.Trim();
             var timestamp = DateTimeOffset.TryParse(GetField(fields, "timestamp", "time", "datetime", "date"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsedTime) ? parsedTime : (DateTimeOffset?)null;
             var severity = ParseSeverity(GetField(fields, "severity", "level", "loglevel", "status"));
+            if (severity == LogEntrySeverity.Unknown && int.TryParse(GetField(fields, "syslogpriority"), NumberStyles.None, CultureInfo.InvariantCulture, out var priority) && priority <= 191)
+                severity = ((priority % 8) switch { 0 => LogEntrySeverity.Critical, 1 => LogEntrySeverity.Critical, 2 => LogEntrySeverity.Critical, 3 => LogEntrySeverity.Error, 4 => LogEntrySeverity.Warning, 5 => LogEntrySeverity.Information, 6 => LogEntrySeverity.Information, _ => LogEntrySeverity.Debug });
             var source = GetField(fields, "source", "provider", "logger", "component", "service", "application");
             entries.Add(new ParsedLogEntry(entries.Count + 1, offset + 1, offset + 1, timestamp, severity, source, message, line, fields,
                 $"Custom profile '{profile.Name}' matched the source line; configured field patterns extracted the displayed fields."));
@@ -147,9 +151,11 @@ public sealed class LogParserProfileService : ILogParserProfileService
         "debug" => LogEntrySeverity.Debug,
         "info" or "information" or "notice" => LogEntrySeverity.Information,
         "warn" or "warning" => LogEntrySeverity.Warning,
-        "error" or "err" or "failed" or "failure" or "exception" => LogEntrySeverity.Error,
-        "fatal" or "critical" or "panic" => LogEntrySeverity.Critical,
+        "error" or "err" or "fail" or "failed" or "failure" or "exception" => LogEntrySeverity.Error,
+        "fatal" or "critical" or "crit" or "emerg" or "alert" or "panic" => LogEntrySeverity.Critical,
         "success" or "succeeded" or "completed" => LogEntrySeverity.Success,
+        var status when int.TryParse(status, NumberStyles.None, CultureInfo.InvariantCulture, out var serverCode) && serverCode is >= 500 and <= 599 => LogEntrySeverity.Error,
+        var status when int.TryParse(status, NumberStyles.None, CultureInfo.InvariantCulture, out var clientCode) && clientCode is >= 400 and <= 499 => LogEntrySeverity.Warning,
         _ => LogEntrySeverity.Unknown
     };
 

@@ -11,3 +11,11 @@ public sealed record LogSequenceFinding(
     DateTimeOffset? StartedAt,
     DateTimeOffset? EndedAt,
     string Evidence);
+
+public sealed record LogReportOptions(
+    bool IncludeSummary = true,
+    bool IncludeCategorySummary = true,
+    bool IncludeSequenceFindings = true,
+    bool IncludeNotableEntries = true,
+    bool IncludeParserNotes = true,
+    bool IncludeRecommendations = true);

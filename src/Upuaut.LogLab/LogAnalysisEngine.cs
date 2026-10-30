@@ -32,7 +32,7 @@ public sealed class LogAnalysisEngine : ILogAnalysisEngine
             ["access denied", "permission denied", "unauthorized", "blocked by policy", "security alert", "intrusion", "certificate validation failed", "firewall blocked"],
             ["access-control", "security"], ["Verify the actor, target resource, and policy or permission named in the source.", "Correlate with adjacent audit events before treating this as suspicious activity."]),
         new(LogScenarioCategory.Network, "Network or name-resolution event", "Network-related terms were found. The record points to a connectivity or protocol event but does not identify where the fault lies.",
-            ["connection timed out", "connection refused", "network unreachable", "host not found", "name resolution", "dns", "socket error", "handshake failed", "connection reset"],
+            ["connection timed out", "connection refused", "network unreachable", "host not found", "name resolution", "dns", "socket error", "handshake failed", "connection reset", "httpstatus", "http status"],
             ["connectivity", "network"], ["Check the remote endpoint, port, and timestamp captured in the entry.", "Compare with DNS, firewall, and service-availability records for the same interval."]),
         new(LogScenarioCategory.Storage, "Storage or file-system event", "Storage-related terms were found. Confirm the affected volume or path and the exact operation in the source.",
             ["disk full", "no space left", "i/o error", "read-only file system", "write failed", "disk error", "volume", "filesystem", "file system"],
