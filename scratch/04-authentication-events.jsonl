@@ -1,0 +1,4 @@
+{"timestamp":"2026-10-30T11:10:00Z","level":"Information","component":"IdentityGateway","event":"AuthenticationSucceeded","user":"demo-user","sourceIp":"192.0.2.25","message":"Interactive sign-in completed"}
+{"timestamp":"2026-10-30T11:10:14Z","level":"Warning","component":"IdentityGateway","event":"AuthenticationFailed","user":"demo-user","sourceIp":"192.0.2.25","errorCode":"AUTH-401","message":"Authentication failed: invalid credentials"}
+{"timestamp":"2026-10-30T11:10:17Z","level":"Error","component":"IdentityGateway","event":"AccountLocked","user":"demo-user","sourceIp":"192.0.2.25","errorCode":"AUTH-423","message":"Account temporarily locked after repeated authentication failures"}
+{"timestamp":"2026-10-30T11:12:17Z","level":"Information","component":"IdentityGateway","event":"AccountUnlocked","user":"demo-user","sourceIp":"192.0.2.25","message":"Temporary lock expired; account is available"}

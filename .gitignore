@@ -17,11 +17,7 @@ _ReSharper*/
 
 ## --- Visual Studio & IDEs ---
 .vs/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
 *.user
 *.userosscache
 *.sln.docstates

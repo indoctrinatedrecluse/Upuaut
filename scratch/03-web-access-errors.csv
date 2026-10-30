@@ -1,0 +1,6 @@
+timestamp,level,source,method,path,status,duration_ms,message
+2026-10-30T10:00:00Z,Information,web-gateway,GET,/health,200,12,Health check passed
+2026-10-30T10:00:04Z,Warning,web-gateway,GET,/api/catalog,503,3021,Upstream service unavailable
+2026-10-30T10:00:05Z,Error,web-gateway,GET,/api/catalog,503,3005,Request failed after retry
+2026-10-30T10:00:09Z,Warning,web-gateway,GET,/assets/missing.css,404,4,Requested resource was not found
+2026-10-30T10:00:12Z,Information,web-gateway,GET,/api/catalog,200,88,Upstream response recovered

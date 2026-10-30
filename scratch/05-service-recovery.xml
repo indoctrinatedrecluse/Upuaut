@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Log>
+  <Event>
+    <Timestamp>2026-10-30T12:30:05Z</Timestamp>
+    <Level>Error</Level>
+    <Source>ExampleWorker</Source>
+    <EventId>3103</EventId>
+    <Message>Service heartbeat warning preceded an unexpected stop with exit code 1067; automatic restart succeeded and the worker recovered.</Message>
+  </Event>
+</Log>

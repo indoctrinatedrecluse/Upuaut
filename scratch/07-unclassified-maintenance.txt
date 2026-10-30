@@ -1,0 +1,5 @@
+2026-10-30T14:00:00Z [IndexSweep] pass=begin shard=delta-03
+2026-10-30T14:00:02Z [IndexSweep] cursor advanced from 89120 to 89400
+2026-10-30T14:00:04Z [IndexSweep] compacted segments=4 elapsed_ms=192
+2026-10-30T14:00:06Z [IndexSweep] checksum=4f68e7 status=steady
+2026-10-30T14:00:08Z [IndexSweep] pass=end shard=delta-03

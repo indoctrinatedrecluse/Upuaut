@@ -1,0 +1,9 @@
+2026-10-30T08:15:02Z INFO [Setup] Upuaut setup engine initialized, version 0.3.0
+2026-10-30T08:15:03Z INFO [Setup] Install target selected: C:\Users\Example\Programs\Upuaut
+2026-10-30T08:15:04Z INFO [Setup] Checking free space: 2.4 GB available
+2026-10-30T08:15:05Z WARN [Setup] Existing process Upuaut.App.exe is still closing; waiting 2 seconds
+2026-10-30T08:15:07Z INFO [Setup] Existing process exited; continuing update
+2026-10-30T08:15:08Z INFO [Setup] Copied application payload (148 files)
+2026-10-30T08:15:09Z INFO [Setup] Created Start Menu shortcut
+2026-10-30T08:15:10Z INFO [Setup] Registered per-user uninstall entry
+2026-10-30T08:15:11Z INFO [Setup] Installation completed successfully

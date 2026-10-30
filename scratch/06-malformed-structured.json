@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-10-30T13:05:00Z",
+  "level": "error",
+  "component": "ConfigLoader",
+  "message": "Unexpected end of input while reading settings",
+  "details": {
+    "file": "service-settings.json",
+    "line": 27,
+    "hint": "This fixture is intentionally missing its closing braces"

@@ -1,0 +1,10 @@
+2026-10-30T09:42:10.221Z INFO [TelemetryWorker] Starting scheduled telemetry refresh
+2026-10-30T09:42:11.004Z WARN [Configuration] Optional cache directory is unavailable; using memory cache
+2026-10-30T09:42:13.887Z ERROR [TelemetryWorker] Failed to read the latest service snapshot
+Error code: 0x80070020
+System.IO.IOException: The process cannot access the file because it is being used by another process.
+   at System.IO.FileStream.ValidateFileHandle(SafeFileHandle fileHandle)
+   at System.IO.FileStream.CreateFileOpenHandle(FileMode mode, FileShare share, FileOptions options)
+   at Example.Telemetry.SnapshotReader.ReadAsync(String path, CancellationToken cancellationToken)
+   at Example.Telemetry.TelemetryWorker.RefreshAsync(CancellationToken cancellationToken)
+2026-10-30T09:42:14.002Z CRITICAL [Application] Unhandled exception; shutting down background worker
