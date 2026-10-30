@@ -10,9 +10,11 @@ public sealed class LogSequenceAnalysisEngine : ILogSequenceAnalysisEngine
     private static readonly Regex GuidPattern = new(@"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex NumberPattern = new(@"\b\d+\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    public IReadOnlyList<LogSequenceFinding> Analyze(LogDocument document)
+    public IReadOnlyList<LogSequenceFinding> Analyze(LogDocument document, LogSequenceAnalysisOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(document);
+        options ??= new LogSequenceAnalysisOptions();
+        var window = TimeSpan.FromMinutes(Math.Clamp(options.WindowMinutes, 1, 1440));
         var findings = new List<LogSequenceFinding>();
         var ordered = document.Entries.OrderBy(entry => entry.SourceLine).ToArray();
 
@@ -33,7 +35,10 @@ public sealed class LogSequenceAnalysisEngine : ILogSequenceAnalysisEngine
         for (var i = 0; i + 1 < ordered.Length && findings.Count < MaximumFindings; i++)
         {
             var first = ordered[i];
-            var candidates = ordered.Skip(i + 1).Take(8).Where(candidate => WithinWindow(first, candidate, TimeSpan.FromMinutes(15))).ToArray();
+            if (options.SameComponentOnly && string.IsNullOrWhiteSpace(first.Source)) continue;
+            var candidates = ordered.Skip(i + 1).Take(8)
+                .Where(candidate => WithinWindow(first, candidate, window))
+                .Where(candidate => !options.SameComponentOnly || string.Equals(first.Source, candidate.Source, StringComparison.OrdinalIgnoreCase)).ToArray();
             var next = first.Severity == LogEntrySeverity.Warning
                 ? candidates.FirstOrDefault(IsFailure)
                 : IsFailure(first) ? candidates.FirstOrDefault(candidate => candidate.Severity == LogEntrySeverity.Success) : null;

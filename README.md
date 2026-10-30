@@ -12,9 +12,9 @@ Event and packet explanations expose their category, readable headline, tags, ev
 
 ## Planned Features
 
-### General-purpose Log Lab — Phase 4 preview
+### General-purpose Log Lab — Phase 5 preview
 
-The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 4 adds built-in dialect profiles, side-by-side sequence review, and selectable report sections.
+The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 5 adds timeline navigation, time/component sequence pivots, and saved multi-condition filters.
 
 The planned workspace includes:
 
@@ -25,7 +25,9 @@ The planned workspace includes:
 - **Phase 3 delivered — custom parser profiles:** define line-matching and field-extraction regex rules in JSON, validate and save up to 30 profiles per Windows account, then apply one to the original imported log to create a separate derived view. Pattern length, match time, field count, and total application time are bounded.
 - **Phase 4 delivered — profile library:** built-in profiles cover Microsoft .NET console logs, Apache error logs, Nginx access errors, and RFC 3164 syslog. They appear alongside saved profiles and can be loaded, edited, applied, or saved as a starting point for a custom parser.
 - **Phase 4 delivered — report and sequence workbench:** choose which summary, sequence, notable-entry, parser-note, and suggested-check sections appear in exports; compare two linked events side by side and open either event in the inspector.
-- **Future extensions:** grow the built-in dialect library and add richer sequence pivots, including time-window and component-based comparison.
+- **Phase 5 delivered — timeline and query presets:** browse timestamped events in bounded UTC buckets, click a bucket to filter the entry list, combine text/severity/scenario/component/time criteria, and save or reuse up to 50 named filters per Windows account.
+- **Phase 5 delivered — sequence pivots:** choose the time window and optionally constrain warning/error/recovery comparisons to the same parsed component. Reports record the sequence settings and can include the timeline trend table.
+- **Future extensions:** expand the built-in dialect library and add further time-series metrics and parser-specific pivots.
 
 Parsing, classification, and sequence grouping remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Profile regexes run with time limits and can stop early on large or expensive inputs; parser profiles remain user-authored rules rather than automatic format discovery.
 

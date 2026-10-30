@@ -3,11 +3,14 @@
 @using Microsoft.Win32
 @using Upuaut.LogLab
 @using Upuaut.LogLab.Models
+@using System.Globalization
 @inject ILogParsingEngine ParsingEngine
 @inject ILogAnalysisEngine AnalysisEngine
 @inject ILogSequenceAnalysisEngine SequenceAnalysisEngine
 @inject ILogReportExporter ReportExporter
 @inject ILogParserProfileService ProfileService
+@inject ILogTimelineAnalysisEngine TimelineAnalysisEngine
+@inject ILogSearchPresetService SearchPresetService
 
 <PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
 
@@ -30,7 +33,7 @@
     {
         <section class="log-lab-empty">
             <div class="log-lab-empty-glyph">⌘</div>
-            <span class="log-lab-eyebrow">PHASE 3 // INVESTIGATION WORKBENCH</span>
+            <span class="log-lab-eyebrow">PHASE 5 // INVESTIGATION WORKBENCH</span>
             <h2>Bring a log into the Lab</h2>
             <p>Import plain text, JSON, JSON Lines, XML, or CSV. Upuaut keeps the original text intact and builds a separate, best-effort view of entries and fields.</p>
             <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML</span><span>CSV</span><span>UP TO 32 MB</span></div>
@@ -71,33 +74,71 @@
             <div class="log-lab-analysis-note">Rule match strength describes how many specific text signals matched. It is not confidence in a root cause; check each entry's evidence against the raw source.</div>
         }
 
-        @if (_sequenceFindings.Count > 0)
+        @if (_document is not null)
         {
             <section class="log-lab-sequences">
-                <div class="sequence-heading"><div><span>SEQUENCE REVIEW</span><small>Source-order patterns for investigation · temporal order is not proof of causation</small></div><b>@Math.Min(12, _sequenceFindings.Count) SHOWN / @_sequenceFindings.Count FINDINGS</b></div>
-                <div class="sequence-list">
-                    @foreach (var sequence in _sequenceFindings.Take(12))
-                    {
-                        <button class="sequence-item @(_selectedSequence == sequence ? "active" : "")" @onclick="() => FocusSequence(sequence)"><span class="sequence-kind">@sequence.Kind.ToString().Replace("RepeatedFailure", "REPEATED FAILURE").Replace("WarningEscalated", "WARNING → ERROR").Replace("ErrorFollowedByRecovery", "ERROR → SUCCESS")</span><strong>@sequence.Headline</strong><span>@sequence.Evidence</span><small>SOURCE LINES @string.Join(", ", sequence.SourceLines)</small></button>
-                    }
+                <div class="sequence-heading"><div><span>SEQUENCE REVIEW</span><small>Timestamped entries use the selected window; entries without times use a 40-line adjacency fallback. Ordering does not prove causation.</small></div>
+                    <div class="sequence-pivot-controls"><label>TIME WINDOW<select class="log-lab-select" @bind="_sequenceWindowMinutes" @bind:after="RefreshSequences"><option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hour</option><option value="240">4 hours</option></select></label><label class="same-component-toggle"><input type="checkbox" @bind="_sameComponentOnly" @bind:after="RefreshSequences" /> SAME COMPONENT</label><b>@Math.Min(12, _sequenceFindings.Count) / @_sequenceFindings.Count</b></div>
                 </div>
-                @if (_selectedSequence is not null)
+                @if (_sequenceFindings.Count == 0)
                 {
-                    <div class="sequence-compare-title"><span>EVENT SEQUENCE SIDE-BY-SIDE</span><small>@_selectedSequence.Headline</small></div>
-                    <div class="sequence-compare-grid">
-                        @foreach (var sequenceEntry in SelectedSequenceEntries)
+                    <p class="sequence-empty">No sequence patterns matched these settings. Widen the window or turn off same-component matching to broaden the comparison.</p>
+                }
+                else
+                {
+                    <div class="sequence-list">
+                        @foreach (var sequence in _sequenceFindings.Take(12))
                         {
-                            var comparison = AnalysisFor(sequenceEntry);
-                            <article class="sequence-compare-card">
-                                <div class="sequence-compare-meta"><span>LINE @sequenceEntry.SourceLine · @sequenceEntry.Severity</span><b>@comparison.Category</b></div>
-                                <h3>@comparison.Headline</h3>
-                                <p>@sequenceEntry.Message</p>
-                                <div class="analysis-subhead">EVIDENCE</div>
-                                @foreach (var evidence in comparison.Evidence.Take(3)) { <div class="analysis-evidence"><small>@evidence.Field</small><span>@evidence.Value</span></div> }
-                                <button class="log-lab-text-btn" @onclick="() => FocusSequenceEntry(sequenceEntry.Index)">OPEN IN INSPECTOR</button>
-                            </article>
+                            <button class="sequence-item @(_selectedSequence == sequence ? "active" : "")" @onclick="() => FocusSequence(sequence)"><span class="sequence-kind">@sequence.Kind.ToString().Replace("RepeatedFailure", "REPEATED FAILURE").Replace("WarningEscalated", "WARNING → ERROR").Replace("ErrorFollowedByRecovery", "ERROR → SUCCESS")</span><strong>@sequence.Headline</strong><span>@sequence.Evidence</span><small>SOURCE LINES @string.Join(", ", sequence.SourceLines)</small></button>
                         }
                     </div>
+                    @if (_selectedSequence is not null)
+                    {
+                        <div class="sequence-compare-title"><span>EVENT SEQUENCE SIDE-BY-SIDE</span><small>@_selectedSequence.Headline</small></div>
+                        <div class="sequence-compare-grid">
+                            @foreach (var sequenceEntry in SelectedSequenceEntries)
+                            {
+                                var comparison = AnalysisFor(sequenceEntry);
+                                <article class="sequence-compare-card">
+                                    <div class="sequence-compare-meta"><span>LINE @sequenceEntry.SourceLine · @sequenceEntry.Severity</span><b>@comparison.Category</b></div>
+                                    <h3>@comparison.Headline</h3>
+                                    <p>@sequenceEntry.Message</p>
+                                    <div class="analysis-subhead">EVIDENCE</div>
+                                    @foreach (var evidence in comparison.Evidence.Take(3)) { <div class="analysis-evidence"><small>@evidence.Field</small><span>@evidence.Value</span></div> }
+                                    <button class="log-lab-text-btn" @onclick="() => FocusSequenceEntry(sequenceEntry.Index)">OPEN IN INSPECTOR</button>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            </section>
+        }
+
+        @if (_timeline is not null)
+        {
+            <section class="log-lab-timeline">
+                <div class="timeline-heading"><div><span>EVENT TIMELINE · UTC BUCKETS</span><small>@_timeline.EntriesWithTimestamps.ToString("N0") timestamped · @_timeline.EntriesWithoutTimestamps.ToString("N0") without timestamps · interval @_timeline.EffectiveIntervalMinutes min</small></div>
+                    <select class="log-lab-select" @bind="_timelineIntervalMinutes" @bind:after="RefreshTimeline"><option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option><option value="60">1 hour</option></select>
+                </div>
+                @if (_timeline.Buckets.Count == 0)
+                {
+                    <p class="timeline-empty">No entries have a recognized timestamp. Source-line ordering is still available in the entry list.</p>
+                }
+                else
+                {
+                    var maximum = Math.Max(1, _timeline.Buckets.Max(bucket => bucket.TotalCount));
+                    <div class="timeline-chart" aria-label="Entry volume over time">
+                        @foreach (var bucket in _timeline.Buckets)
+                        {
+                            var height = Math.Max(4, (int)Math.Round(bucket.TotalCount * 100d / maximum));
+                            <button class="timeline-bucket @(_activeTimelineBucket == bucket.StartUtc ? "active" : "")" title="@TimelineTooltip(bucket)" @onclick="() => FilterTimelineBucket(bucket)">
+                                <span class="timeline-volume" style="height:@height%"><i style="height:@TimelineErrorHeight(bucket)%"></i></span>
+                                <small>@bucket.StartUtc.ToLocalTime().ToString("MM-dd HH:mm")</small>
+                                <b>@bucket.TotalCount</b>
+                            </button>
+                        }
+                    </div>
+                    <div class="timeline-legend"><span><i class="timeline-total-key"></i>all entries</span><span><i class="timeline-error-key"></i>error entries</span><span>Click a bucket to filter the workspace by time.</span></div>
                 }
             </section>
         }
@@ -112,6 +153,23 @@
                 <option value="">All scenarios</option>
                 @foreach (var category in Enum.GetValues<LogScenarioCategory>()) { <option value="@category">@category</option> }
             </select>
+            <details class="log-filter-controls">
+                <summary>ADVANCED FILTERS &amp; SAVED QUERIES</summary>
+                <div class="log-filter-grid">
+                    <label>COMPONENT / SOURCE<input @bind="_componentFilter" @bind:event="oninput" placeholder="service, logger, host..." /></label>
+                    <label>FROM LOCAL TIME<input type="datetime-local" step="1" @bind="_fromLocal" /></label>
+                    <label>TO LOCAL TIME<input type="datetime-local" step="1" @bind="_toLocal" /></label>
+                    <div class="filter-preset-controls">
+                        <select class="log-lab-select" @bind="_selectedPresetName"><option value="">Saved filter</option>@foreach (var preset in _searchPresets) { <option value="@preset.Name">@preset.Name</option> }</select>
+                        <button class="log-lab-tool-btn" @onclick="ApplySearchPreset">LOAD FILTER</button>
+                        <button class="log-lab-tool-btn" @onclick="SaveSearchPreset">SAVE CURRENT FILTER</button>
+                        <button class="log-lab-tool-btn danger" @onclick="DeleteSearchPreset">DELETE FILTER</button>
+                    </div>
+                    <label>PRESET NAME<input @bind="_presetName" placeholder="e.g. failed auth on gateway" /></label>
+                    <button class="log-lab-tool-btn" @onclick="ClearAllFilters">CLEAR ALL FILTERS</button>
+                </div>
+                <small>Conditions combine. Time values use your local timezone; the timeline and reports display UTC.</small>
+            </details>
             <button class="log-lab-tool-btn" @onclick="FormatJson" title="Pretty-format the editor as JSON">FORMAT JSON</button>
             <button class="log-lab-tool-btn" @onclick="FormatXml" title="Pretty-format the editor as XML">FORMAT XML</button>
             <button class="log-lab-tool-btn" @onclick="ResetEditor">RESET EDITOR</button>
@@ -140,13 +198,14 @@
                 <label><input type="checkbox" @bind="_includeNotableEntries" /> Notable entries</label>
                 <label><input type="checkbox" @bind="_includeRecommendations" /> Suggested checks</label>
                 <label><input type="checkbox" @bind="_includeParserNotes" /> Parser notes</label>
+                <label><input type="checkbox" @bind="_includeTimeline" /> Timeline trend</label>
             </div>
         </details>
         <div class="report-privacy-note">Reports include log messages, extracted evidence, source line references, and analysis notes. Review the saved file before sharing it.</div>
 
         <div class="log-lab-workspace">
             <section class="log-lab-entry-panel">
-                <div class="log-lab-panel-head"><div><span>PARSED ENTRIES</span><small>@FilteredEntries.Count.ToString("N0") shown of @_document.Entries.Count.ToString("N0")</small></div><span class="log-lab-count">@_document.Entries.Count.ToString("N0")</span></div>
+                <div class="log-lab-panel-head"><div><span>PARSED ENTRIES</span><small>@FilteredEntries.Count.ToString("N0") shown of @((_document?.Entries.Count ?? 0).ToString("N0"))</small></div><span class="log-lab-count">@((_document?.Entries.Count ?? 0).ToString("N0"))</span></div>
                 @if (FilteredEntries.Count == 0)
                 {
                     <div class="log-lab-no-results">No entries match the current search.</div>
@@ -232,21 +291,36 @@
     private string _categoryFilter = string.Empty;
     private LogAnalysisReport? _analysis;
     private IReadOnlyList<LogSequenceFinding> _sequenceFindings = [];
+    private LogTimelineReport? _timeline;
+    private int _timelineIntervalMinutes = 5;
+    private DateTimeOffset? _activeTimelineBucket;
+    private int _sequenceWindowMinutes = 15;
+    private bool _sameComponentOnly;
     private LogSequenceFinding? _selectedSequence;
     private IReadOnlyList<LogParserProfile> _savedProfiles = [];
     private IReadOnlyList<LogParserProfile> _builtInProfiles = [];
+    private IReadOnlyList<LogSearchPreset> _searchPresets = [];
     private string _selectedProfileName = string.Empty;
     private string _profileJson = DefaultProfileJson;
+    private string _selectedPresetName = string.Empty;
+    private string _presetName = string.Empty;
+    private string _componentFilter = string.Empty;
+    private DateTime? _fromLocal;
+    private DateTime? _toLocal;
     private bool _includeSummary = true;
     private bool _includeCategorySummary = true;
     private bool _includeSequenceFindings = true;
     private bool _includeNotableEntries = true;
     private bool _includeParserNotes = true;
     private bool _includeRecommendations = true;
+    private bool _includeTimeline = true;
     private LogDocument? _filteredDocument;
     private string? _filteredQuery;
     private string? _filteredSeverity;
     private string? _filteredCategory;
+    private string? _filteredComponent;
+    private DateTime? _filteredFrom;
+    private DateTime? _filteredTo;
     private List<ParsedLogEntry> _filteredEntries = new();
 
     private const string DefaultProfileJson = """
@@ -264,7 +338,7 @@
 
     protected override void OnInitialized()
     {
-        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); }
+        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); _searchPresets = SearchPresetService.Load(); }
         catch (Exception ex) { _statusMessage = ex.Message; _isError = true; }
     }
 
@@ -273,15 +347,18 @@
         get
         {
             if (_document is null) return new();
-            if (!ReferenceEquals(_filteredDocument, _document) || _filteredQuery != _searchQuery || _filteredSeverity != _severityFilter || _filteredCategory != _categoryFilter)
+            if (!ReferenceEquals(_filteredDocument, _document) || _filteredQuery != _searchQuery || _filteredSeverity != _severityFilter || _filteredCategory != _categoryFilter || _filteredComponent != _componentFilter || _filteredFrom != _fromLocal || _filteredTo != _toLocal)
             {
                 _filteredDocument = _document;
                 _filteredQuery = _searchQuery;
                 _filteredSeverity = _severityFilter;
                 _filteredCategory = _categoryFilter;
+                _filteredComponent = _componentFilter;
+                _filteredFrom = _fromLocal;
+                _filteredTo = _toLocal;
                 var severity = Enum.TryParse<LogEntrySeverity>(_severityFilter, out var level) ? level : (LogEntrySeverity?)null;
                 var query = _searchQuery.Trim();
-                _filteredEntries = ParsingEngine.Search(_document, new LogSearchOptions(string.Empty, severity))
+                _filteredEntries = ParsingEngine.Search(_document, new LogSearchOptions(string.Empty, severity, _componentFilter, ParseLocalTime(_fromLocal), ParseLocalTime(_toLocal)))
                     .Where(entry => (_categoryFilter.Length == 0 || AnalysisFor(entry).Category.ToString() == _categoryFilter) &&
                         (query.Length == 0 || MatchesAnalysis(entry, query)))
                     .ToList();
@@ -305,7 +382,7 @@
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
             _sourceDocument = _document;
-            _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null;
+            _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null; _activeTimelineBucket = null;
             _statusMessage = "Grouping scenario signals and preparing evidence...";
             await InvokeAsync(StateHasChanged);
             await AnalyzeCurrentDocumentAsync();
@@ -337,7 +414,7 @@
         try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
         catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
-    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; }
+    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; _activeTimelineBucket = null; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
     private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", LogDocumentFormat.CustomProfile => "CUSTOM PROFILE", _ => format.ToString().ToUpperInvariant() };
     private LogEntryAnalysis AnalysisFor(ParsedLogEntry entry) => _analysis?.Entries.GetValueOrDefault(entry.Index) ?? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Analysis pending", "", RuleMatchStrength.NoRuleMatched, [], [], []);
@@ -356,9 +433,91 @@
     {
         if (_document is null) return;
         var doc = _document;
-        (_analysis, _sequenceFindings) = await Task.Run(() => (AnalysisEngine.Analyze(doc), SequenceAnalysisEngine.Analyze(doc)));
+        (_analysis, _sequenceFindings, _timeline) = await Task.Run(() =>
+        {
+            var analysis = AnalysisEngine.Analyze(doc);
+            var sequences = SequenceAnalysisEngine.Analyze(doc, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly));
+            var timeline = TimelineAnalysisEngine.Analyze(doc, _timelineIntervalMinutes);
+            return (analysis, sequences, timeline);
+        });
         _filteredDocument = null;
     }
+
+    private async Task RefreshSequences()
+    {
+        if (_document is null) return;
+        var document = _document;
+        _selectedSequence = null;
+        _sequenceFindings = await Task.Run(() => SequenceAnalysisEngine.Analyze(document, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly)));
+    }
+
+    private async Task RefreshTimeline()
+    {
+        if (_document is null) return;
+        var document = _document;
+        _activeTimelineBucket = null;
+        _timeline = await Task.Run(() => TimelineAnalysisEngine.Analyze(document, _timelineIntervalMinutes));
+    }
+
+    private void FilterTimelineBucket(LogTimelineBucket bucket)
+    {
+        _activeTimelineBucket = bucket.StartUtc;
+        _fromLocal = bucket.StartUtc.ToLocalTime().DateTime;
+        _toLocal = bucket.EndUtc.AddTicks(-1).ToLocalTime().DateTime;
+        _entryLimit = 500;
+        _filteredDocument = null;
+    }
+
+    private static int TimelineErrorHeight(LogTimelineBucket bucket) => bucket.TotalCount == 0 ? 0 : (int)Math.Round(bucket.ErrorCount * 100d / bucket.TotalCount);
+    private static string TimelineTooltip(LogTimelineBucket bucket) => $"{bucket.StartUtc:yyyy-MM-dd HH:mm} UTC · {bucket.TotalCount} entries · {bucket.WarningCount} warnings · {bucket.ErrorCount} errors";
+
+    private void SaveSearchPreset()
+    {
+        try
+        {
+            var preset = new LogSearchPreset(_presetName, _searchQuery, _severityFilter, _categoryFilter, _componentFilter, _fromLocal?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty, _toLocal?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty);
+            SearchPresetService.Save(preset); _searchPresets = SearchPresetService.Load(); _selectedPresetName = preset.Name.Trim();
+            _statusMessage = $"Saved Log Lab filter '{_selectedPresetName}' to this Windows account."; _isError = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not save filter: {ex.Message}"; _isError = true; }
+    }
+
+    private void ApplySearchPreset()
+    {
+        var preset = _searchPresets.FirstOrDefault(item => item.Name == _selectedPresetName);
+        if (preset is null) { _statusMessage = "Choose a saved filter first."; _isError = true; return; }
+        _searchQuery = preset.Query; _severityFilter = preset.Severity; _categoryFilter = preset.Category;
+        _componentFilter = preset.ComponentContains; _fromLocal = ParsePresetDate(preset.FromLocal); _toLocal = ParsePresetDate(preset.ToLocal);
+        _presetName = preset.Name; _entryLimit = 500; _filteredDocument = null;
+        _statusMessage = $"Applied saved filter '{preset.Name}'. Conditions are combined."; _isError = false;
+    }
+
+    private void ClearAllFilters()
+    {
+        _searchQuery = string.Empty; _severityFilter = string.Empty; _categoryFilter = string.Empty;
+        _componentFilter = string.Empty; _fromLocal = null; _toLocal = null; _activeTimelineBucket = null;
+        _entryLimit = 500; _filteredDocument = null;
+    }
+
+    private void DeleteSearchPreset()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedPresetName)) { _statusMessage = "Choose a saved filter to delete."; _isError = true; return; }
+        try
+        {
+            SearchPresetService.Delete(_selectedPresetName); _searchPresets = SearchPresetService.Load();
+            _statusMessage = $"Deleted saved filter '{_selectedPresetName}'."; _selectedPresetName = string.Empty; _isError = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not delete saved filter: {ex.Message}"; _isError = true; }
+    }
+
+    private static DateTimeOffset? ParseLocalTime(DateTime? value)
+    {
+        if (value is null) return null;
+        var local = DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local)).ToUniversalTime();
+    }
+
+    private static DateTime? ParsePresetDate(string value) => DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var date) ? DateTime.SpecifyKind(date, DateTimeKind.Unspecified) : null;
 
     private void FocusSequence(LogSequenceFinding finding)
     {
@@ -408,7 +567,8 @@
         try
         {
             var profile = ProfileService.ParseAndValidate(_profileJson);
-            _analysis = null; _sequenceFindings = []; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null;
+            _analysis = null; _sequenceFindings = []; _timeline = null; _activeTimelineBucket = null;
+            _selectedSequence = null; _selectedEntry = null; _filteredDocument = null;
             _statusMessage = $"Applying '{profile.Name}' to the original source..."; _isError = false;
             await InvokeAsync(StateHasChanged);
             var result = await Task.Run(() => ProfileService.Apply(_sourceDocument, profile));
@@ -433,9 +593,10 @@
         catch (Exception ex) { _statusMessage = $"Could not delete profile: {ex.Message}"; _isError = true; }
     }
 
-    private LogReportOptions ReportOptions => new(_includeSummary, _includeCategorySummary, _includeSequenceFindings, _includeNotableEntries, _includeParserNotes, _includeRecommendations);
-    private void ExportMarkdown() => SaveReport("md", "Markdown report (*.md)|*.md", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportMarkdown(_document, _analysis, _sequenceFindings, ReportOptions));
-    private void ExportJson() => SaveReport("json", "JSON report (*.json)|*.json", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportJson(_document, _analysis, _sequenceFindings, ReportOptions));
+    private LogReportOptions ReportOptions => new(_includeSummary, _includeCategorySummary, _includeSequenceFindings, _includeNotableEntries, _includeParserNotes, _includeRecommendations, _includeTimeline);
+    private LogSequenceAnalysisOptions SequenceOptions => new(_sequenceWindowMinutes, _sameComponentOnly);
+    private void ExportMarkdown() => SaveReport("md", "Markdown report (*.md)|*.md", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportMarkdown(_document, _analysis, _sequenceFindings, _timeline, SequenceOptions, ReportOptions));
+    private void ExportJson() => SaveReport("json", "JSON report (*.json)|*.json", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportJson(_document, _analysis, _sequenceFindings, _timeline, SequenceOptions, ReportOptions));
     private void SaveReport(string extension, string filter, Func<string> contentFactory)
     {
         if (_document is null || _analysis is null) { _statusMessage = "Import a log before creating a report."; _isError = true; return; }

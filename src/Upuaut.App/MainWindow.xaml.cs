@@ -111,6 +111,8 @@ public partial class MainWindow : Window
             services.AddSingleton<ILogSequenceAnalysisEngine, LogSequenceAnalysisEngine>();
             services.AddSingleton<ILogReportExporter, LogReportExporter>();
             services.AddSingleton<ILogParserProfileService, LogParserProfileService>();
+            services.AddSingleton<ILogTimelineAnalysisEngine, LogTimelineAnalysisEngine>();
+            services.AddSingleton<ILogSearchPresetService, LogSearchPresetService>();
 
             blazorWebView.Services = services.BuildServiceProvider();
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");

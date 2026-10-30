@@ -66,6 +66,11 @@ public sealed class LogParsingEngine : ILogParsingEngine
         var query = options.Query?.Trim();
         IEnumerable<ParsedLogEntry> entries = document.Entries;
         if (options.Severity is { } severity) entries = entries.Where(entry => entry.Severity == severity);
+        if (!string.IsNullOrWhiteSpace(options.ComponentContains))
+            entries = entries.Where(entry => entry.Source?.Contains(options.ComponentContains, StringComparison.OrdinalIgnoreCase) == true ||
+                entry.Fields.Any(field => field.Key.Contains("component", StringComparison.OrdinalIgnoreCase) && field.Value.Contains(options.ComponentContains, StringComparison.OrdinalIgnoreCase)));
+        if (options.FromUtc is { } from) entries = entries.Where(entry => entry.Timestamp is { } timestamp && timestamp >= from);
+        if (options.ToUtc is { } to) entries = entries.Where(entry => entry.Timestamp is { } timestamp && timestamp <= to);
         if (!string.IsNullOrWhiteSpace(query))
         {
             entries = entries.Where(entry =>

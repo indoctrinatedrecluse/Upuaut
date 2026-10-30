@@ -47,4 +47,9 @@ public sealed record ParsedLogEntry(
     IReadOnlyDictionary<string, string> Fields,
     string InterpretationBasis);
 
-public sealed record LogSearchOptions(string Query, LogEntrySeverity? Severity = null);
+public sealed record LogSearchOptions(
+    string Query,
+    LogEntrySeverity? Severity = null,
+    string? ComponentContains = null,
+    DateTimeOffset? FromUtc = null,
+    DateTimeOffset? ToUtc = null);

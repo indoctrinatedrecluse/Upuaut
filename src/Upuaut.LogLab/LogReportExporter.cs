@@ -9,19 +9,29 @@ public sealed class LogReportExporter : ILogReportExporter
     private const int MaximumFindingsInReport = 10_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public string ExportMarkdown(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogReportOptions? options = null)
+    public string ExportMarkdown(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogTimelineReport? timeline = null, LogSequenceAnalysisOptions? sequenceOptions = null, LogReportOptions? options = null)
     {
         options ??= new LogReportOptions();
+        sequenceOptions ??= new LogSequenceAnalysisOptions();
         var output = new StringBuilder();
         output.AppendLine("# Upuaut Log Lab Investigation Report").AppendLine();
         output.AppendLine($"- **Source:** {Escape(document.FileName)}").AppendLine($"- **Generated:** {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
             .AppendLine($"- **Format:** {document.Format} · **Encoding:** {Escape(document.DetectedEncoding)} · **Size:** {document.ByteLength:N0} bytes");
+        output.AppendLine($"- **Sequence review:** {Math.Clamp(sequenceOptions.WindowMinutes, 1, 1440)} minute window; same component only: {(sequenceOptions.SameComponentOnly ? "yes" : "no")}");
         if (options.IncludeSummary) output.AppendLine($"- **Entries:** {analysis.EntryCount:N0} · **Errors:** {analysis.ErrorCount:N0} · **Warnings:** {analysis.WarningCount:N0}");
         output.AppendLine("- **Interpretation:** scenario labels and sequence groupings are rule-based review aids, not root-cause conclusions.").AppendLine();
         if (options.IncludeCategorySummary)
         {
             output.AppendLine("## Scenario summary").AppendLine().AppendLine("| Category | Entries |").AppendLine("|---|---:|");
             foreach (var category in analysis.CategoryCounts) output.AppendLine($"| {category.Category} | {category.Count:N0} |");
+            output.AppendLine();
+        }
+        if (options.IncludeTimeline && timeline is not null)
+        {
+            output.AppendLine("## Timeline trend").AppendLine().AppendLine($"UTC bucket interval: {timeline.EffectiveIntervalMinutes} minute(s); {timeline.EntriesWithTimestamps:N0} entries have parsed timestamps and {timeline.EntriesWithoutTimestamps:N0} do not.").AppendLine();
+            output.AppendLine("| UTC start | Entries | Warnings | Errors |").AppendLine("|---|---:|---:|---:|");
+            foreach (var bucket in timeline.Buckets.Where(bucket => bucket.TotalCount > 0).Take(200))
+                output.AppendLine($"| {bucket.StartUtc:yyyy-MM-dd HH:mm} | {bucket.TotalCount:N0} | {bucket.WarningCount:N0} | {bucket.ErrorCount:N0} |");
             output.AppendLine();
         }
         if (options.IncludeSequenceFindings)
@@ -56,9 +66,10 @@ public sealed class LogReportExporter : ILogReportExporter
         return output.ToString();
     }
 
-    public string ExportJson(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogReportOptions? options = null)
+    public string ExportJson(LogDocument document, LogAnalysisReport analysis, IReadOnlyList<LogSequenceFinding> sequences, LogTimelineReport? timeline = null, LogSequenceAnalysisOptions? sequenceOptions = null, LogReportOptions? options = null)
     {
         options ??= new LogReportOptions();
+        sequenceOptions ??= new LogSequenceAnalysisOptions();
         var notable = (options.IncludeNotableEntries ? GetNotableEntries(document, analysis) : []).Take(MaximumFindingsInReport)
             .Select(pair => new ExportedEntry(pair.Entry.Index, pair.Entry.SourceLine, pair.Entry.Timestamp, pair.Entry.Severity, pair.Entry.Source,
                 pair.Entry.Message, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence,
@@ -69,6 +80,7 @@ public sealed class LogReportExporter : ILogReportExporter
             generatedAt = DateTimeOffset.UtcNow,
             source = new { document.FileName, document.Format, document.DetectedEncoding, document.ByteLength, parserProfile = document.Entries.FirstOrDefault()?.Fields.GetValueOrDefault("ParserProfile") },
             options,
+            sequenceAnalysisOptions = sequenceOptions,
             summary = options.IncludeSummary || options.IncludeCategorySummary ? new
             {
                 entryCount = options.IncludeSummary ? analysis.EntryCount : (int?)null,
@@ -80,6 +92,7 @@ public sealed class LogReportExporter : ILogReportExporter
             interpretationNote = "Rule-based labels and sequences are review aids; they do not establish root cause.",
             parserNotes = options.IncludeParserNotes ? document.Warnings : [],
             sequenceFindings = options.IncludeSequenceFindings ? sequences.Take(500) : [],
+            timeline = options.IncludeTimeline ? timeline : null,
             entriesIncluded = notable.Length,
             entriesOmitted = Math.Max(0, document.Entries.Count - notable.Length),
             notableEntries = notable
