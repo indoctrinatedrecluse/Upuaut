@@ -6,7 +6,8 @@ public enum LogDocumentFormat
     Json,
     JsonLines,
     Xml,
-    Csv
+    Csv,
+    CustomProfile
 }
 
 public enum LogEntrySeverity

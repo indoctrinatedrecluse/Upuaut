@@ -108,6 +108,9 @@ public partial class MainWindow : Window
             services.AddSingleton<Upuaut.UI.Shared.InvestigationContext>();
             services.AddSingleton<ILogParsingEngine, LogParsingEngine>();
             services.AddSingleton<ILogAnalysisEngine, LogAnalysisEngine>();
+            services.AddSingleton<ILogSequenceAnalysisEngine, LogSequenceAnalysisEngine>();
+            services.AddSingleton<ILogReportExporter, LogReportExporter>();
+            services.AddSingleton<ILogParserProfileService, LogParserProfileService>();
 
             blazorWebView.Services = services.BuildServiceProvider();
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");

@@ -5,6 +5,9 @@
 @using Upuaut.LogLab.Models
 @inject ILogParsingEngine ParsingEngine
 @inject ILogAnalysisEngine AnalysisEngine
+@inject ILogSequenceAnalysisEngine SequenceAnalysisEngine
+@inject ILogReportExporter ReportExporter
+@inject ILogParserProfileService ProfileService
 
 <PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
 
@@ -27,7 +30,7 @@
     {
         <section class="log-lab-empty">
             <div class="log-lab-empty-glyph">⌘</div>
-            <span class="log-lab-eyebrow">PHASE 2 // EVIDENCE-GROUNDED ANALYSIS</span>
+            <span class="log-lab-eyebrow">PHASE 3 // INVESTIGATION WORKBENCH</span>
             <h2>Bring a log into the Lab</h2>
             <p>Import plain text, JSON, JSON Lines, XML, or CSV. Upuaut keeps the original text intact and builds a separate, best-effort view of entries and fields.</p>
             <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML</span><span>CSV</span><span>UP TO 32 MB</span></div>
@@ -68,6 +71,19 @@
             <div class="log-lab-analysis-note">Rule match strength describes how many specific text signals matched. It is not confidence in a root cause; check each entry's evidence against the raw source.</div>
         }
 
+        @if (_sequenceFindings.Count > 0)
+        {
+            <section class="log-lab-sequences">
+                <div class="sequence-heading"><div><span>SEQUENCE REVIEW</span><small>Source-order patterns for investigation · temporal order is not proof of causation</small></div><b>@Math.Min(12, _sequenceFindings.Count) SHOWN / @_sequenceFindings.Count FINDINGS</b></div>
+                <div class="sequence-list">
+                    @foreach (var sequence in _sequenceFindings.Take(12))
+                    {
+                        <button class="sequence-item" @onclick="() => FocusSequence(sequence)"><span class="sequence-kind">@sequence.Kind.ToString().Replace("RepeatedFailure", "REPEATED FAILURE").Replace("WarningEscalated", "WARNING → ERROR").Replace("ErrorFollowedByRecovery", "ERROR → SUCCESS")</span><strong>@sequence.Headline</strong><span>@sequence.Evidence</span><small>SOURCE LINES @string.Join(", ", sequence.SourceLines)</small></button>
+                    }
+                </div>
+            </section>
+        }
+
         <div class="log-lab-toolbar">
             <label class="log-lab-search"><span>⌕</span><input @bind="_searchQuery" @bind:event="oninput" placeholder="Search entries, fields, error codes, messages…" /></label>
             <select class="log-lab-select" @bind="_severityFilter">
@@ -81,7 +97,23 @@
             <button class="log-lab-tool-btn" @onclick="FormatJson" title="Pretty-format the editor as JSON">FORMAT JSON</button>
             <button class="log-lab-tool-btn" @onclick="FormatXml" title="Pretty-format the editor as XML">FORMAT XML</button>
             <button class="log-lab-tool-btn" @onclick="ResetEditor">RESET EDITOR</button>
+            <button class="log-lab-tool-btn" @onclick="ExportMarkdown">SAVE REPORT · MD</button>
+            <button class="log-lab-tool-btn" @onclick="ExportJson">SAVE REPORT · JSON</button>
         </div>
+
+        <details class="log-lab-profile-panel">
+            <summary>USER PARSER PROFILES <span>REGEX RULES HAVE A 50 MS MATCH TIMEOUT · PROFILES STAY ON THIS WINDOWS ACCOUNT</span></summary>
+            <div class="profile-controls">
+                <select class="log-lab-select" @bind="_selectedProfileName"><option value="">Choose a saved profile</option>@foreach (var profile in _savedProfiles) { <option value="@profile.Name">@profile.Name</option> }</select>
+                <button class="log-lab-tool-btn" @onclick="LoadSelectedProfile">LOAD PROFILE JSON</button>
+                <button class="log-lab-tool-btn" @onclick="SaveProfile">SAVE PROFILE</button>
+                <button class="log-lab-tool-btn" @onclick="ApplyProfile">APPLY TO ORIGINAL SOURCE</button>
+                <button class="log-lab-tool-btn danger" @onclick="DeleteProfile">DELETE SAVED PROFILE</button>
+            </div>
+            <textarea class="profile-json-editor" @bind="_profileJson" spellcheck="false" aria-label="Custom parser profile JSON"></textarea>
+            <p>Profiles match one source line at a time. Define a <code>linePattern</code>, then field patterns with named capture groups (default group name: <code>value</code>). Applying a profile creates a derived view and keeps the original import available.</p>
+        </details>
+        <div class="report-privacy-note">Reports include log messages, extracted evidence, source line references, and analysis notes. Review the saved file before sharing it.</div>
 
         <div class="log-lab-workspace">
             <section class="log-lab-entry-panel">
@@ -159,6 +191,7 @@
 
 @code {
     private LogDocument? _document;
+    private LogDocument? _sourceDocument;
     private ParsedLogEntry? _selectedEntry;
     private string _searchQuery = string.Empty;
     private string _severityFilter = string.Empty;
@@ -169,11 +202,34 @@
     private int _entryLimit = 500;
     private string _categoryFilter = string.Empty;
     private LogAnalysisReport? _analysis;
+    private IReadOnlyList<LogSequenceFinding> _sequenceFindings = [];
+    private IReadOnlyList<LogParserProfile> _savedProfiles = [];
+    private string _selectedProfileName = string.Empty;
+    private string _profileJson = DefaultProfileJson;
     private LogDocument? _filteredDocument;
     private string? _filteredQuery;
     private string? _filteredSeverity;
     private string? _filteredCategory;
     private List<ParsedLogEntry> _filteredEntries = new();
+
+    private const string DefaultProfileJson = """
+    {
+      "name": "Bracketed application log",
+      "description": "Example for logs containing bracketed severity labels.",
+      "linePattern": "^.*$",
+      "fields": [
+        { "name": "Timestamp", "pattern": "^(?<value>\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?).*", "groupName": "value" },
+        { "name": "Severity", "pattern": "\\[(?<value>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\]", "groupName": "value" },
+        { "name": "Message", "pattern": "\\[(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\]\\s*(?<value>.*)$", "groupName": "value" }
+      ]
+    }
+    """;
+
+    protected override void OnInitialized()
+    {
+        try { _savedProfiles = ProfileService.LoadProfiles(); }
+        catch (Exception ex) { _statusMessage = ex.Message; _isError = true; }
+    }
 
     private List<ParsedLogEntry> FilteredEntries
     {
@@ -211,10 +267,11 @@
         {
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
-            _analysis = null;
+            _sourceDocument = _document;
+            _analysis = null; _sequenceFindings = []; _selectedEntry = null; _filteredDocument = null;
             _statusMessage = "Grouping scenario signals and preparing evidence...";
             await InvokeAsync(StateHasChanged);
-            _analysis = await Task.Run(() => AnalysisEngine.Analyze(_document));
+            await AnalyzeCurrentDocumentAsync();
             _selectedEntry = _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
             _categoryFilter = string.Empty;
             _showWholeDocument = false; ResetEditor();
@@ -243,9 +300,9 @@
         try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
         catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
-    private void CloseDocument() { _document = null; _analysis = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; }
+    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
-    private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", _ => format.ToString().ToUpperInvariant() };
+    private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", LogDocumentFormat.CustomProfile => "CUSTOM PROFILE", _ => format.ToString().ToUpperInvariant() };
     private LogEntryAnalysis AnalysisFor(ParsedLogEntry entry) => _analysis?.Entries.GetValueOrDefault(entry.Index) ?? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Analysis pending", "", RuleMatchStrength.NoRuleMatched, [], [], []);
     private bool MatchesAnalysis(ParsedLogEntry entry, string query)
     {
@@ -258,6 +315,85 @@
             finding.Evidence.Any(evidence => evidence.Field.Contains(query, StringComparison.OrdinalIgnoreCase) || evidence.Value.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
     private void SetCategoryFilter(LogScenarioCategory category) => _categoryFilter = _categoryFilter == category.ToString() ? string.Empty : category.ToString();
+    private async Task AnalyzeCurrentDocumentAsync()
+    {
+        if (_document is null) return;
+        var doc = _document;
+        (_analysis, _sequenceFindings) = await Task.Run(() => (AnalysisEngine.Analyze(doc), SequenceAnalysisEngine.Analyze(doc)));
+        _filteredDocument = null;
+    }
+
+    private void FocusSequence(LogSequenceFinding finding)
+    {
+        if (_document is null || finding.EntryIndices.Count == 0) return;
+        _searchQuery = string.Empty; _severityFilter = string.Empty; _categoryFilter = string.Empty;
+        _selectedEntry = _document.Entries.FirstOrDefault(entry => entry.Index == finding.EntryIndices[0]);
+        _showWholeDocument = false;
+        _editorText = _selectedEntry?.RawText ?? string.Empty;
+        _filteredDocument = null;
+        var position = FilteredEntries.FindIndex(entry => entry.Index == _selectedEntry?.Index);
+        if (position >= 0) _entryLimit = Math.Max(_entryLimit, position + 1);
+    }
+
+    private void LoadSelectedProfile()
+    {
+        var profile = _savedProfiles.FirstOrDefault(item => item.Name == _selectedProfileName);
+        if (profile is null) { _statusMessage = "Choose a saved profile first."; _isError = true; return; }
+        _profileJson = ProfileService.Serialize(profile); _statusMessage = $"Loaded profile '{profile.Name}' into the editor."; _isError = false;
+    }
+
+    private void SaveProfile()
+    {
+        try
+        {
+            var profile = ProfileService.ParseAndValidate(_profileJson);
+            ProfileService.SaveProfile(profile);
+            _savedProfiles = ProfileService.LoadProfiles(); _selectedProfileName = profile.Name;
+            _profileJson = ProfileService.Serialize(profile); _statusMessage = $"Saved parser profile '{profile.Name}' to this Windows account."; _isError = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not save parser profile: {ex.Message}"; _isError = true; }
+    }
+
+    private async Task ApplyProfile()
+    {
+        if (_sourceDocument is null) { _statusMessage = "Import a source log before applying a profile."; _isError = true; return; }
+        try
+        {
+            var profile = ProfileService.ParseAndValidate(_profileJson);
+            _analysis = null; _sequenceFindings = []; _selectedEntry = null; _filteredDocument = null;
+            _statusMessage = $"Applying '{profile.Name}' to the original source..."; _isError = false;
+            await InvokeAsync(StateHasChanged);
+            var result = await Task.Run(() => ProfileService.Apply(_sourceDocument, profile));
+            _document = result.Document;
+            await AnalyzeCurrentDocumentAsync();
+            _selectedEntry = _document.Entries.FirstOrDefault(); _entryLimit = 500; _categoryFilter = string.Empty; _searchQuery = string.Empty; _severityFilter = string.Empty;
+            _showWholeDocument = false; ResetEditor();
+            _statusMessage = $"Profile '{profile.Name}' matched {result.MatchedLines:N0} source lines. The original source remains available.";
+        }
+        catch (Exception ex) { _statusMessage = $"Could not apply parser profile: {ex.Message}"; _isError = true; }
+    }
+
+    private void DeleteProfile()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProfileName)) { _statusMessage = "Choose a saved profile to delete."; _isError = true; return; }
+        try
+        {
+            ProfileService.DeleteProfile(_selectedProfileName); _statusMessage = $"Deleted profile '{_selectedProfileName}'.";
+            _savedProfiles = ProfileService.LoadProfiles(); _selectedProfileName = string.Empty; _isError = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not delete profile: {ex.Message}"; _isError = true; }
+    }
+
+    private void ExportMarkdown() => SaveReport("md", "Markdown report (*.md)|*.md", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportMarkdown(_document, _analysis, _sequenceFindings));
+    private void ExportJson() => SaveReport("json", "JSON report (*.json)|*.json", () => _document is null || _analysis is null ? string.Empty : ReportExporter.ExportJson(_document, _analysis, _sequenceFindings));
+    private void SaveReport(string extension, string filter, Func<string> contentFactory)
+    {
+        if (_document is null || _analysis is null) { _statusMessage = "Import a log before creating a report."; _isError = true; return; }
+        var dialog = new SaveFileDialog { Title = "Save Log Lab investigation report", Filter = filter, FileName = Path.GetFileNameWithoutExtension(_document.FileName) + $"-upuaut-report.{extension}", AddExtension = true, DefaultExt = extension };
+        if (dialog.ShowDialog() != true) return;
+        try { File.WriteAllText(dialog.FileName, contentFactory()); _statusMessage = $"Saved report to {dialog.FileName}. Review log content before sharing."; _isError = false; }
+        catch (Exception ex) { _statusMessage = $"Could not save report: {ex.Message}"; _isError = true; }
+    }
     private static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024d):0.#} MB" : $"{bytes / 1024d:0.#} KB";
     private static string SeverityClass(LogEntrySeverity severity) => severity switch { LogEntrySeverity.Critical or LogEntrySeverity.Error => "is-error", LogEntrySeverity.Warning => "is-warning", LogEntrySeverity.Success => "is-success", LogEntrySeverity.Information => "is-info", _ => "is-unknown" };
 }

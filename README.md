@@ -12,19 +12,20 @@ Event and packet explanations expose their category, readable headline, tags, ev
 
 ## Planned Features
 
-### General-purpose Log Lab — Phase 2 preview
+### General-purpose Log Lab — Phase 3 preview
 
-The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 2 adds deterministic scenario labels, evidence-backed explanations, tags, and suggested investigation checks.
+The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 2 added deterministic scenario labels; Phase 3 adds source-order sequence review, shareable reports, and user-defined regex parser profiles.
 
 The planned workspace includes:
 
 - **Phase 1 delivered — parsing and evidence extraction:** detect plain text, JSON, JSON Lines, XML, and CSV; extract timestamps, severity, event/message text, components, processes, error codes, identifiers, and other fields when present; retain source lines and explain the extraction basis. Imports are currently limited to 32 MiB and 200,000 entries.
 - **Phase 1 delivered — investigation workbench:** search parsed entries, filter by severity, inspect normalized fields and raw entry text, view the complete original source, and pretty-format JSON/XML in an editable view without changing the imported source.
 - **Phase 2 delivered — human-readable analysis:** group findings into scenario categories including crash, installation, update, authentication, security, network, storage, service, performance, maintenance, success, failure, warning, and operational; provide readable headlines, tags, evidence, and suggested checks. Match strength reflects matched text signals, not root-cause confidence.
-- **Next phases — investigation and extensibility:** compare event sequences, generate shareable reports, and add previewable parser profiles and format-specific rules.
-- **Extensibility:** add and preview parser profiles and format-specific rules so the engine can improve as new log dialects are encountered.
+- **Phase 3 delivered — sequence review and reports:** group repeated error signatures, surface nearby warning→error and error→success sequences, and save compact Markdown or JSON investigation reports with scenario summaries, evidence, and source-line links.
+- **Phase 3 delivered — custom parser profiles:** define line-matching and field-extraction regex rules in JSON, validate and save up to 30 profiles per Windows account, then apply one to the original imported log to create a separate derived view. Pattern length, match time, field count, and total application time are bounded.
+- **Future extensions:** expand the profile library and supported log dialects, add user-tunable report sections, and provide richer side-by-side sequence exploration.
 
-Parsing and classification remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Custom parser profiles, richer sequence analysis, and report generation remain planned follow-on work.
+Parsing, classification, and sequence grouping remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Profile regexes run with time limits and can stop early on large or expensive inputs; parser profiles remain user-authored rules rather than automatic format discovery.
 
 ## Requirements and limitations
 

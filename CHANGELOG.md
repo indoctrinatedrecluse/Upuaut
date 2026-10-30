@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 - **Log Lab Phase 1 preview:** new log import and investigation workspace with format detection for plain text, JSON, JSON Lines, XML, and CSV; normalized entry fields and source-line provenance; severity filtering and search; raw-source inspection; and non-destructive JSON/XML pretty formatting. Imports are bounded to 32 MiB and 200,000 entries.
 - **Log Lab Phase 2 scenario analysis:** deterministic classification for crash, setup, update, authentication, security, network, storage, service, performance, maintenance, success, and general operational signals. Entry analysis includes readable headlines, searchable tags, matched evidence, suggested investigative checks, and rule-match strength that is explicitly separate from root-cause confidence. Added category summaries and scenario filtering.
+- **Log Lab Phase 3 investigation tools:** source-order sequence review for repeated error signatures, nearby warning→error transitions, and error→success signals; saveable Markdown and JSON reports with summaries and bounded notable-entry details; and user-authored JSON regex parser profiles stored per Windows account. Profile pattern length, per-match timeout, total processing time, field count, and profile count are bounded. Applying a profile creates a derived entry view while preserving the original source.
 
 ## [0.2.0] - 2026-10-30
 
