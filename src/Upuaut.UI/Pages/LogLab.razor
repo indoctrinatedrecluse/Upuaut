@@ -13,6 +13,7 @@
 @inject ILogTimelineAnalysisEngine TimelineAnalysisEngine
 @inject ILogSearchPresetService SearchPresetService
 @inject Microsoft.Extensions.Logging.ILogger<LogLab> Logger
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 <PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
 
@@ -37,8 +38,8 @@
             <div class="log-lab-empty-glyph">⌘</div>
             <span class="log-lab-eyebrow">PHASE 5 // INVESTIGATION WORKBENCH</span>
             <h2>Bring a log into the Lab</h2>
-            <p>Import plain text, JSON, JSON Lines, XML, or CSV. Upuaut keeps the original text intact and builds a separate, best-effort view of entries and fields.</p>
-            <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML</span><span>CSV</span><span>UP TO 32 MB</span></div>
+            <p>Import text, structured logs, hex dumps, solution files, or other files whose contents are mostly readable. Upuaut keeps the original intact and builds a separate, best-effort view of entries and fields.</p>
+            <div class="log-lab-format-list"><span>TEXT / LOG</span><span>JSON / JSONL</span><span>XML / EVENT XML</span><span>CSV</span><span>INI / LOGFMT</span><span>SYSLOG / ACCESS LOG</span><span>UP TO 32 MB</span></div>
             <button class="log-lab-import secondary" @onclick="ImportFile">SELECT A FILE</button>
         </section>
     }
@@ -47,7 +48,7 @@
         <section class="log-lab-overview">
             <div class="log-lab-filemark">LOG</div>
             <div class="log-lab-filename"><strong>@_document.FileName</strong><span>@_document.SourcePath</span></div>
-            <div class="log-lab-stat"><small>FORMAT</small><strong>@FormatLabel(_document.Format)</strong></div>
+            <div class="log-lab-stat"><small>FILE TYPE</small><strong title="Detected from the file extension and parsed content">@FormatLabel(_document)</strong></div>
             <div class="log-lab-stat"><small>ENTRIES</small><strong>@_document.Entries.Count.ToString("N0")</strong></div>
             <div class="log-lab-stat"><small>ENCODING</small><strong>@_document.DetectedEncoding</strong></div>
             <div class="log-lab-stat"><small>SIZE</small><strong>@FormatBytes(_document.ByteLength)</strong></div>
@@ -177,6 +178,7 @@
             <button class="log-lab-tool-btn" @onclick="ResetEditor">RESET EDITOR</button>
             <button class="log-lab-tool-btn" @onclick="ExportMarkdown">SAVE REPORT · MD</button>
             <button class="log-lab-tool-btn" @onclick="ExportJson">SAVE REPORT · JSON</button>
+            <label class="log-wrap-toggle"><input type="checkbox" @bind="_wrapResults" /> WRAP RESULTS</label>
         </div>
 
         <details class="log-lab-profile-panel">
@@ -210,16 +212,16 @@
                 <div class="log-lab-panel-head"><div><span>PARSED ENTRIES</span><small>@FilteredEntries.Count.ToString("N0") shown of @((_document?.Entries.Count ?? 0).ToString("N0"))</small></div><span class="log-lab-count">@((_document?.Entries.Count ?? 0).ToString("N0"))</span></div>
                 @if (FilteredEntries.Count == 0)
                 {
-                    <div class="log-lab-no-results">No entries match the current search.</div>
+                    <div class="log-lab-no-results">@(_document?.ContentKind == LogContentKind.BinaryLike ? "This file is mostly binary or encrypted. Structured entry parsing was skipped; use the decoded full-source preview." : "No entries match the current search.")</div>
                 }
                 else
                 {
-                    <div class="log-lab-entry-list">
+                    <div class="log-lab-entry-list @(_wrapResults ? "wrap-results" : "no-wrap-results")">
                         @foreach (var entry in FilteredEntries.Take(_entryLimit))
                         {
                             <button class="log-lab-entry @(_selectedEntry?.Index == entry.Index ? "selected" : "")" @onclick="() => SelectEntry(entry)">
                                 <span class="log-lab-entry-top"><span class="severity-mark @SeverityClass(entry.Severity)"></span><strong>@(entry.Severity == LogEntrySeverity.Unknown ? "UNCLASSIFIED" : entry.Severity.ToString().ToUpperInvariant())</strong><span class="scenario-pill">@AnalysisFor(entry).Category</span><small>LINE @entry.SourceLine</small></span>
-                                <span class="log-lab-entry-message">@entry.Message</span>
+                                <span class="log-lab-entry-message">@((MarkupString)HighlightMatches(entry.Message))</span>
                                 <span class="log-lab-entry-headline">@AnalysisFor(entry).Headline</span>
                                 <span class="log-lab-entry-meta">@(entry.Timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "No timestamp decoded")@(string.IsNullOrWhiteSpace(entry.Source) ? "" : $" · {entry.Source}")</span>
                             </button>
@@ -231,8 +233,13 @@
 
             <section class="log-lab-editor-panel">
                 <div class="log-lab-panel-head"><div><span>RAW SOURCE EDITOR</span><small>@(_showWholeDocument ? "Full imported source · edits are local and do not alter the imported document" : _selectedEntry is null ? "Select an entry to inspect its source" : $"Entry {_selectedEntry.Index} · source line {_selectedEntry.SourceLine}")</small></div><button class="log-lab-text-btn" @onclick="ToggleWholeDocument">@(_showWholeDocument ? "SELECTED ENTRY" : "FULL SOURCE")</button></div>
-                <textarea class="log-lab-editor" spellcheck="false" @bind="_editorText" placeholder="Select a parsed entry or open the full imported source…" aria-label="Log source editor"></textarea>
-                <div class="log-lab-editor-foot"><span>Imported source remains unchanged. Formatting changes this working editor only.</span><span>@_editorText.Length.ToString("N0") CHARS</span></div>
+                <div class="log-editor-tools"><input @bind="_editorFind" @bind:event="oninput" placeholder="Find in source" aria-label="Find in source" /><button class="log-lab-tool-btn" @onclick="() => FindInEditor(false)">FIND NEXT</button><button class="log-lab-tool-btn" @onclick="() => FindInEditor(true)">PREVIOUS</button><input @bind="_editorReplace" placeholder="Replace with" aria-label="Replacement text" /><button class="log-lab-tool-btn" @onclick="ReplaceCurrent">REPLACE</button><button class="log-lab-tool-btn" @onclick="ReplaceAll">REPLACE ALL</button><button class="log-lab-tool-btn" @onclick="CopyEditor">COPY</button><button class="log-lab-tool-btn" @onclick="SaveEditorCopy">SAVE COPY</button><label><input type="checkbox" @bind="_wrapEditor" /> WRAP</label><label><input type="checkbox" @bind="_syntaxHighlight" /> SYNTAX</label></div>
+                @if (_syntaxHighlight) { <div class="log-editor-legend"><span class="log-token-timestamp">TIME</span><span class="log-token-severity">SEVERITY</span><span class="log-token-key">FIELD</span><span class="log-token-code">CODE</span><span class="log-token-string">STRING</span><span class="log-token-literal">TRUE / FALSE / NULL</span><span class="log-token-structure">STRUCTURE</span><small>BEST-EFFORT COLORING</small></div> }
+                <div class="log-editor-codeview @(_syntaxOverlayEnabled ? "syntax-on" : "syntax-off")">
+                    @if (_syntaxOverlayEnabled) { <pre class="log-editor-highlight @(_wrapEditor ? "wrap-text" : "no-wrap-text")" aria-hidden="true">@((MarkupString)HighlightedEditorHtml)</pre> }
+                    <textarea @ref="_editorRef" class="log-lab-editor @(_wrapEditor ? "wrap-text" : "no-wrap-text") @(_syntaxOverlayEnabled ? "syntax-transparent" : "syntax-plain")" spellcheck="false" @bind="_editorText" @bind:after="MarkEditorDirty" placeholder="Select a parsed entry or open the full imported source…" aria-label="Log source editor"></textarea>
+                </div>
+                <div class="log-lab-editor-foot"><span>@(_editorDirty ? "Working copy has edits · imported source remains unchanged." : "Imported source remains unchanged. Formatting changes this working editor only.") @_editorStatus @(_syntaxHighlight && !_syntaxOverlayEnabled ? "Syntax colors pause above 300,000 characters to keep editing responsive." : "")</span><span>@_editorText.Length.ToString("N0") CHARS</span></div>
             </section>
 
             <section class="log-lab-detail-panel">
@@ -272,7 +279,7 @@
                 }
                 else
                 {
-                    <div class="log-lab-no-selection"><span>⌖</span><strong>Select an entry</strong><p>Parsed fields, source location, and the parser's reasoning will appear here.</p></div>
+                    <div class="log-lab-no-selection"><span>⌖</span><strong>@(_document?.ContentKind == LogContentKind.BinaryLike ? "Raw preview only" : "Select an entry")</strong><p>@(_document?.ContentKind == LogContentKind.BinaryLike ? "No findings are inferred from binary-like bytes. Review the decoded source manually." : "Parsed fields, source location, and the parser's reasoning will appear here.")</p></div>
                 }
             </section>
         </div>
@@ -286,6 +293,44 @@
     private string _searchQuery = string.Empty;
     private string _severityFilter = string.Empty;
     private string _editorText = string.Empty;
+    private string _editorFind = string.Empty;
+    private string _editorReplace = string.Empty;
+    private string _editorStatus = string.Empty;
+    private bool _editorDirty;
+    private bool _wrapEditor = true;
+    private bool _wrapResults = true;
+    private int _editorFindPosition;
+    private ElementReference _editorRef;
+    private bool _editorScrollSyncAttached;
+    private bool _resetEditorScrollAfterRender;
+    private bool? _lastRenderedSyntaxOverlay;
+    private bool? _lastRenderedEditorWrap;
+    private readonly LogSyntaxHighlighter _syntaxHighlighter = new();
+    private string _highlightCacheSource = string.Empty;
+    private string _highlightCacheHtml = string.Empty;
+    private bool _syntaxHighlight = true;
+    private bool _syntaxOverlayEnabled => _syntaxHighlight && _editorText.Length <= LogSyntaxHighlighter.MaximumHighlightCharacters;
+    private string HighlightedEditorHtml
+    {
+        get
+        {
+            if (_highlightCacheSource == _editorText) return _highlightCacheHtml;
+            var builder = new System.Text.StringBuilder(_editorText.Length + 256);
+            var cursor = 0;
+            foreach (var token in _syntaxHighlighter.Tokenize(_editorText))
+            {
+                if (token.Start < cursor) continue;
+                builder.Append(System.Net.WebUtility.HtmlEncode(_editorText[cursor..token.Start]));
+                builder.Append("<span class=\"log-token-").Append(token.Kind.ToString().ToLowerInvariant()).Append("\">")
+                    .Append(System.Net.WebUtility.HtmlEncode(_editorText.Substring(token.Start, token.Length))).Append("</span>");
+                cursor = token.Start + token.Length;
+            }
+            builder.Append(System.Net.WebUtility.HtmlEncode(_editorText[cursor..]));
+            _highlightCacheSource = _editorText;
+            _highlightCacheHtml = builder.ToString();
+            return _highlightCacheHtml;
+        }
+    }
     private string _statusMessage = string.Empty;
     private bool _isError;
     private bool _showWholeDocument;
@@ -324,6 +369,31 @@
     private DateTime? _filteredFrom;
     private DateTime? _filteredTo;
     private List<ParsedLogEntry> _filteredEntries = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_document is null) return;
+        try
+        {
+            if (!_editorScrollSyncAttached)
+            {
+                await JS.InvokeVoidAsync("upuautLogEditor.attachHighlightSync", _editorRef);
+                _editorScrollSyncAttached = true;
+            }
+            if (_lastRenderedSyntaxOverlay != _syntaxOverlayEnabled || _lastRenderedEditorWrap != _wrapEditor)
+            {
+                await JS.InvokeVoidAsync("upuautLogEditor.syncHighlight", _editorRef);
+                _lastRenderedSyntaxOverlay = _syntaxOverlayEnabled;
+                _lastRenderedEditorWrap = _wrapEditor;
+            }
+            if (_resetEditorScrollAfterRender)
+            {
+                await JS.InvokeVoidAsync("upuautLogEditor.resetScroll", _editorRef);
+                _resetEditorScrollAfterRender = false;
+            }
+        }
+        catch (Exception ex) { Logger.LogDebug(ex, "Log Lab editor scroll synchronization could not attach"); }
+    }
 
     private const string DefaultProfileJson = """
     {
@@ -374,7 +444,7 @@
         var dialog = new OpenFileDialog
         {
             Title = "Import a log for analysis",
-            Filter = "Log and text files (*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv)|*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv|All files (*.*)|*.*",
+            Filter = "Log, text, and data files (*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv;*.ini;*.conf;*.logfmt;*.syslog;*.hex;*.sav;*.sln;*.dat;*.bin)|*.log;*.txt;*.out;*.err;*.json;*.jsonl;*.ndjson;*.xml;*.csv;*.ini;*.conf;*.logfmt;*.syslog;*.hex;*.sav;*.sln;*.dat;*.bin|All files (*.*)|*.*",
             CheckFileExists = true,
             Multiselect = false
         };
@@ -383,6 +453,7 @@
         {
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
+            _editorScrollSyncAttached = false;
             _sourceDocument = _document;
             if (_document.Warnings.Count > 0)
             {
@@ -397,8 +468,9 @@
             await AnalyzeCurrentDocumentAsync();
             _selectedEntry = _analysis is null ? null : _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
             _categoryFilter = string.Empty;
-            _showWholeDocument = _analysis is null || _document.Warnings.Any(warning => warning.Contains("raw-text mode", StringComparison.OrdinalIgnoreCase) || warning.Contains("decoded raw text", StringComparison.OrdinalIgnoreCase));
+            _showWholeDocument = _analysis is null || _document.ContentKind == LogContentKind.BinaryLike || _document.Warnings.Any(warning => warning.Contains("raw-text mode", StringComparison.OrdinalIgnoreCase) || warning.Contains("decoded raw text", StringComparison.OrdinalIgnoreCase));
             if (_showWholeDocument) _editorText = _document.OriginalText; else ResetEditor();
+            _resetEditorScrollAfterRender = true;
             if (_analysis is null)
             {
                 _statusMessage = $"Imported {_document.FileName}; structured analysis failed, so the complete source is open in raw editor mode.";
@@ -415,27 +487,88 @@
 
     private void SelectEntry(ParsedLogEntry entry)
     {
-        _selectedEntry = entry; _showWholeDocument = false; _editorText = entry.RawText;
+        _selectedEntry = entry; _showWholeDocument = false; _editorText = entry.RawText; _editorDirty = false; _editorStatus = string.Empty; _editorFindPosition = 0; _resetEditorScrollAfterRender = true;
     }
 
     private void ToggleWholeDocument()
     {
         if (_document is null) return;
         _showWholeDocument = !_showWholeDocument;
-        _editorText = _showWholeDocument ? _document.OriginalText : _selectedEntry?.RawText ?? string.Empty;
+        _editorText = _showWholeDocument ? _document.OriginalText : _selectedEntry?.RawText ?? string.Empty; _editorDirty = false; _resetEditorScrollAfterRender = true;
     }
 
-    private void ResetEditor() => _editorText = _showWholeDocument ? _document?.OriginalText ?? string.Empty : _selectedEntry?.RawText ?? string.Empty;
+    private void ResetEditor() { _editorText = _showWholeDocument ? _document?.OriginalText ?? string.Empty : _selectedEntry?.RawText ?? string.Empty; _editorDirty = false; _editorStatus = "Reset to imported text."; _editorFindPosition = 0; _resetEditorScrollAfterRender = true; }
+    private void MarkEditorDirty() => _editorDirty = true;
+    private async Task FindInEditor(bool backwards)
+    {
+        if (_editorFind.Length == 0) { _editorStatus = "Enter text to find."; return; }
+        if (_editorText.Length == 0) { _editorStatus = "This editor view is empty."; return; }
+        var startAt = backwards ? Math.Clamp(_editorFindPosition - _editorFind.Length - 1, 0, Math.Max(0, _editorText.Length - 1)) : Math.Min(_editorText.Length, _editorFindPosition);
+        var found = backwards ? _editorText.LastIndexOf(_editorFind, startAt, StringComparison.OrdinalIgnoreCase) : _editorText.IndexOf(_editorFind, startAt, StringComparison.OrdinalIgnoreCase);
+        if (found < 0 && !backwards) found = _editorText.IndexOf(_editorFind, StringComparison.OrdinalIgnoreCase);
+        if (found < 0 && backwards && _editorText.Length > 0) found = _editorText.LastIndexOf(_editorFind, StringComparison.OrdinalIgnoreCase);
+        if (found < 0) { _editorStatus = "No match in this editor view."; return; }
+        _editorFindPosition = found + _editorFind.Length;
+        var line = _editorText.AsSpan(0, found).Count('\n') + 1;
+        _editorStatus = $"Match at line {line:N0}.";
+        await JS.InvokeVoidAsync("upuautLogEditor.selectRange", _editorRef, found, _editorFind.Length);
+    }
+    private void ReplaceCurrent()
+    {
+        if (_editorFind.Length == 0) return;
+        var start = Math.Max(0, Math.Min(_editorFindPosition - _editorFind.Length, _editorText.Length));
+        if (start + _editorFind.Length > _editorText.Length || !_editorText.AsSpan(start, _editorFind.Length).Equals(_editorFind, StringComparison.OrdinalIgnoreCase)) { _editorStatus = "Find a match before replacing."; return; }
+        _editorText = _editorText[..start] + _editorReplace + _editorText[(start + _editorFind.Length)..]; _editorDirty = true; _editorFindPosition = start; _editorStatus = "Replaced one match.";
+    }
+    private void ReplaceAll()
+    {
+        if (_editorFind.Length == 0) return;
+        var count = 0; var cursor = 0;
+        while ((cursor = _editorText.IndexOf(_editorFind, cursor, StringComparison.OrdinalIgnoreCase)) >= 0) { count++; cursor += _editorFind.Length; }
+        _editorText = _editorText.Replace(_editorFind, _editorReplace, StringComparison.OrdinalIgnoreCase); _editorDirty |= count > 0; _editorStatus = $"Replaced {count:N0} match(es)."; _editorFindPosition = 0;
+    }
+    private async Task CopyEditor()
+    {
+        try { await JS.InvokeVoidAsync("upuautLogEditor.copyText", _editorText); _editorStatus = "Copied working text."; }
+        catch (Exception ex) { Logger.LogWarning(ex, "Log Lab clipboard copy failed"); _editorStatus = "Clipboard access is unavailable. Select the text and copy it manually."; }
+    }
+    private void SaveEditorCopy()
+    {
+        var dialog = new SaveFileDialog { Title = "Save edited log copy", Filter = "Text or log file (*.txt;*.log)|*.txt;*.log|All files (*.*)|*.*", FileName = (_document?.FileName ?? "log") + ".edited.txt", AddExtension = true };
+        if (dialog.ShowDialog() != true) return;
+        try { File.WriteAllText(dialog.FileName, _editorText); _editorStatus = $"Saved copy: {Path.GetFileName(dialog.FileName)}."; _isError = false; }
+        catch (Exception ex) { Logger.LogError(ex, "Could not save edited Log Lab copy"); _editorStatus = $"Save failed: {ex.Message}"; _isError = true; }
+    }
     private void FormatJson() => TryFormat(ParsingEngine.FormatJson, "JSON");
     private void FormatXml() => TryFormat(ParsingEngine.FormatXml, "XML");
     private void TryFormat(Func<string, string> formatter, string format)
     {
-        try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
+        try { _editorText = formatter(_editorText); _editorDirty = true; _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
         catch (Exception ex) { Logger.LogWarning(ex, "Log Lab could not format the working editor as {Format}", format); _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
-    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; _activeTimelineBucket = null; }
+    private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; _activeTimelineBucket = null; _editorScrollSyncAttached = false; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
-    private static string FormatLabel(LogDocumentFormat format) => format switch { LogDocumentFormat.JsonLines => "JSON LINES", LogDocumentFormat.CustomProfile => "CUSTOM PROFILE", _ => format.ToString().ToUpperInvariant() };
+    private static string FormatLabel(LogDocument document)
+    {
+        var contentType = document.Format switch
+        {
+            LogDocumentFormat.PlainText => "plain text",
+            LogDocumentFormat.JsonLines => "JSON Lines",
+            LogDocumentFormat.WindowsEventXml => "Windows Event XML",
+            LogDocumentFormat.WebAccess => "web access",
+            LogDocumentFormat.KeyValue => "key/value",
+            LogDocumentFormat.CustomProfile => "custom profile",
+            _ => document.Format.ToString().ToUpperInvariant()
+        };
+        if (document.FileExtension.Length <= 1) return $"{contentType} log file (no extension)";
+        var parserNote = document.ContentKind switch
+        {
+            LogContentKind.BinaryLike => " · binary-like raw preview",
+            LogContentKind.MixedTextAndBinary => $" · mostly readable; parsed as {contentType}",
+            _ => document.Format == LogDocumentFormat.PlainText ? " · plain-text inspection" : $" · parsed as {contentType}"
+        };
+        return document.FileTypeLabel + parserNote;
+    }
     private LogEntryAnalysis AnalysisFor(ParsedLogEntry entry) => _analysis?.Entries.GetValueOrDefault(entry.Index) ?? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Analysis pending", "", RuleMatchStrength.NoRuleMatched, [], [], []);
     private bool MatchesAnalysis(ParsedLogEntry entry, string query)
     {
@@ -446,6 +579,14 @@
             finding.Tags.Any(tag => tag.Contains(query, StringComparison.OrdinalIgnoreCase)) || finding.Explanation.Contains(query, StringComparison.OrdinalIgnoreCase) ||
             finding.Recommendations.Any(recommendation => recommendation.Contains(query, StringComparison.OrdinalIgnoreCase)) ||
             finding.Evidence.Any(evidence => evidence.Field.Contains(query, StringComparison.OrdinalIgnoreCase) || evidence.Value.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+    private string HighlightMatches(string text)
+    {
+        if (string.IsNullOrWhiteSpace(_searchQuery)) return System.Net.WebUtility.HtmlEncode(text);
+        var safeText = System.Net.WebUtility.HtmlEncode(text);
+        var safeQuery = System.Net.WebUtility.HtmlEncode(_searchQuery.Trim());
+        if (safeQuery.Length == 0) return safeText;
+        return System.Text.RegularExpressions.Regex.Replace(safeText, System.Text.RegularExpressions.Regex.Escape(safeQuery), match => $"<mark class=\"log-search-hit\">{match.Value}</mark>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
     }
     private void SetCategoryFilter(LogScenarioCategory category) => _categoryFilter = _categoryFilter == category.ToString() ? string.Empty : category.ToString();
     private async Task AnalyzeCurrentDocumentAsync()
@@ -478,7 +619,8 @@
         if (_document is null) return;
         var document = _document;
         _selectedSequence = null;
-        _sequenceFindings = await Task.Run(() => SequenceAnalysisEngine.Analyze(document, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly)));
+        try { _sequenceFindings = await Task.Run(() => SequenceAnalysisEngine.Analyze(document, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly))); }
+        catch (Exception ex) { Logger.LogError(ex, "Log Lab sequence analysis failed for {FileName}", document.FileName); _sequenceFindings = []; _statusMessage = "Sequence analysis failed; parsed entries remain available. Check the application log for details."; _isError = true; }
     }
 
     private async Task RefreshTimeline()
@@ -486,7 +628,8 @@
         if (_document is null) return;
         var document = _document;
         _activeTimelineBucket = null;
-        _timeline = await Task.Run(() => TimelineAnalysisEngine.Analyze(document, _timelineIntervalMinutes));
+        try { _timeline = await Task.Run(() => TimelineAnalysisEngine.Analyze(document, _timelineIntervalMinutes)); }
+        catch (Exception ex) { Logger.LogError(ex, "Log Lab timeline analysis failed for {FileName}", document.FileName); _timeline = null; _statusMessage = "Timeline analysis failed; parsed entries remain available. Check the application log for details."; _isError = true; }
     }
 
     private void FilterTimelineBucket(LogTimelineBucket bucket)
@@ -562,7 +705,7 @@
         _searchQuery = string.Empty; _severityFilter = string.Empty; _categoryFilter = string.Empty;
         _selectedEntry = _document.Entries.FirstOrDefault(entry => entry.Index == entryIndex);
         _showWholeDocument = false;
-        _editorText = _selectedEntry?.RawText ?? string.Empty;
+        _editorText = _selectedEntry?.RawText ?? string.Empty; _editorDirty = false; _resetEditorScrollAfterRender = true;
         _filteredDocument = null;
         var position = FilteredEntries.FindIndex(entry => entry.Index == _selectedEntry?.Index);
         if (position >= 0) _entryLimit = Math.Max(_entryLimit, position + 1);

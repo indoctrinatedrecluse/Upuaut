@@ -1,0 +1,4 @@
+time=2026-10-30T18:00:01Z severity=INFO component=db-pool transaction=tx-4401 action=begin user=demo
+time=2026-10-30T18:00:02Z severity=WARNING component=db-pool transaction=tx-4402 action=lock_wait duration_ms=8500 table=orders
+time=2026-10-30T18:00:03Z severity=ERROR component=db-pool transaction=tx-4402 action=deadlock victim=tx-4402 table=orders message="Transaction aborted after deadlock detection"
+time=2026-10-30T18:00:04Z severity=INFO component=db-pool transaction=tx-4401 action=commit duration_ms=92

@@ -146,7 +146,7 @@
             Category: "getting-started",
             CategoryName: "Getting Started",
             Title: "Using Upuaut",
-            Summary: "A short guide to the dashboard, Chronicles event-log review, Scout packet capture, and the current Triage status.",
+            Summary: "A short guide to the dashboard, Chronicles event-log review, Scout packet capture, and the current The Scales investigation.",
             Icon: "✦",
             HtmlContent: @"
                 <p>Upuaut is a Windows desktop toolkit for reviewing local Windows event logs and inspecting network traffic. The dashboard links to each workspace; Help in the top bar opens a searchable quick guide and About.</p>
@@ -169,10 +169,10 @@
                     <li>Use <strong>Stop Capture</strong> to end collection; <strong>Clear</strong> clears the live in-memory buffer. Ctrl+1/2/3 navigates to Chronicles, Scout, and Scales.</li>
                 </ol>
                 <p>Capture visibility depends on adapter, permissions, and mode. Capture filters do not configure Npcap/kernel filtering. TLS payloads remain encrypted; process attribution is best effort for local IPv4 sockets.</p>
-                <h4>Triage status</h4>
-                <p>The Scales route places recent warning/error events beside packets already in Scout's buffer. Its percentage is only normalized time proximity within ±2.5 seconds, not causal confidence. Notes and the full event/packet matches can be saved as a case JSON or CSV.</p>
+                <h4>The Scales investigation</h4>
+                <p>The Scales combines Windows events, timestamped entries from imported Log Lab files, and packets already in Scout's buffer. Nearby log entries and packets are linked within the selected time window; matching process IDs, endpoint addresses, DNS names, and process names are shown when present. These are investigation leads, not proof of causation. Add notes, save evidence and source metadata as case JSON, or export the visible timeline to CSV.</p>
             ",
-            RawText: "getting started user guide dashboard Chronicles event logs query severity provider event ID saved investigation JSON CSV preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap capture display filter IPv6 PCAPNG TCP follow stream conversation raw bytes shared time keyboard shortcuts Triage correlation preview notes temporal proximity"
+            RawText: "getting started user guide dashboard Chronicles event logs query severity provider event ID saved investigation JSON CSV preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap capture display filter IPv6 PCAPNG TCP follow stream conversation raw bytes shared time keyboard shortcuts The Scales cross-source investigation imported logs shared timeline evidence links temporal proximity"
         ),
         new(
             Id: "general-purpose-log-lab",
@@ -182,8 +182,8 @@
             Summary: "Import unfamiliar logs, inspect extracted fields, review scenario labels, and keep the original source available when parsing is incomplete.",
             Icon: "⌕",
             HtmlContent: @"
-                <p>Open <strong>Log Lab</strong> from the navigation and import a log file. Log Lab recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
-                <p>Unknown formats and malformed structured logs fall back to decoded raw text. If scenario or timeline analysis fails, the original source stays open in the raw editor and the reason is recorded in Upuaut diagnostics. Empty or binary-like files can also be inspected as raw text; field extraction may be limited.</p>
+                <p>Open <strong>Log Lab</strong> from the navigation and import a log file. Log Lab recognizes plain text, JSON, JSON Lines (NDJSON), XML including repeated Windows Event XML records, CSV, INI sections, logfmt key/value records, RFC 3164/5424 syslog, and Apache combined access logs. Files are limited to 32 MiB, and parsing stops after 200,000 entries. The displayed file type comes from its extension; unknown extensions remain identified while the content is inspected as plain text. User parser profiles can handle additional line-oriented formats.</p>
+                <p>Unknown formats and malformed structured logs fall back to decoded raw text. Readable non-log files such as solution files, hex dumps, and mostly textual save files remain available in the editor. Upuaut checks encoding and readable-text proportion: predominantly binary or encrypted files skip structured parsing and show a warning with a decoded raw preview. UTF-16/32 BOM-less text is detected where its byte pattern is clear. If scenario or timeline analysis fails, the original source stays open in the raw editor and the reason is recorded in Upuaut diagnostics.</p>
                 <h4>Search and inspect</h4>
                 <ol>
                     <li>Search across entry messages, raw lines, and extracted fields. Use the severity selector to narrow the list.</li>
@@ -191,7 +191,7 @@
                     <li>Choose <strong>Full Source</strong> to review the complete imported text. Select an entry again or choose <strong>Selected Entry</strong> to return to its raw content.</li>
                 </ol>
                 <h4>Format without changing the import</h4>
-                <p>The editor is a working view. Format JSON or XML to make it easier to read; use <strong>Reset Editor</strong> to restore the selected entry or original source. Formatting never changes the imported source used by the parser.</p>
+                <p>The editor is a working view. Syntax coloring marks common timestamps, severity words, field names, codes, strings, and structural delimiters; it is best-effort and automatically pauses on sources over 300,000 characters. Format JSON or XML, search forward or backward, replace one or all matches, copy, or save an edited copy. Use <strong>Reset Editor</strong> to restore the selected entry or original source. Formatting and edits never change the imported source used by the parser. Toggle wrapping independently for the raw editor and entry results.</p>
                 <h4>Review scenario analysis</h4>
                 <p>Each entry receives a best-effort scenario label where supported, such as crash, setup, update, authentication, security, network, storage, service, performance, maintenance, or success. The analysis shows the phrase signals and source fields that matched, tags, and suggested checks. Filter entries by scenario using the summary chips or selector.</p>
                 <p><strong>Match strength</strong> indicates how many rule signals matched the entry. It is not confidence in a root cause, proof of a security incident, or confirmation that a reported operation succeeded. Compare the finding with the raw source and surrounding entries.</p>

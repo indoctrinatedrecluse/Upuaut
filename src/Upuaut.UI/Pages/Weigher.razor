@@ -2,22 +2,26 @@
 @namespace Upuaut.UI.Pages
 @using Upuaut.Core.Models
 @using Upuaut.Scout.Services
+@using Upuaut.LogLab
+@using Upuaut.LogLab.Models
 @using Microsoft.Win32
 @inject IChroniclesService ChroniclesService
 @inject ScoutManager ScoutService
 @inject NavigationManager Navigation
 @inject Upuaut.UI.Shared.InvestigationContext Investigation
+@inject ILogParsingEngine LogParsingEngine
 
 <PageTitle>Upuaut — The Scales of Ma’at</PageTitle>
 
 <div class="triage-page">
     <header class="triage-page-header">
         <div>
-            <span class="triage-eyebrow">MA’AT // SIGNAL CORRELATION PREVIEW</span>
+            <span class="triage-eyebrow">MA’AT // CROSS-SOURCE INVESTIGATION</span>
             <h1>⚖ The Scales</h1>
-            <p>Place Windows events beside recent Scout traffic to inspect what happened around the same time.</p>
+            <p>Bring system events, imported logs, and captured network traffic into one evidence-linked timeline.</p>
         </div>
         <div class="triage-controls">
+            <label class="triage-case-title"><span>CASE NAME</span><input @bind="_caseTitle" maxlength="120" /></label>
             <label>
                 <span>EVENT CHANNEL</span>
                 <select class="upuaut-select" @bind="_channel" disabled="@_isLoading">
@@ -37,10 +41,13 @@
                     <option value="Custom">Custom range</option>
                 </select>
             </label>
+            <label class="triage-include-information"><input type="checkbox" @bind="_includeInformational" /> Include information and verbose events</label>
             <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Scales())" Loading="_isLoading" OnClick="AnalyzeAsync">
-                @(_hasAnalyzed ? "Refresh Analysis" : "Analyze Available Signals")
+                @(_hasAnalyzed ? "Refresh Investigation" : "Review Available Evidence")
             </FluentButton>
-            <select class="upuaut-select" @bind="_groupFilter"><option value="All">All evidence</option><option value="Matched">Temporal matches</option><option value="Unmatched">Unmatched events</option></select>
+            <button class="pill-btn" @onclick="ImportLogAsync" disabled="@_isLoading">Import log sources</button>
+            @if (_importedFileNames.Count > 0) { <button class="pill-btn" @onclick="ClearImportedLog" disabled="@_isLoading">Remove imported logs</button> }
+            <select class="upuaut-select" @bind="_groupFilter"><option value="All">All evidence</option><option value="Matched">Entries with nearby evidence</option><option value="Unmatched">Entries without nearby evidence</option></select>
             <button class="pill-btn" @onclick="ExportJson">Save case JSON</button><button class="pill-btn" @onclick="ExportCsv">Export CSV</button>
             <button class="pill-btn" @onclick="LoadCase">Load case</button>
             @if (_timeWindow == LogTimeRange.Custom) { <input type="datetime-local" @bind="_customStartTime" /><input type="datetime-local" @bind="_customEndTime" /> }
@@ -49,7 +56,7 @@
 
     <div class="triage-preview-note">
         <span class="triage-preview-pulse"></span>
-        <div><strong>Correlation preview</strong><span>Time proximity is evidence to inspect, not proof that one signal caused another.</span></div>
+        <div><strong>Cross-source review</strong><span>Temporal proximity is a lead to inspect, not proof that one signal caused another.</span></div>
         <span class="triage-window-chip">± 2.5 SEC</span>
     </div>
     <div class="triage-shared-window">Shared investigation window: @_timeWindowLabel. Change it in Chronicles or here to carry the same time range between tabs.</div>
@@ -60,24 +67,24 @@
     }
 
     <section class="triage-summary-grid" aria-label="Analysis summary">
-        <article class="triage-summary-card"><span>EVENTS REVIEWED</span><strong>@_items.Count</strong><small>@_channel · @_timeWindowLabel</small></article>
-        <article class="triage-summary-card"><span>TEMPORAL MATCHES</span><strong>@_items.Count(item => item.NearestPacket is not null)</strong><small>Packet within 2.5 seconds</small></article>
+        <article class="triage-summary-card"><span>LOG ENTRIES REVIEWED</span><strong>@_items.Count</strong><small>@_channel · @_timeWindowLabel</small></article>
+        <article class="triage-summary-card"><span>PACKET PROXIMITY</span><strong>@_items.Count(item => item.NearestPacket is not null)</strong><small>Frame within @CorrelationWindowMilliseconds ms</small></article>
         <article class="triage-summary-card"><span>SCOUT BUFFER</span><strong>@_packetCount.ToString("N0")</strong><small>Frames reviewed · FIFO cap @ScoutService.BufferCapacity.ToString("N0")</small></article>
-        <article class="triage-summary-card triage-summary-alert"><span>ERRORS / CRITICAL</span><strong>@_items.Count(item => item.Log.Level is LogSeverityLevel.Error or LogSeverityLevel.Critical)</strong><small>Included in this review</small></article>
+        <article class="triage-summary-card triage-summary-alert"><span>LOG STREAMS</span><strong>@((_channel == "Both" ? 2 : 1) + ImportedSourceCount)</strong><small>Windows channels@(_importedFileNames.Count == 0 ? "" : $" + {_importedFileNames.Count} imported file(s)")</small></article>
     </section>
 
     <section class="triage-results-panel">
         <div class="triage-results-heading">
-            <div><span class="triage-eyebrow">RECENT SIGNALS</span><h2>Event and packet timeline</h2></div>
-            <span class="triage-result-count">@(_hasAnalyzed ? $"{_items.Count} EVENTS" : "ANALYSIS NOT RUN")</span>
+            <div><span class="triage-eyebrow">EVIDENCE TIMELINE</span><h2>Logs beside network activity</h2></div>
+            <span class="triage-result-count">@(_hasAnalyzed ? $"{_items.Count} ENTRIES" : "REVIEW NOT RUN")</span>
         </div>
 
         @if (!_hasAnalyzed && !_isLoading)
         {
             <div class="triage-empty-state">
                 <span class="triage-empty-sigil">⚖</span>
-                <strong>Choose a window and analyze available signals</strong>
-                <p>Chronicles will query the selected Windows event channels. Scout traffic is read from its current in-memory capture buffer.</p>
+                <strong>Choose a time window and review available evidence</strong>
+                <p>Chronicles supplies Windows events, imported timestamped logs add another source, and Scout contributes its current in-memory packet buffer.</p>
                 <div class="triage-empty-actions">
                     <button @onclick='() => Navigation.NavigateTo("chronicles")'>Open Chronicles</button>
                     <button @onclick='() => Navigation.NavigateTo("scout")'>Open Scout</button>
@@ -86,20 +93,21 @@
         }
         else if (_hasAnalyzed && _items.Count == 0 && !_isLoading)
         {
-            <div class="triage-empty-state compact"><strong>No matching warning or error events were returned.</strong><p>Try a wider time window, a different channel, or review channel permissions.</p></div>
+            <div class="triage-empty-state compact"><strong>No log entries were returned for this time window.</strong><p>Try a wider time window, a different channel, or review channel permissions.</p></div>
         }
         else
         {
             <div class="triage-table-scroll">
                 <table class="triage-table">
-                    <thead><tr><th>TIME</th><th>SEVERITY</th><th>EVENT</th><th>NEARBY SCOUT TRAFFIC</th><th>TIME DELTA</th></tr></thead>
+                    <thead><tr><th>TIME</th><th>LEVEL</th><th>LOG EVIDENCE</th><th>NEARBY LOG</th><th>NEARBY PACKET</th><th>DELTA</th></tr></thead>
                     <tbody>
                         @foreach (var item in VisibleItems)
                         {
                             <tr class="@(_selectedItem?.Log.RecordId == item.Log.RecordId && _selectedItem?.Log.Channel == item.Log.Channel ? "selected" : "")" @onclick="() => SelectItem(item)">
                                 <td class="triage-time">@item.Log.Timestamp.ToLocalTime().ToString("MMM dd HH:mm:ss")</td>
                                 <td><span class="triage-severity @SeverityClass(item.Log.Level)">@item.Log.Level.ToString().ToUpperInvariant()</span></td>
-                                <td><strong>@item.Log.ProviderName</strong><span class="triage-event-detail">Event @item.Log.EventId · @item.Log.Channel</span></td>
+                                <td><strong>@item.Log.ProviderName</strong><span class="triage-event-detail">@item.SourceLabel | @(item.Log.EventId > 0 ? $"Event {item.Log.EventId}" : "Entry")</span></td>
+                                <td>@if (item.NearestRelatedLog is { } related) { <strong>@related.ProviderName</strong><span class="triage-event-detail">@SourceLabelFor(related) | @Math.Abs(item.RelatedLogDelta?.TotalMilliseconds ?? 0).ToString("N0") ms</span> } else { <span class="triage-no-match">No nearby log entry</span> }</td>
                                 <td>
                                     @if (item.NearestPacket is { } packet)
                                     {
@@ -124,7 +132,7 @@
     @if (_selectedItem is { } selected)
     {
         <section class="triage-detail-panel">
-            <div><span class="triage-eyebrow">SELECTED EVENT · @selected.Log.Channel · ID @selected.Log.EventId</span><h2>@(selected.Log.Explanation?.Summary ?? selected.Log.Message)</h2></div>
+            <div><span class="triage-eyebrow">SELECTED EVIDENCE · @selected.Log.Channel · ID @selected.Log.EventId</span><h2>@(selected.Log.Explanation?.Summary ?? selected.Log.Message)</h2></div>
             <p><strong>Provider:</strong> @selected.Log.ProviderName <span>·</span> <strong>Time:</strong> @selected.Log.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")</p>
             @if (selected.Log.ProcessId is { } processId)
             {
@@ -133,14 +141,18 @@
             @if (selected.NearestPacket is { } nearby)
             {
                 <p><strong>Nearest captured frame:</strong> @nearby.Protocol, @nearby.SourceIp@Port(nearby.SourcePort) → @nearby.DestinationIp@Port(nearby.DestinationPort), @Math.Abs(selected.TimeDelta?.TotalMilliseconds ?? 0).ToString("N0") ms from this event.</p>
-                <p><strong>Match explanation:</strong> nearest of @selected.NearbyPacketCount buffered Scout frame(s) within ±@CorrelationWindowMilliseconds ms. Delta is @(selected.TimeDelta?.TotalMilliseconds >= 0 ? "after" : "before") the event. The score is normalized time distance only.</p>
+                <p><strong>Match explanation:</strong> @selected.NearbyPacketCount buffered Scout frame(s) fell within PLUS/MINUS @CorrelationWindowMilliseconds ms; @selected.PacketCandidatesReviewed nearest candidate(s) were checked for shared identifiers. Shared identifiers rank candidates first; the displayed delta and score describe time distance only.</p>
                 <p class="triage-caveat">Temporal adjacency is evidence to inspect, not causation or confidence. Compare endpoint/process details and the event’s own fields before drawing a conclusion.</p>
-                <div class="triage-detail-actions"><button class="pill-btn" @onclick="OpenPacketInScout">Inspect packet in Scout</button><button class="pill-btn" @onclick="OpenEventInChronicles">Open event in Chronicles</button></div>
+                <div class="triage-detail-actions"><button class="pill-btn" @onclick="OpenPacketInScout">Inspect packet in Scout</button>@if (selected.Log.SourceFile is null) { <button class="pill-btn" @onclick="OpenEventInChronicles">Open event in Chronicles</button> }</div>
             }
             else
             {
-                <p class="triage-caveat">No buffered packet fell within 2.5 seconds of this event. Scout only contributes packets captured before this analysis.</p>
+                <p class="triage-caveat">No buffered packet fell within the selected time window of this entry. Scout only contributes packets captured before this analysis.</p>
             }
+            @if (!string.IsNullOrWhiteSpace(selected.Log.SourceFile)) { <p><strong>Imported file:</strong> @selected.Log.SourceFile | <strong>Source line:</strong> @selected.Log.EventId | <strong>Parser:</strong> @selected.Log.TaskCategory</p> }
+            @if (!string.IsNullOrWhiteSpace(selected.Log.Message)) { <details class="triage-source-evidence"><summary>Inspect source entry</summary><pre>@selected.Log.Message</pre></details> }
+            @if (selected.NearestRelatedLog is { } relatedLog) { <p><strong>Nearby log entry:</strong> @relatedLog.ProviderName | @SourceLabelFor(relatedLog) | @Math.Abs(selected.RelatedLogDelta?.TotalMilliseconds ?? 0).ToString("N0") ms away, among @selected.RelatedLogCount nearby entries.</p><button class="pill-btn" @onclick="() => SelectRelatedLog(relatedLog)">Inspect nearby log entry</button> }
+            @if (selected.PacketMatchBasis.Count > 0) { <p class="triage-caveat"><strong>Shared identifiers:</strong> @string.Join("; ", selected.PacketMatchBasis). These values help connect records but do not establish causation.</p> }
             <label class="triage-note-field">Investigation note<textarea @bind="_currentNote" @bind:event="oninput" placeholder="Record observations, competing explanations, or follow-up actions…"></textarea></label>
             <button class="pill-btn" @onclick="SaveNote">Save note to this case</button>
         </section>
@@ -149,6 +161,12 @@
 
 @code {
     private const int CorrelationWindowMilliseconds = 2500;
+    private const int MaximumPacketCandidatesPerEntry = 256;
+    private const int MaximumImportedSources = 10;
+    private const int MaximumImportedTimelineEntries = 20_000;
+    private const long MaximumCaseFileBytes = 64 * 1024 * 1024;
+    private readonly List<string> _importedFileNames = new();
+    private List<LogRecord> _importedLogs = new();
     private string _channel = "Both";
     private LogTimeRange _timeWindow = LogTimeRange.Last24Hours;
     private string _groupFilter = "All";
@@ -159,13 +177,16 @@
     private List<TriageItem> _items = new();
     private TriageItem? _selectedItem;
     private int _packetCount;
+    private bool _includeInformational;
     private bool _isLoading;
     private bool _hasAnalyzed;
+    private string _caseTitle = "Untitled investigation";
     private string _statusMessage = "";
+    private int ImportedSourceCount => Math.Max(_importedFileNames.Count, _items.Select(item => item.Log.Channel).Where(channel => channel.StartsWith("Imported log:", StringComparison.Ordinal)).Distinct().Count());
     private IEnumerable<TriageItem> VisibleItems => _items.Where(item => _groupFilter switch
     {
-        "Matched" => item.NearestPacket is not null,
-        "Unmatched" => item.NearestPacket is null,
+        "Matched" => item.NearestPacket is not null || item.NearestRelatedLog is not null,
+        "Unmatched" => item.NearestPacket is null && item.NearestRelatedLog is null,
         _ => true
     });
 
@@ -208,7 +229,9 @@
                 TimeRange = _timeWindow,
                 CustomStartTime = _customStartTime,
                 CustomEndTime = _customEndTime,
-                Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Warning, LogSeverityLevel.Error, LogSeverityLevel.Critical },
+                Levels = _includeInformational
+                    ? Enum.GetValues<LogSeverityLevel>().ToHashSet()
+                    : new HashSet<LogSeverityLevel> { LogSeverityLevel.Warning, LogSeverityLevel.Error, LogSeverityLevel.Critical },
                 MaxEvents = 1200
             }));
             var channelResults = await Task.WhenAll(requests);
@@ -219,16 +242,20 @@
             if (Investigation.SelectedLog is { } selectedLog)
                 logs = logs.Append(selectedLog).GroupBy(record => (record.Channel, record.RecordId)).Select(group => group.First()).OrderByDescending(record => record.Timestamp).Take(1500).ToList();
 
+            logs.AddRange(_importedLogs.Where(log => IsWithinWindow(log.Timestamp)));
+            logs = logs.GroupBy(log => (log.Channel, log.RecordId)).Select(group => group.First()).OrderByDescending(log => log.Timestamp).Take(5000).ToList();
+
             var packets = ScoutService.GetRecentFrames(maxFrames: ScoutService.BufferCapacity).OrderBy(packet => AsUtc(packet.Timestamp)).ToList();
             _packetCount = packets.Count;
-            _items = logs.Select(log => Correlate(log, packets)).ToList();
+            var orderedLogs = logs.OrderBy(log => AsUtc(log.Timestamp)).ToList();
+            _items = logs.Select(log => Correlate(log, orderedLogs, packets)).ToList();
             _selectedItem = Investigation.SelectedLog is { } pinned
                 ? _items.FirstOrDefault(item => item.Log.Channel == pinned.Channel && item.Log.RecordId == pinned.RecordId)
                 : null;
             if (_selectedItem is not null) _currentNote = _notes.GetValueOrDefault(NoteKey(_selectedItem.Log), string.Empty);
             _hasAnalyzed = true;
             var matches = _items.Count(item => item.NearestPacket is not null);
-            _statusMessage = $"Reviewed {_items.Count:N0} events and {_packetCount:N0} buffered packets. {matches:N0} event(s) have nearby packet traffic.";
+            _statusMessage = $"Reviewed {_items.Count:N0} log entries and {_packetCount:N0} buffered packets. {matches:N0} entries have nearby packet traffic. Time proximity is a lead, not proof of cause.";
         }
         catch (Exception ex)
         {
@@ -240,20 +267,158 @@
         }
     }
 
-    private static TriageItem Correlate(LogRecord log, IReadOnlyList<PacketFrame> packets)
+    private bool IsWithinWindow(DateTime timestamp)
+    {
+        var utc = AsUtc(timestamp);
+        return _timeWindow switch
+        {
+            LogTimeRange.LastHour => utc >= DateTime.UtcNow.AddHours(-1) && utc <= DateTime.UtcNow,
+            LogTimeRange.Last7Days => utc >= DateTime.UtcNow.AddDays(-7) && utc <= DateTime.UtcNow,
+            LogTimeRange.Last30Days => utc >= DateTime.UtcNow.AddDays(-30) && utc <= DateTime.UtcNow,
+            LogTimeRange.Custom => (_customStartTime is null || utc >= AsUtc(_customStartTime.Value)) && (_customEndTime is null || utc <= AsUtc(_customEndTime.Value)),
+            LogTimeRange.AllTime => true,
+            _ => utc >= DateTime.UtcNow.AddHours(-24) && utc <= DateTime.UtcNow
+        };
+    }
+
+    private async Task ImportLogAsync()
+    {
+        var dialog = new OpenFileDialog { Title = "Import log sources for investigation", Filter = "Readable log and text files|*.log;*.txt;*.json;*.jsonl;*.ndjson;*.xml;*.csv;*.ini;*.conf;*.cfg;*.yaml;*.yml;*.toml;*.logfmt;*.syslog;*.out;*.err|All files|*.*", CheckFileExists = true, Multiselect = true };
+        if (dialog.ShowDialog() != true) return;
+        _isLoading = true; _statusMessage = "Parsing imported source with Log Lab...";
+        try
+        {
+            var addedFiles = new List<string>();
+            var addedUntimestampedEntries = 0;
+            var skippedBinarySources = new List<string>();
+            foreach (var path in dialog.FileNames)
+            {
+                if (_importedFileNames.Count >= MaximumImportedSources) { _statusMessage = $"The investigation accepts up to {MaximumImportedSources} imported sources. Remove a source before adding more."; break; }
+                var document = await LogParsingEngine.ImportFileAsync(path);
+                if (document.ContentKind == LogContentKind.BinaryLike) { skippedBinarySources.Add(document.FileName); continue; }
+                var sourceKey = Path.GetFullPath(path);
+                if (_importedFileNames.Contains(sourceKey, StringComparer.OrdinalIgnoreCase)) continue;
+                _importedFileNames.Add(sourceKey); addedFiles.Add(document.FileName);
+                var timestamped = document.Entries.Where(entry => entry.Timestamp.HasValue).ToArray();
+                var remainingCapacity = Math.Max(0, MaximumImportedTimelineEntries - _importedLogs.Count);
+                addedUntimestampedEntries += document.Entries.Count(entry => !entry.Timestamp.HasValue);
+                var selectedEntries = timestamped.Take(remainingCapacity);
+                _importedLogs.AddRange(selectedEntries.Select(entry => new LogRecord
+                {
+                    RecordId = StableSourceRecordId(sourceKey, entry.Index),
+                    EventId = entry.SourceLine, ProviderName = string.IsNullOrWhiteSpace(entry.Source) ? document.FileName : entry.Source,
+                    Channel = $"Imported log: {document.FileName}", Level = ToSeverity(entry.Severity), Timestamp = entry.Timestamp!.Value.UtcDateTime,
+                    ProcessId = ReadProcessId(entry.Fields),
+                    Message = entry.Message, SourceFile = document.FileName, TaskCategory = entry.InterpretationBasis,
+                    EventData = entry.Fields
+                }));
+            }
+            _statusMessage = addedFiles.Count == 0 ? "No new readable log sources were added." : $"Added {addedFiles.Count} log source(s): {string.Join(", ", addedFiles)}. {_importedLogs.Count:N0} timestamped entries are available (up to {MaximumImportedTimelineEntries:N0} per investigation); {addedUntimestampedEntries:N0} entries without recognized timestamps remain available in Log Lab but cannot be aligned here. Skipped {skippedBinarySources.Count} binary-like source(s).";
+            _hasAnalyzed = false;
+        }
+        catch (Exception ex) { _statusMessage = $"Could not import this log source: {ex.Message}"; }
+        finally { _isLoading = false; }
+    }
+
+    private void ClearImportedLog() { _importedLogs.Clear(); _importedFileNames.Clear(); _items.Clear(); _hasAnalyzed = false; _statusMessage = "Imported log source removed from this investigation."; }
+    private static long StableSourceRecordId(string sourcePath, int entryIndex)
+    {
+        unchecked
+        {
+            ulong hash = 14695981039346656037;
+            foreach (var value in System.Text.Encoding.UTF8.GetBytes(sourcePath.ToUpperInvariant())) { hash ^= value; hash *= 1099511628211; }
+            return (long)((hash & 0x7fffffff00000000UL) | (uint)entryIndex);
+        }
+    }
+
+    private static int? ReadProcessId(IReadOnlyDictionary<string, string> fields)
+    {
+        foreach (var field in fields)
+            if ((field.Key.Contains("process", StringComparison.OrdinalIgnoreCase) && field.Key.Contains("id", StringComparison.OrdinalIgnoreCase) || field.Key.Equals("pid", StringComparison.OrdinalIgnoreCase)) && int.TryParse(field.Value, out var pid)) return pid;
+        return null;
+    }
+
+    private static LogSeverityLevel ToSeverity(LogEntrySeverity severity) => severity switch
+    { LogEntrySeverity.Critical => LogSeverityLevel.Critical, LogEntrySeverity.Error => LogSeverityLevel.Error, LogEntrySeverity.Warning => LogSeverityLevel.Warning, LogEntrySeverity.Information or LogEntrySeverity.Success => LogSeverityLevel.Information, LogEntrySeverity.Debug or LogEntrySeverity.Trace => LogSeverityLevel.Verbose, _ => LogSeverityLevel.Information };
+
+    private static TriageItem Correlate(LogRecord log, IReadOnlyList<LogRecord> logs, IReadOnlyList<PacketFrame> packets)
     {
         var eventTime = AsUtc(log.Timestamp);
         var from = LowerBound(packets, eventTime.AddMilliseconds(-CorrelationWindowMilliseconds));
         var to = UpperBound(packets, eventTime.AddMilliseconds(CorrelationWindowMilliseconds));
-        var nearby = packets.Skip(from).Take(to - from)
-            .Select(packet => (Packet: packet, Delta: AsUtc(packet.Timestamp) - eventTime))
-            .OrderBy(candidate => Math.Abs(candidate.Delta.TotalMilliseconds)).ToList();
+        var insertion = LowerBound(packets, eventTime);
+        var searchable = BuildSearchableLog(log);
+        var candidates = new List<(PacketFrame Packet, TimeSpan Delta, IReadOnlyList<string> Basis)>(Math.Min(MaximumPacketCandidatesPerEntry, to - from));
+        var left = Math.Min(insertion - 1, to - 1);
+        var right = Math.Max(insertion, from);
+        while (candidates.Count < MaximumPacketCandidatesPerEntry && (left >= from || right < to))
+        {
+            var takeLeft = left >= from && (right >= to || Math.Abs((AsUtc(packets[left].Timestamp) - eventTime).Ticks) <= Math.Abs((AsUtc(packets[right].Timestamp) - eventTime).Ticks));
+            var packet = takeLeft ? packets[left--] : packets[right++];
+            var delta = AsUtc(packet.Timestamp) - eventTime;
+            candidates.Add((packet, delta, PacketMatchBasis(log.ProcessId, searchable, packet)));
+        }
+        var nearest = candidates.OrderByDescending(candidate => candidate.Basis.Count)
+            .ThenBy(candidate => Math.Abs(candidate.Delta.TotalMilliseconds)).FirstOrDefault();
 
-        var nearest = nearby.FirstOrDefault();
-        return nearest.Packet is null
-            ? new TriageItem(log, null, null, 0, 0)
-            : new TriageItem(log, nearest.Packet, nearest.Delta, nearby.Count,
-                Math.Max(0, (int)Math.Round(100 * (1 - Math.Abs(nearest.Delta.TotalMilliseconds) / CorrelationWindowMilliseconds))));
+        var logFrom = LowerBoundLog(logs, eventTime.AddMilliseconds(-CorrelationWindowMilliseconds));
+        var logTo = UpperBoundLog(logs, eventTime.AddMilliseconds(CorrelationWindowMilliseconds));
+        var relatedCount = Math.Max(0, logTo - logFrom - 1);
+        var related = FindNearestRelatedLog(log, logs, logFrom, logTo, eventTime);
+        return new TriageItem(log, nearest.Packet, nearest.Packet is null ? null : nearest.Delta, to - from,
+            nearest.Packet is null ? 0 : Math.Max(0, (int)Math.Round(100 * (1 - Math.Abs(nearest.Delta.TotalMilliseconds) / CorrelationWindowMilliseconds))),
+            SourceLabelFor(log), related.Log, related.Delta, nearest.Basis, relatedCount, candidates.Count);
+    }
+
+    private static (LogRecord? Log, TimeSpan? Delta) FindNearestRelatedLog(LogRecord log, IReadOnlyList<LogRecord> logs, int from, int to, DateTime eventTime)
+    {
+        var right = from;
+        while (right < to && ReferenceEquals(logs[right], log)) right++;
+        var left = from - 1;
+        var before = left >= from ? logs[left] : null;
+        var after = right < to ? logs[right] : null;
+        if (before is null && after is null) return (null, null);
+        var beforeDelta = before is null ? (TimeSpan?)null : AsUtc(before.Timestamp) - eventTime;
+        var afterDelta = after is null ? (TimeSpan?)null : AsUtc(after.Timestamp) - eventTime;
+        if (beforeDelta is null) return (after, afterDelta);
+        if (afterDelta is null || Math.Abs(beforeDelta.Value.Ticks) <= Math.Abs(afterDelta.Value.Ticks)) return (before, beforeDelta);
+        return (after, afterDelta);
+    }
+
+    private static string BuildSearchableLog(LogRecord log)
+    {
+        const int maximumSearchCharacters = 32_768;
+        var relevantFields = log.EventData.Concat(log.NormalizedEventData)
+            .Where(pair => new[] { "ip", "host", "dns", "domain", "endpoint", "address", "process", "computer" }
+                .Any(term => pair.Key.Contains(term, StringComparison.OrdinalIgnoreCase)))
+            .Take(64).Select(pair => pair.Value);
+        var text = string.Join(" ", new[] { log.Message, log.ProviderName }.Concat(relevantFields));
+        return text.Length <= maximumSearchCharacters ? text : text[..maximumSearchCharacters];
+    }
+
+    private static IReadOnlyList<string> PacketMatchBasis(int? processId, string searchable, PacketFrame packet)
+    {
+        var matches = new List<string>();
+        if (processId is { } pid && packet.ProcessId == pid) matches.Add($"Process ID {pid}");
+        foreach (var endpoint in new[] { packet.SourceIp, packet.DestinationIp }.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (searchable.Contains(endpoint, StringComparison.OrdinalIgnoreCase)) matches.Add($"Endpoint {endpoint}");
+        if (!string.IsNullOrWhiteSpace(packet.DnsQueryName) && searchable.Contains(packet.DnsQueryName, StringComparison.OrdinalIgnoreCase)) matches.Add($"DNS {packet.DnsQueryName}");
+        if (!string.IsNullOrWhiteSpace(packet.ProcessName) && searchable.Contains(packet.ProcessName, StringComparison.OrdinalIgnoreCase)) matches.Add($"Process {packet.ProcessName}");
+        return matches;
+    }
+
+    private static int LowerBoundLog(IReadOnlyList<LogRecord> logs, DateTime timestamp)
+    {
+        var low = 0; var high = logs.Count;
+        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(logs[mid].Timestamp) < timestamp) low = mid + 1; else high = mid; }
+        return low;
+    }
+
+    private static int UpperBoundLog(IReadOnlyList<LogRecord> logs, DateTime timestamp)
+    {
+        var low = 0; var high = logs.Count;
+        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(logs[mid].Timestamp) <= timestamp) low = mid + 1; else high = mid; }
+        return low;
     }
 
     private static int LowerBound(IReadOnlyList<PacketFrame> packets, DateTime timestamp)
@@ -277,7 +442,9 @@
     {
         LogSeverityLevel.Critical => "critical",
         LogSeverityLevel.Error => "error",
-        _ => "warning"
+        LogSeverityLevel.Warning => "warning",
+        LogSeverityLevel.Information => "information",
+        _ => "verbose"
     };
 
     private void SelectItem(TriageItem item)
@@ -286,27 +453,29 @@
         _currentNote = _notes.GetValueOrDefault(NoteKey(item.Log), string.Empty);
     }
 
+    private static string SourceLabelFor(LogRecord log) => log.Channel.StartsWith("Imported log:", StringComparison.Ordinal) ? $"Imported / {log.SourceFile ?? "log file"}" : $"Windows / {log.Channel}";
     private static string NoteKey(LogRecord log) => $"{log.Channel}:{log.RecordId}:{log.EventId}";
     private void SaveNote() { if (_selectedItem is not null) _notes[NoteKey(_selectedItem.Log)] = _currentNote.Trim(); }
+    private void SelectRelatedLog(LogRecord log) { var related = _items.FirstOrDefault(item => item.Log.Channel == log.Channel && item.Log.RecordId == log.RecordId); if (related is not null) SelectItem(related); }
     private void OpenPacketInScout() { if (_selectedItem?.NearestPacket is { } packet) { Investigation.Select(packet); Navigation.NavigateTo("/scout"); } }
     private void OpenEventInChronicles() { if (_selectedItem is { } item) { Investigation.Select(item.Log); Navigation.NavigateTo("/chronicles"); } }
 
     private void ExportJson()
     {
-        SaveNote(); var dialog = new SaveFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", DefaultExt = ".upuaut-case.json", FileName = $"upuaut-triage-{DateTime.Now:yyyyMMdd-HHmmss}.upuaut-case.json" };
+        SaveNote(); var dialog = new SaveFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", DefaultExt = ".upuaut-case.json", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.upuaut-case.json" };
         if (dialog.ShowDialog() != true) return;
         try
         {
-            var caseItems = _items.Select(item => item with { NearestPacket = item.NearestPacket is { } packet ? packet with { RawData = null } : null }).ToList();
-            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(new TriageCase(DateTimeOffset.Now, _timeWindow, _channel, _customStartTime, _customEndTime, _packetCount, caseItems, _notes), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-            _statusMessage = $"Saved {_items.Count:N0} reviewed events, nearest-packet metadata, and notes.";
+            var caseItems = _items.Select(item => item with { NearestPacket = item.NearestPacket is { } packet ? packet with { RawData = null, Payload = null } : null }).ToList();
+            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(new TriageCase(DateTimeOffset.Now, _caseTitle, _timeWindow, _channel, _customStartTime, _customEndTime, _packetCount, caseItems, _notes, _includeInformational), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            _statusMessage = $"Saved {_items.Count:N0} reviewed entries, related-log and packet metadata, and case notes.";
         }
         catch (Exception ex) { _statusMessage = $"Case export failed: {ex.Message}"; }
     }
 
     private void ExportCsv()
     {
-        var dialog = new SaveFileDialog { Filter = "CSV file (*.csv)|*.csv", DefaultExt = ".csv", FileName = $"upuaut-triage-{DateTime.Now:yyyyMMdd-HHmmss}.csv" };
+        var dialog = new SaveFileDialog { Filter = "CSV file (*.csv)|*.csv", DefaultExt = ".csv", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.csv" };
         if (dialog.ShowDialog() != true) return;
         static string Q(string? value)
         {
@@ -314,9 +483,9 @@
             if (text.TrimStart(' ', '\t', '\r', '\n').FirstOrDefault() is '=' or '+' or '-' or '@') text = "'" + text;
             return "\"" + text.Replace("\"", "\"\"") + "\"";
         }
-        var rows = new List<string> { "Timestamp,Channel,Level,Provider,EventId,PacketProtocol,Source,Destination,DeltaMs,NearbyFrames,TemporalProximity,Note" };
+        var rows = new List<string> { "Timestamp,Channel,Level,Provider,SourceLabel,SourceFile,EventId,RelatedProvider,RelatedLogCount,RelatedDeltaMs,PacketMatchBasis,PacketCandidatesReviewed,PacketProtocol,Source,Destination,DeltaMs,NearbyFrames,TemporalProximity,Note" };
         var invariant = System.Globalization.CultureInfo.InvariantCulture;
-        rows.AddRange(VisibleItems.Select(item => string.Join(",", Q(item.Log.Timestamp.ToUniversalTime().ToString("O", invariant)), Q(item.Log.Channel), Q(item.Log.Level.ToString()), Q(item.Log.ProviderName), item.Log.EventId.ToString(invariant), Q(item.NearestPacket?.TransportProtocol.ToString() ?? item.NearestPacket?.Protocol.ToString()), Q(item.NearestPacket?.SourceIp + Port(item.NearestPacket?.SourcePort)), Q(item.NearestPacket?.DestinationIp + Port(item.NearestPacket?.DestinationPort)), item.TimeDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", item.NearbyPacketCount.ToString(invariant), item.ProximityScore.ToString(invariant), Q(_notes.GetValueOrDefault(NoteKey(item.Log))))));
+        rows.AddRange(VisibleItems.Select(item => string.Join(",", Q(item.Log.Timestamp.ToUniversalTime().ToString("O", invariant)), Q(item.Log.Channel), Q(item.Log.Level.ToString()), Q(item.Log.ProviderName), Q(item.SourceLabel), Q(item.Log.SourceFile), item.Log.EventId.ToString(invariant), Q(item.NearestRelatedLog?.ProviderName), item.RelatedLogCount.ToString(invariant), item.RelatedLogDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", Q(string.Join("; ", item.PacketMatchBasis)), item.PacketCandidatesReviewed.ToString(invariant), Q(item.NearestPacket?.TransportProtocol.ToString() ?? item.NearestPacket?.Protocol.ToString()), Q(item.NearestPacket?.SourceIp + Port(item.NearestPacket?.SourcePort)), Q(item.NearestPacket?.DestinationIp + Port(item.NearestPacket?.DestinationPort)), item.TimeDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", item.NearbyPacketCount.ToString(invariant), item.ProximityScore.ToString(invariant), Q(_notes.GetValueOrDefault(NoteKey(item.Log))))));
         try { File.WriteAllLines(dialog.FileName, rows); _statusMessage = $"Exported {rows.Count - 1:N0} rows."; } catch (Exception ex) { _statusMessage = $"CSV export failed: {ex.Message}"; }
     }
 
@@ -324,18 +493,20 @@
     {
         var dialog = new OpenFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", CheckFileExists = true };
         if (dialog.ShowDialog() != true) return;
-        try { var saved = System.Text.Json.JsonSerializer.Deserialize<TriageCase>(File.ReadAllText(dialog.FileName)) ?? throw new InvalidDataException("The case file is empty."); _timeWindow = saved.TimeWindow; _channel = saved.Channel; _customStartTime = saved.CustomStartTime; _customEndTime = saved.CustomEndTime; _items = saved.Items.ToList(); _notes.Clear(); foreach (var pair in saved.Notes) _notes[pair.Key] = pair.Value; _hasAnalyzed = true; _packetCount = saved.ReviewedPackets; Investigation.SetRange(_timeWindow, _customStartTime, _customEndTime); _selectedItem = _items.FirstOrDefault(); if (_selectedItem is not null) SelectItem(_selectedItem); _statusMessage = $"Loaded {saved.Items.Count:N0} case events."; }
+        try { var saved = System.Text.Json.JsonSerializer.Deserialize<TriageCase>(File.ReadAllText(dialog.FileName)) ?? throw new InvalidDataException("The case file is empty."); _caseTitle = saved.CaseTitle; _timeWindow = saved.TimeWindow; _channel = saved.Channel; _includeInformational = saved.IncludeInformational; _customStartTime = saved.CustomStartTime; _customEndTime = saved.CustomEndTime; _items = saved.Items.ToList(); _notes.Clear(); foreach (var pair in saved.Notes) _notes[pair.Key] = pair.Value; _hasAnalyzed = true; _packetCount = saved.ReviewedPackets; Investigation.SetRange(_timeWindow, _customStartTime, _customEndTime); _selectedItem = _items.FirstOrDefault(); if (_selectedItem is not null) SelectItem(_selectedItem); _statusMessage = $"Loaded {saved.Items.Count:N0} case entries: {saved.CaseTitle}."; }
         catch (Exception ex) { _statusMessage = $"Could not load case: {ex.Message}"; }
     }
 
     private sealed class TriageCase
     {
         public TriageCase() { }
-        public TriageCase(DateTimeOffset savedAt, LogTimeRange timeWindow, string channel, DateTime? customStartTime, DateTime? customEndTime, int reviewedPackets, IReadOnlyList<TriageItem> items, IReadOnlyDictionary<string, string> notes)
-        { SavedAt = savedAt; TimeWindow = timeWindow; Channel = channel; CustomStartTime = customStartTime; CustomEndTime = customEndTime; ReviewedPackets = reviewedPackets; Items = items; Notes = notes; }
+        public TriageCase(DateTimeOffset savedAt, string caseTitle, LogTimeRange timeWindow, string channel, DateTime? customStartTime, DateTime? customEndTime, int reviewedPackets, IReadOnlyList<TriageItem> items, IReadOnlyDictionary<string, string> notes, bool includeInformational = false)
+        { SavedAt = savedAt; CaseTitle = caseTitle; TimeWindow = timeWindow; Channel = channel; CustomStartTime = customStartTime; CustomEndTime = customEndTime; ReviewedPackets = reviewedPackets; Items = items; Notes = notes; IncludeInformational = includeInformational; }
         public DateTimeOffset SavedAt { get; init; }
+        public string CaseTitle { get; init; } = "Untitled investigation";
         public LogTimeRange TimeWindow { get; init; }
         public string Channel { get; init; } = "Both";
+        public bool IncludeInformational { get; init; }
         public DateTime? CustomStartTime { get; init; }
         public DateTime? CustomEndTime { get; init; }
         public int ReviewedPackets { get; init; }
@@ -343,5 +514,5 @@
         public IReadOnlyDictionary<string, string> Notes { get; init; } = new Dictionary<string, string>();
     }
 
-    public sealed record TriageItem(LogRecord Log, PacketFrame? NearestPacket, TimeSpan? TimeDelta, int NearbyPacketCount, int ProximityScore);
+    public sealed record TriageItem(LogRecord Log, PacketFrame? NearestPacket, TimeSpan? TimeDelta, int NearbyPacketCount, int ProximityScore, string SourceLabel = "Windows event", LogRecord? NearestRelatedLog = null, TimeSpan? RelatedLogDelta = null, IReadOnlyList<string> PacketMatchBasis = null!, int RelatedLogCount = 0, int PacketCandidatesReviewed = 0) { public IReadOnlyList<string> PacketMatchBasis { get; init; } = PacketMatchBasis ?? Array.Empty<string>(); }
 }

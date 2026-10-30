@@ -17,7 +17,7 @@ public sealed class LogAnalysisEngine : ILogAnalysisEngine
     private static readonly Rule[] Rules =
     [
         new(LogScenarioCategory.Crash, "Crash or unhandled-exception signal", "Crash-related language was found in this entry. It identifies a crash signal in the log, not the underlying cause.",
-            ["unhandled exception", "segmentation fault", "application crash", "process crashed", "stack trace", "core dumped", "fatal exception", "crash"],
+            ["unhandled exception", "segmentation fault", "application crash", "process crashed", "stack trace", "traceback", "core dumped", "fatal exception", "crash"],
             ["process", "exception"], ["Review the surrounding entries for the first failure before this message.", "Inspect any exception type, module, process, or dump reference recorded in the source."]),
         new(LogScenarioCategory.Installation, "Installation or setup activity", "Installation-related terms were found. The entry may describe setup progress, completion, or failure; use its status and nearby entries to establish the outcome.",
             ["installation", "install", "installer", "setup", "msi", "package install", "uninstall"],
@@ -26,22 +26,22 @@ public sealed class LogAnalysisEngine : ILogAnalysisEngine
             ["update", "upgrade", "patch", "rollback", "hotfix"],
             ["update", "deployment"], ["Check the package version and update result recorded nearby.", "Look for rollback, restart-required, or compatibility messages in adjacent entries."]),
         new(LogScenarioCategory.Authentication, "Authentication or sign-in event", "Authentication-related terms were found. Verify the identity, authentication method, and result in the original record.",
-            ["authentication failed", "failed to authenticate", "login failed", "logon failure", "invalid password", "invalid credentials", "token expired", "sign-in failed"],
+            ["authentication failed", "authentication failure", "failed to authenticate", "failed password", "account locked", "login failed", "logon failure", "invalid password", "invalid credentials", "token expired", "sign-in failed"],
             ["identity", "authentication"], ["Check the account, authentication method, and exact result code.", "Review nearby lockout, token-renewal, or identity-provider events."]),
         new(LogScenarioCategory.Security, "Security or access-control event", "Security or access-control language was found. This label does not establish whether the activity was malicious.",
             ["access denied", "permission denied", "unauthorized", "blocked by policy", "security alert", "intrusion", "certificate validation failed", "firewall blocked"],
             ["access-control", "security"], ["Verify the actor, target resource, and policy or permission named in the source.", "Correlate with adjacent audit events before treating this as suspicious activity."]),
         new(LogScenarioCategory.Network, "Network or name-resolution event", "Network-related terms were found. The record points to a connectivity or protocol event but does not identify where the fault lies.",
-            ["connection timed out", "connection refused", "network unreachable", "host not found", "name resolution", "dns", "socket error", "handshake failed", "connection reset", "httpstatus", "http status"],
+            ["connection timed out", "request timed out", "upstream connection", "upstream", "connection refused", "network unreachable", "host not found", "name resolution", "dns", "socket error", "handshake failed", "connection reset", "http 503", "http 502", "http 504", "http 5", "httpstatus", "http status", "endpoint"],
             ["connectivity", "network"], ["Check the remote endpoint, port, and timestamp captured in the entry.", "Compare with DNS, firewall, and service-availability records for the same interval."]),
         new(LogScenarioCategory.Storage, "Storage or file-system event", "Storage-related terms were found. Confirm the affected volume or path and the exact operation in the source.",
             ["disk full", "no space left", "i/o error", "read-only file system", "write failed", "disk error", "volume", "filesystem", "file system"],
             ["storage", "filesystem"], ["Identify the affected volume or path and check available space and health records.", "Review nearby read, write, retry, and device-reset messages."]),
         new(LogScenarioCategory.Service, "Service or background-process event", "Service lifecycle language was found. Check the service name and result before inferring impact.",
-            ["failed to start service", "service failed", "service stopped", "service started", "service exited", "daemon", "unit entered failed", "service restart"],
+            ["failed to start service", "service failed", "service stopped", "service started", "service exited", "service recovered", "service restarted", "automatic restart", "daemon", "unit entered failed", "service restart"],
             ["service", "lifecycle"], ["Check the named service, its exit code, and its dependency state.", "Inspect entries immediately before the stop or restart for a triggering error."]),
         new(LogScenarioCategory.Performance, "Performance or resource-pressure event", "Performance or resource-pressure language was found. The entry alone does not show whether the condition was sustained or user-visible.",
-            ["out of memory", "memory pressure", "resource exhausted", "high latency", "slow response", "deadlock", "cpu usage", "timed out", "timeout"],
+            ["out of memory", "memory pressure", "resource exhausted", "high latency", "slow response", "deadlock detected", "deadlock victim", "deadlock", "cpu usage", "timed out", "timeout"],
             ["performance", "resource"], ["Check duration, affected component, and whether the condition repeats.", "Compare resource metrics with nearby workload and service events."]),
         new(LogScenarioCategory.Maintenance, "Maintenance or health-check activity", "Maintenance-related terms were found. Confirm whether the task completed and whether it reported affected items.",
             ["backup", "restore", "cleanup", "maintenance", "health check", "scheduled task", "scan completed", "integrity check"],
@@ -61,11 +61,16 @@ public sealed class LogAnalysisEngine : ILogAnalysisEngine
 
         foreach (var entry in document.Entries)
         {
-            var analysis = Classify(entry);
+            var analysis = document.ContentKind == LogContentKind.BinaryLike
+                ? new LogEntryAnalysis(entry.Index, LogScenarioCategory.Unclassified, "Binary-like data preview", "Scenario classification was skipped because this file is predominantly non-text or encrypted. Use the decoded raw preview for manual inspection.", RuleMatchStrength.NoRuleMatched, ["binary-like"], [], [])
+                : Classify(entry);
             analyses[entry.Index] = analysis;
             counts[analysis.Category] = counts.GetValueOrDefault(analysis.Category) + 1;
-            if (entry.Severity is LogEntrySeverity.Error or LogEntrySeverity.Critical) errors++;
-            if (entry.Severity == LogEntrySeverity.Warning) warnings++;
+            if (document.ContentKind != LogContentKind.BinaryLike)
+            {
+                if (entry.Severity is LogEntrySeverity.Error or LogEntrySeverity.Critical) errors++;
+                if (entry.Severity == LogEntrySeverity.Warning) warnings++;
+            }
         }
 
         var classified = analyses.Values.Count(result => result.Category != LogScenarioCategory.Unclassified);

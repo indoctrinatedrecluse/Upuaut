@@ -10,7 +10,7 @@ Uninstall closes Upuaut if it can exit normally and asks you to close it if it r
 
 Place the generated clips here before release:
 
-- `installer/assets/upuaut-installer-loop.mp4` - 6-second setup background loop. Playback starts after the media reports it is ready and repeats after the whole clip; a decode failure falls back to poster artwork or the dark/gold canvas.
+- `installer/assets/upuaut-installer-loop.mp4` - setup background loop (the current clip is 5.97 seconds). Setup bundles this video and the poster into its local build output and release package. Playback starts after the media reports it is ready, the poster stays up until the video clock advances, and a progress monitor retries stalled starts and loops at the clip's actual duration. A decode failure falls back to poster artwork or the dark/gold canvas and is shown in the installer status.
 - `src/Upuaut.App/wwwroot/media/upuaut-background.mp4` - 10-second app canvas video. The prominent **Canvas Motion** switch controls the background video; the still poster remains visible when motion is off.
 - `src/Upuaut.App/wwwroot/media/upuaut-splash-poster.jpg` - still image used as the app canvas when motion is off and as the installer fallback artwork.
 

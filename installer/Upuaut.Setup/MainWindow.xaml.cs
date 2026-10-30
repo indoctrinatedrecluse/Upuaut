@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Win32;
 
 namespace Upuaut.Setup;
@@ -10,12 +11,23 @@ namespace Upuaut.Setup;
 public partial class MainWindow : Window
 {
     private readonly string _payloadDirectory = Path.Combine(AppContext.BaseDirectory, "payload");
+    private readonly DispatcherTimer _videoMonitor = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly bool _uninstallMode;
+    private Uri? _installerVideoUri;
+    private TimeSpan _lastVideoPosition;
+    private DateTime _lastVideoProgressUtc;
+    private DateTime _lastVideoStatusUtc;
+    private bool _videoOpened;
+    private bool _videoProgressSeen;
+    private bool _videoLoopRestartQueued;
+    private int _videoRecoveryAttempts;
     private string InstallDirectory => Path.GetFullPath(InstallPathBox.Text.Trim());
 
     public MainWindow(bool uninstallMode = false)
     {
         InitializeComponent();
+        _videoMonitor.Tick += VideoMonitor_Tick;
+        Closed += (_, _) => _videoMonitor.Stop();
         Closed += (_, _) => ScheduleUpdateStagingCleanup();
         _uninstallMode = uninstallMode;
         InstallPathBox.Text = uninstallMode ? AppContext.BaseDirectory : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Upuaut");
@@ -51,10 +63,15 @@ public partial class MainWindow : Window
         if (videoPath is null)
         {
             StatusText.Text = posterPath is null ? "Ready when you are." : "Still artwork active · video backdrop not found.";
+            CanvasPlaybackText.Text = posterPath is null ? "VIDEO MISSING · DARK CANVAS" : "STILL CANVAS · VIDEO NOT FOUND";
+            CanvasPlaybackText.Visibility = Visibility.Visible;
             return;
         }
 
-        InstallVideo.Source = new Uri(videoPath);
+        _installerVideoUri = new Uri(Path.GetFullPath(videoPath), UriKind.Absolute);
+        CanvasPlaybackText.Text = "PREPARING THE SIX-SECOND CANVAS LOOP";
+        CanvasPlaybackText.Visibility = Visibility.Visible;
+        InstallVideo.Source = _installerVideoUri;
     }
 
     private static string? ExistingFile(string firstDirectory, string secondDirectory, string filename)
@@ -67,22 +84,124 @@ public partial class MainWindow : Window
 
     private void InstallVideo_MediaOpened(object sender, RoutedEventArgs e)
     {
-        InstallPoster.Visibility = Visibility.Collapsed;
-        InstallVideo.Position = TimeSpan.Zero;
-        InstallVideo.Play();
+        _videoOpened = true;
+        _videoProgressSeen = false;
+        _videoLoopRestartQueued = false;
+        _videoRecoveryAttempts = 0;
+        _lastVideoPosition = TimeSpan.Zero;
+        _lastVideoProgressUtc = DateTime.UtcNow;
+        _lastVideoStatusUtc = DateTime.MinValue;
+        _videoMonitor.Start();
+
+        // Wait for WPF to finish opening/layout before starting playback. Keep the poster visible until
+        // the media clock actually advances so a stalled decoder cannot masquerade as an animated canvas.
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        {
+            if (!_videoOpened) return;
+            try
+            {
+                InstallVideo.Position = TimeSpan.Zero;
+                InstallVideo.Play();
+            }
+            catch (Exception ex) { FailVideoPlayback($"Playback could not start: {ex.Message}"); }
+        }));
     }
 
     private void InstallVideo_MediaFailed(object sender, System.Windows.ExceptionRoutedEventArgs e)
     {
-        InstallPoster.Visibility = InstallPoster.Source is null ? Visibility.Collapsed : Visibility.Visible;
-        StatusText.Text = InstallPoster.Source is null ? "Ready when you are." : "Still artwork active · video could not be decoded.";
+        var reason = e.ErrorException?.Message;
+        FailVideoPlayback(string.IsNullOrWhiteSpace(reason) ? "The media decoder could not open the video." : reason);
     }
 
     private void InstallVideo_MediaEnded(object sender, RoutedEventArgs e)
     {
-        // Restart only after the complete supplied six-second clip has played.
-        InstallVideo.Position = TimeSpan.Zero;
-        InstallVideo.Play();
+        RestartVideoLoop();
+    }
+
+    private void VideoMonitor_Tick(object? sender, EventArgs e)
+    {
+        if (!_videoOpened) { _videoMonitor.Stop(); return; }
+
+        var now = DateTime.UtcNow;
+        TimeSpan position;
+        try { position = InstallVideo.Position; }
+        catch (Exception ex) { FailVideoPlayback($"The media clock stopped: {ex.Message}"); return; }
+
+        if (position > _lastVideoPosition + TimeSpan.FromMilliseconds(20))
+        {
+            _videoProgressSeen = true;
+            _lastVideoProgressUtc = now;
+            _videoRecoveryAttempts = 0;
+            InstallPoster.Visibility = Visibility.Collapsed;
+        }
+
+        var duration = InstallVideo.NaturalDuration.HasTimeSpan ? InstallVideo.NaturalDuration.TimeSpan : TimeSpan.Zero;
+        if (duration > TimeSpan.Zero && position > TimeSpan.Zero && position >= duration - TimeSpan.FromMilliseconds(100))
+        {
+            RestartVideoLoop();
+            _lastVideoPosition = position;
+            return;
+        }
+
+        if (now - _lastVideoProgressUtc >= TimeSpan.FromSeconds(1.25))
+        {
+            if (_videoRecoveryAttempts >= 3)
+            {
+                FailVideoPlayback("The video opened but its playback clock did not advance. The still artwork is shown instead.");
+                return;
+            }
+
+            _videoRecoveryAttempts++;
+            _lastVideoProgressUtc = now;
+            try
+            {
+                if (!_videoProgressSeen && InstallVideo.Position > TimeSpan.Zero) InstallVideo.Position = TimeSpan.Zero;
+                InstallVideo.Play();
+            }
+            catch (Exception ex) { FailVideoPlayback($"Playback retry failed: {ex.Message}"); return; }
+        }
+
+        if (now - _lastVideoStatusUtc >= TimeSpan.FromSeconds(1))
+        {
+            var seconds = duration > TimeSpan.Zero ? duration.TotalSeconds : 6d;
+            CanvasPlaybackText.Text = _videoProgressSeen
+                ? $"CANVAS LOOP ACTIVE · {position.TotalSeconds:0.0} / {seconds:0.0} SEC"
+                : $"STARTING CANVAS LOOP · RETRY {_videoRecoveryAttempts}/3";
+            _lastVideoStatusUtc = now;
+        }
+        _lastVideoPosition = position;
+    }
+
+    private void RestartVideoLoop()
+    {
+        if (!_videoOpened || _videoLoopRestartQueued) return;
+        _videoLoopRestartQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        {
+            if (!_videoOpened) { _videoLoopRestartQueued = false; return; }
+            try
+            {
+                InstallVideo.Position = TimeSpan.Zero;
+                InstallVideo.Play();
+                _lastVideoPosition = TimeSpan.Zero;
+                _lastVideoProgressUtc = DateTime.UtcNow;
+                _videoLoopRestartQueued = false;
+            }
+            catch (Exception ex) { _videoLoopRestartQueued = false; FailVideoPlayback($"The loop could not restart: {ex.Message}"); }
+        }));
+    }
+
+    private void FailVideoPlayback(string reason)
+    {
+        _videoOpened = false;
+        _videoLoopRestartQueued = false;
+        _videoMonitor.Stop();
+        InstallPoster.Visibility = InstallPoster.Source is null ? Visibility.Collapsed : Visibility.Visible;
+        CanvasPlaybackText.Text = InstallPoster.Source is null ? "VIDEO UNAVAILABLE · DARK CANVAS" : "VIDEO UNAVAILABLE · STILL CANVAS ACTIVE";
+        CanvasPlaybackText.ToolTip = reason;
+        Trace.WriteLine($"Upuaut setup background video failed: {reason}");
+        if (StatusText is not null && InstallProgress.Visibility != Visibility.Visible && UninstallProgress.Visibility != Visibility.Visible)
+            StatusText.Text = InstallPoster.Source is null ? "Video backdrop unavailable." : "Video backdrop unavailable; still artwork is active.";
     }
 
     private void DetectExistingInstallation()

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Events xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
+  <Event>
+    <System>
+      <Provider Name="Example-Service" />
+      <EventID>7001</EventID>
+      <Level>3</Level>
+      <TimeCreated SystemTime="2026-10-30T17:00:00.000Z" />
+      <Computer>WORKSTATION-07</Computer>
+    </System>
+    <EventData>
+      <Data Name="ServiceName">ExampleWorker</Data>
+      <Data Name="Message">Service heartbeat was missed; restart requested</Data>
+    </EventData>
+  </Event>
+  <Event>
+    <System>
+      <Provider Name="Example-Service" />
+      <EventID>7002</EventID>
+      <Level>2</Level>
+      <TimeCreated SystemTime="2026-10-30T17:00:05.000Z" />
+      <Computer>WORKSTATION-07</Computer>
+    </System>
+    <EventData>
+      <Data Name="ServiceName">ExampleWorker</Data>
+      <Data Name="ErrorCode">1067</Data>
+      <Data Name="Message">Service stopped unexpectedly with exit code 1067</Data>
+    </EventData>
+  </Event>
+  <Event>
+    <System>
+      <Provider Name="Service Control Manager" />
+      <EventID>7036</EventID>
+      <Level>4</Level>
+      <TimeCreated SystemTime="2026-10-30T17:00:11.000Z" />
+      <Computer>WORKSTATION-07</Computer>
+    </System>
+    <EventData>
+      <Data Name="ServiceName">ExampleWorker</Data>
+      <Data Name="Message">Service recovered after automatic restart</Data>
+    </EventData>
+  </Event>
+</Events>

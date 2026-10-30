@@ -1,0 +1,4 @@
+2026-10-30T18:30:00Z :: CacheSweep :: region=west-2 :: result=ok :: items=410
+2026-10-30T18:30:02Z || CacheSweep || region=west-2 || result=stale || items=17
+2026-10-30T18:30:05Z -> operator note: upstream was slow; no structured event was emitted
+2026-10-30T18:30:08Z ~~ end of synthetic maintenance sample ~~

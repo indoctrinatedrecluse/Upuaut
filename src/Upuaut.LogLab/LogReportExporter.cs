@@ -16,7 +16,7 @@ public sealed class LogReportExporter : ILogReportExporter
         var output = new StringBuilder();
         output.AppendLine("# Upuaut Log Lab Investigation Report").AppendLine();
         output.AppendLine($"- **Source:** {Escape(document.FileName)}").AppendLine($"- **Generated:** {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}")
-            .AppendLine($"- **Format:** {document.Format} · **Encoding:** {Escape(document.DetectedEncoding)} · **Size:** {document.ByteLength:N0} bytes");
+            .AppendLine($"- **File type:** {Escape(document.FileTypeLabel)} · **Content parser:** {document.Format} · **Content assessment:** {document.ContentKind} · **Encoding:** {Escape(document.DetectedEncoding)} · **Size:** {document.ByteLength:N0} bytes");
         output.AppendLine($"- **Sequence review:** {Math.Clamp(sequenceOptions.WindowMinutes, 1, 1440)} minute window; same component only: {(sequenceOptions.SameComponentOnly ? "yes" : "no")}");
         if (options.IncludeSummary) output.AppendLine($"- **Entries:** {analysis.EntryCount:N0} · **Errors:** {analysis.ErrorCount:N0} · **Warnings:** {analysis.WarningCount:N0}");
         output.AppendLine("- **Interpretation:** scenario labels and sequence groupings are rule-based review aids, not root-cause conclusions.").AppendLine();
@@ -50,6 +50,9 @@ public sealed class LogReportExporter : ILogReportExporter
             {
                 output.AppendLine($"### Line {entry.SourceLine} · {entry.Severity} · {finding.Category}").AppendLine($"**{Escape(finding.Headline)}** — {Escape(entry.Message)}")
                     .AppendLine($"Tags: {string.Join(", ", finding.Tags.Select(Escape))} · Match strength: {finding.MatchStrength}");
+                var keyDetails = KeyDetails(entry);
+                if (keyDetails.Count > 0) output.AppendLine($"**Key details:** {string.Join(" · ", keyDetails.Select(pair => $"{Escape(pair.Key)}: {Escape(pair.Value)}"))}");
+                output.AppendLine($"**Interpretation:** {Escape(entry.InterpretationBasis)}");
                 foreach (var evidence in finding.Evidence) output.AppendLine($"- Evidence ({Escape(evidence.Field)}): {Escape(evidence.Value)}");
                 if (options.IncludeRecommendations) foreach (var recommendation in finding.Recommendations) output.AppendLine($"- Suggested check: {Escape(recommendation)}");
                 output.AppendLine();
@@ -72,13 +75,13 @@ public sealed class LogReportExporter : ILogReportExporter
         sequenceOptions ??= new LogSequenceAnalysisOptions();
         var notable = (options.IncludeNotableEntries ? GetNotableEntries(document, analysis) : []).Take(MaximumFindingsInReport)
             .Select(pair => new ExportedEntry(pair.Entry.Index, pair.Entry.SourceLine, pair.Entry.Timestamp, pair.Entry.Severity, pair.Entry.Source,
-                pair.Entry.Message, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence,
+                pair.Entry.Message, pair.Entry.SourceLineEnd, KeyDetails(pair.Entry), pair.Entry.InterpretationBasis, pair.Finding.Category, pair.Finding.Headline, pair.Finding.MatchStrength, pair.Finding.Tags, pair.Finding.Evidence,
                 options.IncludeRecommendations ? pair.Finding.Recommendations : Array.Empty<string>())).ToArray();
         var payload = new
         {
             schemaVersion = 1,
             generatedAt = DateTimeOffset.UtcNow,
-            source = new { document.FileName, document.Format, document.DetectedEncoding, document.ByteLength, parserProfile = document.Entries.FirstOrDefault()?.Fields.GetValueOrDefault("ParserProfile") },
+            source = new { document.FileName, fileType = document.FileTypeLabel, document.Format, document.ContentKind, document.DetectedEncoding, document.ByteLength, parserProfile = document.Entries.FirstOrDefault()?.Fields.GetValueOrDefault("ParserProfile") },
             options,
             sequenceAnalysisOptions = sequenceOptions,
             summary = options.IncludeSummary || options.IncludeCategorySummary ? new
@@ -108,9 +111,20 @@ public sealed class LogReportExporter : ILogReportExporter
             .OrderByDescending(pair => pair.Entry.Severity is LogEntrySeverity.Critical or LogEntrySeverity.Error ? 2 : pair.Entry.Severity == LogEntrySeverity.Warning ? 1 : 0)
             .ThenBy(pair => pair.Entry.SourceLine);
 
+    private static IReadOnlyDictionary<string, string> KeyDetails(ParsedLogEntry entry)
+    {
+        var preferred = new[] { "ErrorCode", "Code", "EventId", "EventID", "StatusCode", "ProcessId", "Process", "ThreadId", "RequestId", "CorrelationId", "TransactionId", "Path", "Method", "ClientIp", "Host", "Provider", "ServiceName", "Computer" };
+        var details = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (entry.Timestamp is { } timestamp) details["TimestampUtc"] = timestamp.ToUniversalTime().ToString("O");
+        if (!string.IsNullOrWhiteSpace(entry.Source)) details["Source"] = entry.Source;
+        foreach (var key in preferred)
+            if (entry.Fields.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)) details.TryAdd(key, value.Length > 500 ? value[..500] : value);
+        return details;
+    }
+
     private static string Escape(string value) => value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
         .Replace("|", "\\|").Replace("`", "\\`").Replace("\r", " ").Replace("\n", " ");
     private sealed record ExportedEntry(int Index, int SourceLine, DateTimeOffset? Timestamp, LogEntrySeverity Severity, string? Source,
-        string Message, LogScenarioCategory Category, string Headline, RuleMatchStrength MatchStrength, IReadOnlyList<string> Tags,
+        string Message, int SourceLineEnd, IReadOnlyDictionary<string, string> KeyDetails, string InterpretationBasis, LogScenarioCategory Category, string Headline, RuleMatchStrength MatchStrength, IReadOnlyList<string> Tags,
         IReadOnlyList<LogEvidence> Evidence, IReadOnlyList<string> Recommendations);
 }

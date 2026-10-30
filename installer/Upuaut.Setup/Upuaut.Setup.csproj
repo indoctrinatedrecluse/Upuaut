@@ -7,4 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Upuaut.Setup</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="..\assets\upuaut-installer-loop.mp4" Link="media\upuaut-installer-loop.mp4" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="..\..\src\Upuaut.App\wwwroot\media\upuaut-splash-poster.jpg" Link="media\upuaut-splash-poster.jpg" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,10 @@
+2026-10-30 17:30:00,120 INFO [report-worker] Starting scheduled report generation
+2026-10-30 17:30:00,180 ERROR [report-worker] Failed to render report job=job-914
+Traceback (most recent call last):
+  File "worker.py", line 81, in render
+    template = templates[name]
+               ~~~~~~~~~^^^^^^
+  File "templates.py", line 44, in __getitem__
+    raise KeyError(name)
+KeyError: 'monthly-summary'
+The failed job was returned to the retry queue.

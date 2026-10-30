@@ -44,16 +44,16 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                 if (iface.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
 
                 var ipProps = iface.GetIPProperties();
-                var ipv4Addr = ipProps.UnicastAddresses
-                    .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
-
-                if (ipv4Addr != null)
+                foreach (var ipv4Address in ipProps.UnicastAddresses
+                    .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(address.Address) && !address.Address.Equals(IPAddress.Any))
+                    .Select(address => address.Address)
+                    .Distinct())
                 {
                     devices.Add(new NetworkDeviceDescriptor(
-                        Id: ipv4Addr.Address.ToString(),
+                        Id: ipv4Address.ToString(),
                         Name: iface.Name,
-                        Description: $"{iface.Description} ({ipv4Addr.Address})",
-                        IpAddress: ipv4Addr.Address.ToString()));
+                        Description: $"{iface.Description} | {iface.NetworkInterfaceType} | {ipv4Address}",
+                        IpAddress: ipv4Address.ToString()));
                 }
             }
         }
@@ -84,13 +84,13 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
 
             if (!IPAddress.TryParse(deviceId, out var bindIp))
             {
-                // If deviceId wasn't an IP, find first available device
-                var devices = GetAvailableDevices();
-                var selected = devices.FirstOrDefault(d => d.Id == deviceId || d.Name == deviceId) ?? devices.FirstOrDefault();
-                if (selected == null || !IPAddress.TryParse(selected.IpAddress, out bindIp))
-                {
-                    throw new InvalidOperationException($"Cannot resolve valid IPv4 address for adapter '{deviceId}'.");
-                }
+                var matches = GetAvailableDevices().Where(device =>
+                    device.Id.Equals(deviceId, StringComparison.OrdinalIgnoreCase) ||
+                    device.Name.Equals(deviceId, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matches.Length != 1 || !IPAddress.TryParse(matches[0].IpAddress, out bindIp))
+                    throw new InvalidOperationException(matches.Length > 1
+                        ? $"Adapter name '{deviceId}' has multiple IPv4 addresses. Select a specific address from the adapter list."
+                        : $"Cannot resolve a current IPv4 address for adapter '{deviceId}'. Refresh the adapter list and select an available address.");
             }
 
             AppLogger.Info("RawSocketCapture", $"Initializing Windows Native Raw Socket on {bindIp}...");

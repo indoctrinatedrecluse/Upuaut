@@ -13,6 +13,7 @@ public sealed class LogSequenceAnalysisEngine : ILogSequenceAnalysisEngine
     public IReadOnlyList<LogSequenceFinding> Analyze(LogDocument document, LogSequenceAnalysisOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(document);
+        if (document.ContentKind == LogContentKind.BinaryLike) return [];
         options ??= new LogSequenceAnalysisOptions();
         var window = TimeSpan.FromMinutes(Math.Clamp(options.WindowMinutes, 1, 1440));
         var findings = new List<LogSequenceFinding>();

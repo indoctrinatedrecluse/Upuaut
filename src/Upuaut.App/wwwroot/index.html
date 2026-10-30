@@ -30,6 +30,19 @@
             get: key => JSON.parse(localStorage.getItem(key) || "[]"),
             set: (key, value) => localStorage.setItem(key, JSON.stringify(value))
         };
+        window.upuautLogEditor = {
+            selectRange: (editor, start, length) => { editor.focus(); editor.setSelectionRange(start, start + length); },
+            copyText: text => navigator.clipboard.writeText(text),
+            attachHighlightSync: editor => {
+                const sync = () => { const highlight = editor.parentElement.querySelector(".log-editor-highlight"); if (highlight) highlight.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`; };
+                if (editor.dataset.highlightSyncAttached) { sync(); return; }
+                editor.addEventListener("scroll", sync, { passive: true });
+                editor.dataset.highlightSyncAttached = "true";
+                sync();
+            },
+            syncHighlight: editor => { const highlight = editor.parentElement.querySelector(".log-editor-highlight"); if (highlight) highlight.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`; },
+            resetScroll: editor => { editor.scrollTop = 0; editor.scrollLeft = 0; const highlight = editor.parentElement.querySelector(".log-editor-highlight"); if (highlight) highlight.style.transform = "translate(0, 0)"; }
+        };
         window.addEventListener("keydown", event => {
             if (!event.ctrlKey || event.altKey || event.metaKey || (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable=true]"))) return;
             const routes = { "1": "chronicles", "2": "scout", "3": "weigher" };

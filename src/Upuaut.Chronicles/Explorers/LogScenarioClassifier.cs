@@ -57,7 +57,7 @@ internal static class LogScenarioClassifier
         }
         else if (category == "Storage health")
         {
-            actions.Insert(0, "Identify the affected disk or volume from the event fields and secure a current backup before running repair operations.");
+            actions.Insert(0, "Identify the affected disk or volume, secure a current backup, and run chkdsk with appropriate repair options during a maintenance window.");
         }
         else if (category == "Network connectivity" && !string.IsNullOrWhiteSpace(queryName))
         {

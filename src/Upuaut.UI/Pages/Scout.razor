@@ -38,19 +38,27 @@
             <div class="filter-group">
                 <span class="filter-label">Adapter:</span>
                 <select class="upuaut-select" @bind="_selectedDeviceId" disabled="@_isCapturing">
+                    @if (_devices.Count == 0)
+                    {
+                        <option value="">No compatible adapters detected</option>
+                    }
                     @foreach (var dev in _devices)
                     {
-                        <option value="@dev.Id">@dev.Name (@dev.IpAddress)</option>
+                        <option value="@dev.Id" title="@dev.Description">@AdapterLabel(dev)</option>
                     }
                 </select>
             </div>
+            <button class="pill-btn" @onclick="RefreshDevices" disabled="@_isCapturing">Refresh adapters</button>
+            <span class="scout-adapter-hint">@AdapterHint</span>
+            @if (_devices.Count == 0) { <span class="scout-adapter-warning">@_filterError</span> }
 
             <!-- Start / Stop Button -->
             @if (!_isCapturing)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary"
                               IconStart="@(new Icons.Regular.Size16.Play())"
-                              OnClick="StartCaptureAsync">
+                              OnClick="StartCaptureAsync"
+                              Disabled="@string.IsNullOrWhiteSpace(_selectedDeviceId)">
                     Start Capture
                 </FluentButton>
             }
@@ -456,9 +464,27 @@
 
     private void RefreshDevices()
     {
+        var previousSelection = _selectedDeviceId;
         _devices = ScoutService.GetAvailableDevices(_captureMode);
-        _selectedDeviceId = _devices.FirstOrDefault()?.Id ?? string.Empty;
+        _selectedDeviceId = _devices.FirstOrDefault(device => device.Id.Equals(previousSelection, StringComparison.OrdinalIgnoreCase))?.Id
+            ?? _devices.FirstOrDefault()?.Id
+            ?? string.Empty;
+        _filterError = _devices.Count == 0
+            ? _captureMode == PacketCaptureMode.Ethernet
+                ? "No Npcap-compatible capture devices were found. Install or repair Npcap, then refresh adapters."
+                : "No active non-loopback IPv4 adapter was found. Connect an adapter or choose Ethernet/Npcap mode."
+            : string.Empty;
     }
+
+    private string AdapterHint => _captureMode == PacketCaptureMode.RawIpv4
+        ? "Native IPv4 binds the selected local address; Administrator permission is required."
+        : "Ethernet listens on the selected Npcap device; link and IP capabilities depend on the adapter.";
+
+    private static string AdapterLabel(NetworkDeviceDescriptor device) => device.IpAddress is { Length: > 0 } address
+        ? $"{device.Name} ({address})"
+        : string.IsNullOrWhiteSpace(device.Description) || device.Description.Equals(device.Name, StringComparison.OrdinalIgnoreCase)
+            ? device.Name
+            : $"{device.Name} - {device.Description}";
 
     private async Task StartCaptureAsync()
     {

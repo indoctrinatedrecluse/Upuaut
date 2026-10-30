@@ -3629,3 +3629,18 @@ body, html {
 .chronicles-query-fields{display:flex;align-items:end;gap:.7rem;flex-wrap:wrap;padding:.65rem .9rem;margin:.5rem 0;border:1px solid rgba(212,175,55,.2);border-radius:9px;background:rgba(8,11,17,.68)}.chronicles-query-fields label{display:grid;gap:.25rem;color:var(--upuaut-gold);font-size:.72rem;letter-spacing:.08em}.chronicles-query-fields input[type=datetime-local]{color:var(--upuaut-sand);background:#11151c;border:1px solid #333;padding:.45rem;border-radius:5px}.cluster-method-note{padding:.75rem 1rem;margin:.5rem 0;color:var(--upuaut-text-muted);background:rgba(212,175,55,.06);border-left:2px solid var(--upuaut-gold);font-size:.78rem}.cluster-method-note strong{color:var(--upuaut-gold)}
 .triage-shared-window{font-size:.75rem;color:var(--upuaut-text-muted);margin:.35rem 0 .8rem}.triage-evidence-score{display:block;color:#9bd7d0;font-size:.72rem;margin-top:.2rem}.triage-detail-actions{display:flex;gap:.5rem;margin:.8rem 0}.triage-note-field{display:grid;gap:.4rem;margin:1rem 0 .5rem;color:var(--upuaut-gold);font-size:.78rem;letter-spacing:.06em}.triage-note-field textarea{min-height:110px;resize:vertical;color:var(--upuaut-sand);background:#10151d;border:1px solid rgba(212,175,55,.3);border-radius:7px;padding:.7rem}
 .chronicles-comparison{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;padding:.75rem 1rem;margin:.5rem 0 1rem;border:1px solid rgba(96,165,250,.3);border-radius:8px;background:rgba(96,165,250,.055);font-size:.78rem}.chronicles-comparison strong{color:var(--upuaut-gold)}.chronicles-comparison small{width:100%;color:var(--upuaut-text-muted)}
+
+
+/* The Scales cross-source investigation controls and evidence detail */
+.triage-case-title, .triage-include-information { display: flex; align-items: center; gap: .5rem; color: #d8c99e; font-size: .72rem; letter-spacing: .06em; }
+.triage-case-title { flex-direction: column; align-items: flex-start; }
+.triage-case-title input { min-width: 13rem; padding: .55rem .7rem; color: #f1ead8; background: rgba(9,10,13,.82); border: 1px solid rgba(212,175,55,.32); border-radius: 5px; }
+.triage-include-information input { accent-color: #d4af37; }
+.triage-severity.information { color: #a9d8ff; border-color: rgba(91,164,224,.45); background: rgba(42,104,157,.16); }
+.triage-severity.verbose { color: #a5a8b2; border-color: rgba(145,151,165,.35); background: rgba(108,113,127,.12); }
+.triage-source-evidence { margin: .8rem 0; padding: .7rem .85rem; border: 1px solid rgba(212,175,55,.2); border-radius: 6px; background: rgba(9,10,13,.35); }
+.triage-source-evidence summary { color: #d4af37; cursor: pointer; font-size: .78rem; }
+.triage-source-evidence pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #d7d8dc; font: .78rem/1.5 Consolas, monospace; }
+
+.scout-adapter-hint { align-self: center; color: #aaa8a0; font-size: .67rem; line-height: 1.4; }
+.scout-adapter-warning { flex-basis: 100%; color: #f0bf70; font-size: .72rem; }

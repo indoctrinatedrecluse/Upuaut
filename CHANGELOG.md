@@ -4,6 +4,28 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+### Added
+
+- **The Scales cross-source investigations:** combine System/Application events, up to ten imported Log Lab sources, and Scout's current packet buffer in one time-windowed evidence timeline. Imported entries retain source file, line, parsed fields, severity, and message. Timestamped entries can be aligned; untimestamped entries remain available in Log Lab with a clear explanation.
+- **Evidence links in The Scales:** show neighboring log entries and nearby frames; rank packet candidates using matching process IDs, endpoint addresses, DNS names, and process names when available. These are explicit match clues and temporal leads, not cause or confidence scores. Named case JSON preserves source evidence and notes; CSV exports the visible links.
+- **Broader event review:** optionally include informational and verbose Windows events, and save that choice with the case.
+- **Scout interface improvements:** list each active IPv4 address on multi-address adapters, show richer Npcap device descriptions, refresh the adapter list without losing the current selection, and prevent capture from silently falling back to another adapter.
+- **Log import tolerance and bounds:** accept predominantly text files with up to 25% unreadable/control/replacement characters while retaining a separate 62% text-like threshold to reject binary-like data. Imports stay capped at 32 MiB, 200,000 structured source lines/entries, 512 fields per entry, and 16 KiB per field value; the original full source remains available when structured processing is line-capped.
+- **Installer canvas playback:** bundle the 5.97-second setup loop with local and release builds, keep the poster until playback advances, and report/retry stalled playback.
+- Diverse parser fixtures covering INI, logfmt, mixed syslog, access logs, Windows Event XML, crash traces, irregular delimiters, unknown extensions, readable save data, and solution files.
+
+### Changed
+
+- The navigation, Pantheon, documentation, case controls, and investigation language use the established **The Scales** / Ma'at theme instead of the Triage Preview label.
+- Standard release metadata advances to `0.4.0`; release tags and setup archives use `v0.4.0` nomenclature.
+
+### Verification
+
+- Windows x64 UI release build completed with no warnings or errors.
+- Automated suite passed: 50 tests.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

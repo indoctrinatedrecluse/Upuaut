@@ -18,10 +18,15 @@
     <ProjectReference Include="..\..\src\Upuaut.Core\Upuaut.Core.csproj" />
     <ProjectReference Include="..\..\src\Upuaut.Chronicles\Upuaut.Chronicles.csproj" />
     <ProjectReference Include="..\..\src\Upuaut.Scout\Upuaut.Scout.csproj" />
+    <ProjectReference Include="..\..\src\Upuaut.LogLab\Upuaut.LogLab.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\scratch\**\*" Link="scratch\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
