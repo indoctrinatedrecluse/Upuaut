@@ -23,6 +23,10 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
     private bool _isCapturing;
     private readonly object _lock = new();
     private CancellationTokenRegistration _cancellationRegistration;
+    private long _receivedPacketCount, _rejectedPacketCount, _receiveErrorCount;
+    public long ReceivedPacketCount => Interlocked.Read(ref _receivedPacketCount);
+    public long RejectedPacketCount => Interlocked.Read(ref _rejectedPacketCount);
+    public long ReceiveErrorCount => Interlocked.Read(ref _receiveErrorCount);
 
     public bool IsCapturing => _isCapturing;
     public event EventHandler<PacketFrame>? PacketReceived;
@@ -72,6 +76,12 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                 return Task.CompletedTask;
             }
 
+            if (_receiveTask?.IsCompleted == true)
+            {
+                _cancellationRegistration.Dispose();
+                _cts?.Dispose(); _cts = null; _receiveTask = null;
+            }
+
             if (!IPAddress.TryParse(deviceId, out var bindIp))
             {
                 // If deviceId wasn't an IP, find first available device
@@ -84,6 +94,7 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
             }
 
             AppLogger.Info("RawSocketCapture", $"Initializing Windows Native Raw Socket on {bindIp}...");
+            Interlocked.Exchange(ref _receivedPacketCount, 0); Interlocked.Exchange(ref _rejectedPacketCount, 0); Interlocked.Exchange(ref _receiveErrorCount, 0);
 
             try
             {
@@ -196,8 +207,9 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                 {
                     bytesReceived = socket.Receive(buffer, 0, buffer.Length, SocketFlags.None);
                 }
-                catch (SocketException)
+                catch (SocketException ex)
                 {
+                    if (_isCapturing) AppLogger.Warning("RawSocketCapture", $"Receive stopped: {ex.SocketErrorCode} {ex.Message}");
                     break;
                 }
                 catch (ObjectDisposedException)
@@ -206,9 +218,11 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                 }
 
                 if (bytesReceived <= 0) continue;
+                Interlocked.Increment(ref _receivedPacketCount);
 
-                var frameIndex = Interlocked.Increment(ref _frameCounter);
-                var frame = PacketParser.ParseIPv4Packet(buffer, bytesReceived, frameIndex, ifaceName);
+                PacketFrame? frame;
+                try { frame = PacketParser.ParseIPv4Packet(buffer, bytesReceived, Interlocked.Increment(ref _frameCounter), ifaceName); }
+                catch (Exception ex) { Interlocked.Increment(ref _rejectedPacketCount); AppLogger.Debug("RawSocketCapture", $"Rejected packet after parse error: {ex.Message}"); continue; }
 
                 if (frame != null)
                 {
@@ -221,11 +235,22 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
                         // Guard against subscriber errors
                     }
                 }
+                else Interlocked.Increment(ref _rejectedPacketCount);
             }
         }
         finally
         {
             pool.Return(buffer);
+            if (!token.IsCancellationRequested)
+            {
+                Interlocked.Increment(ref _receiveErrorCount);
+                AppLogger.Warning("RawSocketCapture", "The packet receive loop stopped unexpectedly.");
+                lock (_lock)
+                {
+                    _isCapturing = false;
+                    if (ReferenceEquals(_socket, socket)) { try { _socket?.Dispose(); } catch { } _socket = null; }
+                }
+            }
         }
     }
 

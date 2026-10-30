@@ -2,6 +2,21 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Release versions use `vMAJOR.MINOR.PATCH` Git tags; this file records user-facing changes.
 
+## [Unreleased]
+
+### Added
+
+- Scout now dissects IPv6 in Ethernet captures, exposes decoded protocol-layer fields and full frame bytes, groups endpoint conversations, follows TCP byte streams with gap markers, and opens/saves PCAPNG files.
+- Scout has separate user-space capture and display filters, saved display filters, shared time-window filtering, and counters for parser rejects, filtered packets, FIFO overwrites, and receive errors.
+- Chronicles supports structured Event ID/provider/custom-time queries, reusable query presets, equal-length prior-period comparisons, cluster-signature explanations, saved investigation cases, and JSON/CSV exports.
+- Scales reviews the full bounded Scout buffer, groups matched/unmatched events, explains temporal proximity, records investigation notes, and saves/loads JSON cases or CSV summaries.
+- Chronicles, Scout, and Scales share the selected time window and evidence handoff. Ctrl+1/2/3 navigate to those workspaces.
+
+### Notes
+
+- Scout capture filters run in user space and do not reduce capture-backend or kernel traffic. TCP Follow can only reconstruct bytes present in the capture, and TLS payloads remain encrypted.
+- Scales' proximity percentage measures time distance within the configured window; it is not causal confidence.
+
 ## [0.1.0] - 2026-10-30
 
 First public Windows release.

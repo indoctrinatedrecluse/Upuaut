@@ -104,6 +104,7 @@ public partial class MainWindow : Window
             services.AddSingleton<IChroniclesService, WindowsEventLogService>();
             services.AddSingleton<ICaptureEngine, ScoutManager>();
             services.AddSingleton<ScoutManager>(sp => (ScoutManager)sp.GetRequiredService<ICaptureEngine>());
+            services.AddSingleton<Upuaut.UI.Shared.InvestigationContext>();
 
             blazorWebView.Services = services.BuildServiceProvider();
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");

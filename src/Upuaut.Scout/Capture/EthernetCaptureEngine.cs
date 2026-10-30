@@ -13,6 +13,9 @@ public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
     private CancellationTokenRegistration _cancellationRegistration;
     private long _frameNumber;
     private readonly object _sync = new();
+    private long _receivedPacketCount, _rejectedPacketCount;
+    public long ReceivedPacketCount => Interlocked.Read(ref _receivedPacketCount);
+    public long RejectedPacketCount => Interlocked.Read(ref _rejectedPacketCount);
 
     public bool IsCapturing { get; private set; }
     public event EventHandler<PacketFrame>? PacketReceived;
@@ -51,6 +54,7 @@ public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
                 device.OnPacketArrival += OnPacketArrival;
                 _device = device;
                 _frameNumber = 0;
+                Interlocked.Exchange(ref _receivedPacketCount, 0); Interlocked.Exchange(ref _rejectedPacketCount, 0);
                 IsCapturing = true;
                 device.StartCapture();
                 AppLogger.Info("EthernetCapture", $"Link-layer capture started on {device.Description}.");
@@ -75,10 +79,15 @@ public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
 
     private void OnPacketArrival(object sender, PacketCapture capture)
     {
-        var raw = capture.GetPacket();
-        var frame = PacketParser.ParseEthernetFrame(raw.Data, raw.Data.Length,
-            Interlocked.Increment(ref _frameNumber), _device?.Description);
-        if (frame is null) return;
+        Interlocked.Increment(ref _receivedPacketCount);
+        PacketFrame? frame;
+        try
+        {
+            var raw = capture.GetPacket();
+            frame = PacketParser.ParseEthernetFrame(raw.Data, raw.Data.Length, Interlocked.Increment(ref _frameNumber), _device?.Description);
+        }
+        catch (Exception ex) { Interlocked.Increment(ref _rejectedPacketCount); AppLogger.Debug("EthernetCapture", $"Rejected frame after parse error: {ex.Message}"); return; }
+        if (frame is null) { Interlocked.Increment(ref _rejectedPacketCount); return; }
         try { PacketReceived?.Invoke(this, frame); }
         catch (Exception ex) { AppLogger.Debug("EthernetCapture", $"Packet subscriber failed: {ex.Message}"); }
     }

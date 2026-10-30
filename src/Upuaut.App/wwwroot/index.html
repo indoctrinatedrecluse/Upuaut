@@ -23,6 +23,15 @@
             getEnabled: () => localStorage.getItem("upuaut.motionBackground") !== "false",
             setEnabled: enabled => localStorage.setItem("upuaut.motionBackground", enabled ? "true" : "false")
         };
+        window.upuautPreferences = {
+            get: key => JSON.parse(localStorage.getItem(key) || "[]"),
+            set: (key, value) => localStorage.setItem(key, JSON.stringify(value))
+        };
+        window.addEventListener("keydown", event => {
+            if (!event.ctrlKey || event.altKey || event.metaKey || (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable=true]"))) return;
+            const routes = { "1": "chronicles", "2": "scout", "3": "weigher" };
+            if (routes[event.key]) { event.preventDefault(); history.pushState(null, "", "/" + routes[event.key]); dispatchEvent(new PopStateEvent("popstate")); }
+        });
     </script>
     <script src="_framework/blazor.webview.js"></script>
 </body>

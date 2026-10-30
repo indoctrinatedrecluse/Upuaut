@@ -43,14 +43,30 @@ public static class PacketParser
         string summary;
         bool hasErrorOrRetransmit = false;
         byte[]? payload = null;
+        int? transportHeaderLength = null;
+        int? payloadOffsetForRaw = null;
+        uint? tcpSequence = null;
+        uint? tcpAck = null;
+        byte? tcpFlags = null;
+        ushort? tcpWindow = null;
+        string? dnsName = null;
+        var details = new List<PacketDetail>
+        {
+            new("IPv4", "Version", "4"), new("IPv4", "Header length", $"{ipHeaderLength} bytes"),
+            new("IPv4", "Total length", $"{totalLength} bytes"), new("IPv4", "TTL", ttl.ToString()),
+            new("IPv4", "Protocol", protocolByte.ToString()), new("IPv4", "Source", srcIp), new("IPv4", "Destination", dstIp)
+        };
 
         int transportOffset = ipHeaderLength;
         int transportLength = totalLength - transportOffset;
         int fragmentField = (buffer[6] << 8) | buffer[7];
         bool fragmented = (fragmentField & 0x3FFF) != 0;
+        bool moreFragments = (fragmentField & 0x2000) != 0;
+        int fragmentOffsetBytes = (fragmentField & 0x1FFF) * 8;
+        details.AddRange(new[] { new PacketDetail("IPv4", "DSCP / ECN", $"0x{buffer[1]:X2}"), new PacketDetail("IPv4", "Flags", $"0x{(fragmentField >> 13):X1}"), new PacketDetail("IPv4", "Fragment offset", $"{(fragmentField & 0x1FFF) * 8} bytes"), new PacketDetail("IPv4", "Header checksum", $"0x{((buffer[10] << 8) | buffer[11]):X4}") });
 
         // 1. TCP (Protocol 6)
-        if (!fragmented && protocolByte == 6 && transportLength >= 20)
+        if (fragmentOffsetBytes == 0 && protocolByte == 6 && transportLength >= 20)
         {
             protocol = NetworkProtocol.TCP;
             srcPort = (buffer[transportOffset] << 8) | buffer[transportOffset + 1];
@@ -89,25 +105,30 @@ public static class PacketParser
             string flagStr = flagList.Count > 0 ? string.Join(",", flagList) : "NONE";
 
             int payloadOffset = transportOffset + tcpHeaderLen;
+            transportHeaderLength = tcpHeaderLen; payloadOffsetForRaw = payloadOffset;
+            tcpSequence = seqNum; tcpAck = ackNum; tcpFlags = flags; tcpWindow = window;
+            details.AddRange(new[] { new PacketDetail("TCP", "Source port", srcPort.Value.ToString()), new PacketDetail("TCP", "Destination port", dstPort.Value.ToString()), new PacketDetail("TCP", "Sequence number", seqNum.ToString()), new PacketDetail("TCP", "Acknowledgment number", ackNum.ToString()), new PacketDetail("TCP", "Header length", $"{tcpHeaderLen} bytes"), new PacketDetail("TCP", "Flags", flagStr), new PacketDetail("TCP", "Window", window.ToString()) });
+            details.Add(new PacketDetail("TCP", "Checksum", $"0x{((buffer[transportOffset + 16] << 8) | buffer[transportOffset + 17]):X4}"));
             int payloadLength = totalLength - payloadOffset;
             if (srcPort == 53 || dstPort == 53)
             {
                 protocol = NetworkProtocol.DNS;
-                summary = $"DNS (TCP) [{flagStr}] {srcPort} &rarr; {dstPort}";
+                dnsName = TryExtractDnsQuery(buffer, payloadOffset + 2, Math.Max(0, payloadLength - 2));
+                summary = $"DNS (TCP) [{flagStr}] {srcPort} ? {dstPort}";
             }
             else if (LooksLikeTls(buffer, payloadOffset, payloadLength))
             {
                 protocol = NetworkProtocol.TLS;
-                summary = $"TLS [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum}";
+                summary = $"TLS [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum}";
             }
             else if (LooksLikeHttp(buffer, payloadOffset, payloadLength))
             {
                 protocol = NetworkProtocol.HTTP;
-                summary = $"HTTP [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum}";
+                summary = $"HTTP [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum}";
             }
             else
             {
-                summary = $"TCP [{flagStr}] {srcPort} &rarr; {dstPort} Seq={seqNum} Ack={ackNum} Win={window}";
+                summary = $"TCP [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum} Win={window}";
             }
 
             if (rst)
@@ -124,28 +145,32 @@ public static class PacketParser
             }
         }
         // 2. UDP (Protocol 17)
-        else if (!fragmented && protocolByte == 17 && transportLength >= 8)
+        else if (fragmentOffsetBytes == 0 && protocolByte == 17 && transportLength >= 8)
         {
             protocol = NetworkProtocol.UDP;
             srcPort = (buffer[transportOffset] << 8) | buffer[transportOffset + 1];
             dstPort = (buffer[transportOffset + 2] << 8) | buffer[transportOffset + 3];
             int udpLen = (buffer[transportOffset + 4] << 8) | buffer[transportOffset + 5];
-            if (udpLen < 8 || udpLen > transportLength) return null;
+            if (udpLen < 8 || (udpLen > transportLength && !moreFragments)) return null;
 
             int payloadOffset = transportOffset + 8;
-            int payloadLen = Math.Max(0, udpLen - 8);
+            int payloadLen = Math.Min(Math.Max(0, udpLen - 8), Math.Max(0, totalLength - payloadOffset));
+            transportHeaderLength = 8; payloadOffsetForRaw = payloadOffset;
+            details.AddRange(new[] { new PacketDetail("UDP", "Source port", srcPort.Value.ToString()), new PacketDetail("UDP", "Destination port", dstPort.Value.ToString()), new PacketDetail("UDP", "Length", udpLen.ToString()) });
+            details.Add(new PacketDetail("UDP", "Checksum", $"0x{((buffer[transportOffset + 6] << 8) | buffer[transportOffset + 7]):X4}"));
 
             if (srcPort == 53 || dstPort == 53)
             {
                 protocol = NetworkProtocol.DNS;
                 var dnsQuery = TryExtractDnsQuery(buffer, payloadOffset, payloadLen);
+                dnsName = dnsQuery;
                 summary = !string.IsNullOrEmpty(dnsQuery)
-                    ? $"DNS Query: {dnsQuery} ({srcPort} &rarr; {dstPort})"
-                    : $"DNS Datagram ({srcPort} &rarr; {dstPort})";
+                    ? $"DNS Query: {dnsQuery} ({srcPort} ? {dstPort})"
+                    : $"DNS Datagram ({srcPort} ? {dstPort})";
             }
             else
             {
-                summary = $"UDP {srcPort} &rarr; {dstPort} Len={udpLen}";
+                summary = $"UDP {srcPort} ? {dstPort} Len={udpLen}";
             }
 
             if (payloadLen > 0 && payloadOffset < buffer.Length)
@@ -156,11 +181,13 @@ public static class PacketParser
             }
         }
         // 3. ICMP (Protocol 1)
-        else if (protocolByte == 1 && transportLength >= 4)
+        else if (fragmentOffsetBytes == 0 && protocolByte == 1 && transportLength >= 4)
         {
             protocol = NetworkProtocol.ICMP;
             byte type = buffer[transportOffset];
             byte code = buffer[transportOffset + 1];
+            details.Add(new PacketDetail("ICMP", "Type", type.ToString()));
+            details.Add(new PacketDetail("ICMP", "Code", code.ToString()));
 
             summary = type switch
             {
@@ -177,6 +204,7 @@ public static class PacketParser
         {
             summary = $"IPv4 Protocol {protocolByte} (TTL={ttl})";
         }
+        if (fragmented) summary += " [Fragmented]";
 
         // Process Attribution via IP Helper
         int? processId = null;
@@ -205,9 +233,87 @@ public static class PacketParser
             InterfaceName = interfaceName,
             HasErrorOrRetransmit = hasErrorOrRetransmit,
             CaptureLayer = "IPv4",
-            RawData = buffer.AsSpan(0, totalLength).ToArray()
+            RawData = buffer.AsSpan(0, totalLength).ToArray(),
+            TransportProtocol = protocolByte switch { 6 => NetworkProtocol.TCP, 17 => NetworkProtocol.UDP, 1 => NetworkProtocol.ICMP, _ => NetworkProtocol.Unknown },
+            IpTtl = ttl, IpProtocolNumber = protocolByte, IpIdentification = (ushort)((buffer[4] << 8) | buffer[5]),
+            IpFragmentOffset = fragmentOffsetBytes, IpHeaderLength = ipHeaderLength,
+            TransportHeaderLength = transportHeaderLength, TransportPayloadOffset = payloadOffsetForRaw,
+            TcpSequenceNumber = tcpSequence, TcpAcknowledgmentNumber = tcpAck, TcpFlags = tcpFlags, TcpWindow = tcpWindow,
+            DnsQueryName = dnsName, Details = details
         };
     }
+
+    public static PacketFrame? ParseIPv6Packet(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
+    {
+        if (buffer is null || length < 40 || length > buffer.Length || (buffer[0] >> 4) != 6) return null;
+        var payloadLength = (buffer[4] << 8) | buffer[5];
+        var totalLength = Math.Min(length, 40 + payloadLength);
+        var hopLimit = buffer[7]; var source = new IPAddress(buffer.AsSpan(8, 16)).ToString(); var destination = new IPAddress(buffer.AsSpan(24, 16)).ToString();
+        var trafficClass = (byte)(((buffer[0] & 0x0F) << 4) | (buffer[1] >> 4)); var flowLabel = ((buffer[1] & 0x0F) << 16) | (buffer[2] << 8) | buffer[3];
+        byte next = buffer[6]; var baseNextHeader = next; var offset = 40; var fragmentOffset = 0; var fragmented = false; var details = new List<PacketDetail>
+        {
+            new("IPv6", "Version", "6"), new("IPv6", "Traffic class", $"0x{trafficClass:X2}"), new("IPv6", "Flow label", $"0x{flowLabel:X5}"), new("IPv6", "Payload length", payloadLength.ToString()), new("IPv6", "Next header", next.ToString()), new("IPv6", "Hop limit", hopLimit.ToString()),
+            new("IPv6", "Source", source), new("IPv6", "Destination", destination)
+        };
+        for (var depth = 0; depth < 8 && next is 0 or 43 or 44 or 51 or 60 or 135; depth++)
+        {
+            if (offset + 2 > totalLength) return null;
+            var extension = next; var following = buffer[offset];
+            var extensionLength = extension switch { 44 => 8, 51 => (buffer[offset + 1] + 2) * 4, _ => (buffer[offset + 1] + 1) * 8 };
+            if (extensionLength < 8 || offset + extensionLength > totalLength) return null;
+            details.Add(new PacketDetail("IPv6 Extension", extension switch { 0 => "Hop-by-Hop Options", 43 => "Routing", 44 => "Fragment", 51 => "Authentication", 60 => "Destination Options", _ => "Mobility" }, $"{extensionLength} bytes"));
+            if (extension == 44)
+            {
+                var fragment = (buffer[offset + 2] << 8) | buffer[offset + 3]; fragmentOffset = fragment & 0xFFF8; fragmented = (fragment & 1) != 0 || fragmentOffset != 0;
+            }
+            offset += extensionLength; next = following;
+        }
+        if (next is 0 or 43 or 44 or 51 or 60 or 135) return null;
+        var transport = next switch { 6 => NetworkProtocol.TCP, 17 => NetworkProtocol.UDP, 58 => NetworkProtocol.ICMPv6, _ => NetworkProtocol.Unknown };
+        var protocol = transport; int? sourcePort = null, destinationPort = null; int? transportHeaderLength = null, payloadOffset = null;
+        uint? sequence = null, ack = null; byte? flags = null; ushort? window = null; byte[]? payload = null; string? dns = null;
+        var summary = $"IPv6 protocol {next} ({source} → {destination})";
+        if (fragmentOffset == 0 && transport == NetworkProtocol.TCP && totalLength - offset >= 20)
+        {
+            sourcePort = (buffer[offset] << 8) | buffer[offset + 1]; destinationPort = (buffer[offset + 2] << 8) | buffer[offset + 3];
+            sequence = ReadUInt32(buffer, offset + 4); ack = ReadUInt32(buffer, offset + 8); var headerLength = (buffer[offset + 12] >> 4) * 4; flags = buffer[offset + 13]; window = (ushort)((buffer[offset + 14] << 8) | buffer[offset + 15]);
+            if (headerLength < 20 || offset + headerLength > totalLength) return null;
+            transportHeaderLength = headerLength; payloadOffset = offset + headerLength;
+            var payloadLengthTcp = totalLength - payloadOffset.Value;
+            var flagNames = new[] { (0x02, "SYN"), (0x10, "ACK"), (0x01, "FIN"), (0x04, "RST"), (0x08, "PSH") }.Where(f => (flags.Value & f.Item1) != 0).Select(f => f.Item2);
+            if (sourcePort == 53 || destinationPort == 53) { protocol = NetworkProtocol.DNS; dns = TryExtractDnsQuery(buffer, payloadOffset.Value + 2, Math.Max(0, payloadLengthTcp - 2)); summary = $"DNS over TCP {sourcePort} → {destinationPort}"; }
+            else if (LooksLikeTls(buffer, payloadOffset.Value, payloadLengthTcp)) { protocol = NetworkProtocol.TLS; summary = $"TLS {sourcePort} → {destinationPort}"; }
+            else if (LooksLikeHttp(buffer, payloadOffset.Value, payloadLengthTcp)) { protocol = NetworkProtocol.HTTP; summary = $"HTTP {sourcePort} → {destinationPort}"; }
+            else summary = $"TCP [{string.Join(",", flagNames)}] {sourcePort} → {destinationPort} Seq={sequence} Ack={ack}";
+            if (payloadLengthTcp > 0) payload = buffer.AsSpan(payloadOffset.Value, Math.Min(payloadLengthTcp, 512)).ToArray();
+            details.AddRange(new[] { new PacketDetail("TCP", "Source port", sourcePort.Value.ToString()), new PacketDetail("TCP", "Destination port", destinationPort.Value.ToString()), new PacketDetail("TCP", "Sequence number", sequence.Value.ToString()), new PacketDetail("TCP", "Acknowledgment number", ack.Value.ToString()), new PacketDetail("TCP", "Flags", string.Join(",", flagNames)), new PacketDetail("TCP", "Window", window.Value.ToString()) });
+        }
+        else if (fragmentOffset == 0 && transport == NetworkProtocol.UDP && totalLength - offset >= 8)
+        {
+            sourcePort = (buffer[offset] << 8) | buffer[offset + 1]; destinationPort = (buffer[offset + 2] << 8) | buffer[offset + 3]; var udpLength = (buffer[offset + 4] << 8) | buffer[offset + 5];
+            if (udpLength < 8 || udpLength > totalLength - offset) return null;
+            transportHeaderLength = 8; payloadOffset = offset + 8; var dataLength = udpLength - 8;
+            if (sourcePort == 53 || destinationPort == 53) { protocol = NetworkProtocol.DNS; dns = TryExtractDnsQuery(buffer, payloadOffset.Value, dataLength); summary = dns is null ? $"DNS UDP {sourcePort} → {destinationPort}" : $"DNS Query: {dns}"; }
+            else summary = $"UDP {sourcePort} → {destinationPort} Len={udpLength}";
+            if (dataLength > 0) payload = buffer.AsSpan(payloadOffset.Value, Math.Min(dataLength, 512)).ToArray();
+            details.AddRange(new[] { new PacketDetail("UDP", "Source port", sourcePort.Value.ToString()), new PacketDetail("UDP", "Destination port", destinationPort.Value.ToString()), new PacketDetail("UDP", "Length", udpLength.ToString()) });
+        }
+        else if (fragmentOffset == 0 && transport == NetworkProtocol.ICMPv6 && totalLength - offset >= 4)
+        {
+            var type = buffer[offset]; var code = buffer[offset + 1];
+            summary = type switch { 128 => "ICMPv6 Echo Request", 129 => "ICMPv6 Echo Reply", 133 => "ICMPv6 Router Solicitation", 134 => "ICMPv6 Router Advertisement", 135 => "ICMPv6 Neighbor Solicitation", 136 => "ICMPv6 Neighbor Advertisement", _ => $"ICMPv6 Type={type} Code={code}" };
+            details.Add(new PacketDetail("ICMPv6", "Type / code", $"{type} / {code}"));
+        }
+        if (fragmented) summary += " [Fragmented]";
+        return new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, SourceIp = source, DestinationIp = destination, SourcePort = sourcePort,
+            DestinationPort = destinationPort, Protocol = protocol == NetworkProtocol.Unknown ? NetworkProtocol.IPv6 : protocol, TransportProtocol = transport,
+            TotalLength = totalLength, Summary = summary, Payload = payload, InterfaceName = interfaceName, CaptureLayer = "IPv6", RawData = buffer.AsSpan(0, totalLength).ToArray(),
+            IpTtl = hopLimit, IpProtocolNumber = baseNextHeader, IpFragmentOffset = fragmentOffset, IpHeaderLength = offset, TransportHeaderLength = transportHeaderLength,
+            TransportPayloadOffset = payloadOffset, TcpSequenceNumber = sequence, TcpAcknowledgmentNumber = ack, TcpFlags = flags, TcpWindow = window,
+            DnsQueryName = dns, HasErrorOrRetransmit = flags.HasValue && (flags.Value & 0x04) != 0, Details = details };
+    }
+
+    private static uint ReadUInt32(byte[] buffer, int offset) => (uint)((buffer[offset] << 24) | (buffer[offset + 1] << 16) | (buffer[offset + 2] << 8) | buffer[offset + 3]);
 
     public static PacketFrame? ParseEthernetFrame(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
     {
@@ -225,11 +331,13 @@ public static class PacketParser
 
         PacketFrame? frame = etherType == 0x0800
             ? ParseIPv4Packet(buffer.AsSpan(offset, length - offset).ToArray(), length - offset, frameIndex, interfaceName)
-            : etherType == 0x0806 ? new PacketFrame
+            : etherType == 0x86DD ? ParseIPv6Packet(buffer.AsSpan(offset, length - offset).ToArray(), length - offset, frameIndex, interfaceName)
+            : etherType == 0x0806 && length >= 18 ? new PacketFrame
             {
                 FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, Protocol = NetworkProtocol.ARP,
                 TotalLength = length, Summary = "ARP frame", InterfaceName = interfaceName,
-                CaptureLayer = "Ethernet", RawData = buffer.AsSpan(0, length).ToArray()
+                CaptureLayer = "Ethernet", RawData = buffer.AsSpan(0, length).ToArray(),
+                Details = new[] { new PacketDetail("ARP", "Hardware type", $"0x{(buffer[14] << 8) | buffer[15]:X4}"), new PacketDetail("ARP", "Protocol type", $"0x{(buffer[16] << 8) | buffer[17]:X4}") }
             } : null;
         return frame is null ? null : frame with
         {
@@ -238,7 +346,10 @@ public static class PacketParser
             RawData = buffer.AsSpan(0, length).ToArray(),
             SourceMac = sourceMac,
             DestinationMac = destinationMac,
-            EtherType = etherType
+            EtherType = etherType,
+            EthernetHeaderLength = offset,
+            TransportPayloadOffset = frame.TransportPayloadOffset is { } payloadOffset ? payloadOffset + offset : null,
+            Details = new[] { new PacketDetail("Ethernet", "Destination", destinationMac), new PacketDetail("Ethernet", "Source", sourceMac), new PacketDetail("Ethernet", "EtherType", $"0x{etherType:X4}") }.Concat(frame.Details).ToArray()
         };
     }
 

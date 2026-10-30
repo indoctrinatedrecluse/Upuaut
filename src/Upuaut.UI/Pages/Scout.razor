@@ -4,9 +4,11 @@
 @using Upuaut.Core.Interfaces
 @using Upuaut.Core.Models
 @using Upuaut.Scout.Services
+@using Microsoft.Win32
 @inject ICaptureEngine CaptureEngine
 @inject ScoutManager ScoutService
 @inject IJSRuntime JSRuntime
+@inject Upuaut.UI.Shared.InvestigationContext Investigation
 @implements IDisposable
 
 <PageTitle>Upuaut — The Scout (Packet Sniffer)</PageTitle>
@@ -80,7 +82,7 @@
         <div class="kpi-card">
             <span class="kpi-title">TOTAL PACKETS</span>
             <span class="kpi-value gold-accent">@_stats.TotalPackets.ToString("N0")</span>
-            <span class="kpi-sub">Buffer: @_recentFrames.Count / @ScoutService.BufferCapacity</span>
+            <span class="kpi-sub">Buffer @ScoutService.BufferCount / @ScoutService.BufferCapacity · engine @_stats.ReceivedByEngine · malformed @_stats.MalformedPackets · socket errors @_stats.CaptureReceiveErrors</span>
         </div>
         <div class="kpi-card">
             <span class="kpi-title" style="color: #60A5FA;">DATA VOLUME</span>
@@ -128,6 +130,8 @@
                     @onclick="@(() => SetProtocol(NetworkProtocol.ICMP))">
                 ICMP
             </button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.IPv6 ? "pill-info-active" : "")" @onclick="@(() => SetProtocol(NetworkProtocol.IPv6))">IPv6</button>
+            <button class="pill-btn @(_selectedProtocol == NetworkProtocol.ICMPv6 ? "pill-info-active" : "")" @onclick="@(() => SetProtocol(NetworkProtocol.ICMPv6))">ICMPv6</button>
         </div>
 
         <!-- Process Filter Dropdown -->
@@ -162,13 +166,32 @@
         </label>
     </div>
 
+    <div class="scout-filter-lab">
+        <label><span>CAPTURE FILTER <small>(user-space filter before buffering)</small></span><input class="upuaut-search-input" @bind="_captureFilter" disabled="@_isCapturing" placeholder="tcp.port == 443" /></label>
+        <label><span>DISPLAY FILTER <small>(common Wireshark-style fields; combine with &&)</small></span><input class="upuaut-search-input" @bind="_displayFilter" @bind:event="oninput" @bind:after="ApplyFilters" placeholder="ip.src == 10.0.0.1 && tcp.port == 443" /></label>
+        <select class="upuaut-select" value="" @onchange="OnSavedFilterSelected"><option value="">Saved filters…</option>@foreach (var saved in _savedFilters) { <option value="@saved">@saved</option> }</select>
+        <label class="switch-container"><input type="checkbox" @bind="_useSharedTimeWindow" @bind:after="ApplyFilters" /><span class="switch-label">Shared time window</span></label>
+        <button class="pill-btn" @onclick="SaveFilterAsync">Save filter</button><button class="pill-btn" @onclick="OpenCapture">Open PCAPNG</button><button class="pill-btn" @onclick="SaveCapture">Save PCAPNG</button>
+        @if (_offlineFrames is not null) { <button class="pill-btn" @onclick="CloseOfflineCapture">Return to live buffer</button> }
+        <span class="scout-buffer-note">@_stats.CaptureFiltered filtered · @_stats.BufferEvictions overwritten by FIFO · buffer @_stats.BufferCapacity.ToString("N0") · @_stats.CaptureDuration elapsed</span>
+        @if (!string.IsNullOrEmpty(_filterError)) { <span class="scout-filter-error">@_filterError</span> }
+    </div>
+    <div class="scout-view-tabs"><button class="pill-btn @(_activeView == "packets" ? "pill-info-active" : "")" @onclick='() => _activeView = "packets"'>Packets</button><button class="pill-btn @(_activeView == "conversations" ? "pill-info-active" : "")" @onclick='() => _activeView = "conversations"'>Conversations &amp; endpoints</button></div>
+    @if (_activeView == "conversations")
+    {
+        <div class="scout-conversation-list"><table class="upuaut-table"><thead><tr><th>Protocol</th><th>Endpoint A</th><th>Endpoint B</th><th>Frames</th><th>Bytes</th><th>Last seen</th><th></th></tr></thead><tbody>
+        @foreach (var c in _conversations) { <tr @onclick="() => SelectConversation(c)"><td>@c.Protocol</td><td>@c.EndpointA</td><td>@c.EndpointB</td><td>@c.PacketCount</td><td>@FormatBytes(c.Bytes)</td><td>@c.LastSeen.ToLocalTime().ToString("HH:mm:ss.fff")</td><td>@if (c.Protocol == NetworkProtocol.TCP) { <button class="pill-btn" @onclick="() => FollowStream(c)" @onclick:stopPropagation="true">Follow</button> }</td></tr> }
+        </tbody></table></div>
+    }
+    else
+    {
     <!-- Main Workspace: Split Frame List & Packet Inspector -->
     <div class="scout-workspace">
         <!-- Left: Live Frame Stream -->
         <div class="packet-list-pane">
             <div class="scout-pane-heading">
                 <div><span class="scout-pane-glyph">𓆣</span><div><strong>WIRE TAPE</strong><small>LIVE FRAME STREAM · MOST RECENT FIRST</small></div></div>
-                <span class="scout-stream-state @(_isCapturing ? "is-live" : "")"><i></i>@(_isCapturing ? "SCOUTING" : "ON WATCH")</span>
+                <span class="scout-stream-state @(_isCapturing ? "is-live" : "")"><i></i>@(_offlineFrames is not null ? "OFFLINE PCAPNG" : _isCapturing ? "SCOUTING" : "ON WATCH")</span>
             </div>
             <div class="table-container">
                 <table class="upuaut-table">
@@ -244,6 +267,10 @@
                 <div><span class="scout-pane-glyph">𓂀</span><div><strong>SEER’S LENS</strong><small>FRAME INSPECTION &amp; ATTRIBUTION</small></div></div>
                 <span class="scout-inspector-seal">𓋹</span>
             </div>
+            @if (!string.IsNullOrWhiteSpace(_followStreamText))
+            {
+                <section class="section-block tcp-follow-stream"><div class="scout-pane-heading"><strong>TCP FOLLOW STREAM</strong><button class="pill-btn" @onclick="() => _followStreamText = null">Close</button></div><p class="scout-buffer-note">Sequence-ordered payload from frames in the current filtered buffer. Missing sequence ranges are marked; encrypted TLS bytes remain opaque.</p><pre class="hex-dump-box">@_followStreamText</pre></section>
+            }
             @if (_selectedFrame != null)
             {
                 <div class="inspector-card">
@@ -315,6 +342,14 @@
                             </div>
                         </div>
 
+                        <div class="section-block">
+                            <h4 class="section-title">Decoded protocol layers</h4>
+                            @foreach (var group in _selectedFrame.Details.GroupBy(detail => detail.Layer))
+                            {
+                                <details class="packet-layer" open><summary>@group.Key</summary><dl>@foreach (var field in group) { <dt>@field.Name</dt><dd class="mono-text">@field.Value</dd> }</dl></details>
+                            }
+                        </div>
+
                         <!-- Payload Hex / ASCII View -->
                         @if (_selectedFrame.Payload != null && _selectedFrame.Payload.Length > 0)
                         {
@@ -325,6 +360,10 @@
                                 </div>
                                 <pre class="hex-dump-box">@GenerateHexDump(_selectedFrame.Payload)</pre>
                             </div>
+                        }
+                        @if (_selectedFrame.RawData is { Length: > 0 } rawFrame)
+                        {
+                            <div class="section-block"><h4 class="section-title">Full captured frame (@rawFrame.Length bytes)</h4><pre class="hex-dump-box">@GenerateHexDump(rawFrame)</pre></div>
                         }
                     </div>
                 </div>
@@ -341,6 +380,7 @@
             }
         </div>
     </div>
+    }
 </div>
 
 @code {
@@ -350,13 +390,22 @@
     private bool _autoScroll = true;
     private PacketCaptureMode _captureMode = PacketCaptureMode.RawIpv4;
 
-    private List<PacketFrame> _recentFrames = new();
     private List<PacketFrame> _filteredFrames = new();
     private PacketFrame? _selectedFrame;
 
     private NetworkProtocol? _selectedProtocol;
     private string _selectedProcess = string.Empty;
     private string _searchFilter = string.Empty;
+    private string _captureFilter = string.Empty;
+    private string _displayFilter = string.Empty;
+    private string _filterError = string.Empty;
+    private string _activeView = "packets";
+    private List<PacketConversation> _conversations = new();
+    private string? _followStreamText;
+    private IReadOnlyList<PacketFrame>? _offlineFrames;
+    private List<string> _savedFilters = new();
+    private bool _preferencesLoaded;
+    private bool _useSharedTimeWindow = true;
 
     private ScoutStatistics _stats = new(0, 0, 0, new Dictionary<NetworkProtocol, int>(), new Dictionary<string, int>());
     private System.Threading.Timer? _refreshTimer;
@@ -364,6 +413,7 @@
     protected override void OnInitialized()
     {
         RefreshDevices();
+        _selectedFrame = Investigation.SelectedFrame;
 
         ScoutService.PacketReceived += OnPacketReceived;
 
@@ -376,6 +426,17 @@
                 StateHasChanged();
             });
         }, null, 250, 250);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_preferencesLoaded)
+        {
+            _preferencesLoaded = true;
+            try { _savedFilters = (await JSRuntime.InvokeAsync<string[]>("upuautPreferences.get", "upuaut.scout.filters")).ToList(); }
+            catch { _savedFilters = new(); }
+            StateHasChanged();
+        }
     }
 
     private void OnCaptureModeChanged() => RefreshDevices();
@@ -392,6 +453,7 @@
 
         try
         {
+            ScoutService.SetCaptureFilter(_captureFilter);
             await ScoutService.StartCaptureAsync(_selectedDeviceId, _captureMode);
             _isCapturing = true;
             RefreshUI();
@@ -413,7 +475,6 @@
     private void ClearBuffer()
     {
         ScoutService.ClearBuffer();
-        _recentFrames.Clear();
         _filteredFrames.Clear();
         _selectedFrame = null;
         RefreshUI();
@@ -433,12 +494,37 @@
 
     private void ApplyFilters()
     {
-        _filteredFrames = ScoutService.GetRecentFrames(_selectedProtocol, _selectedProcess, _searchFilter, 400).ToList();
+        try
+        {
+            _filterError = string.Empty;
+            var allMatches = QueryFilteredFrames();
+            _filteredFrames = allMatches.OrderByDescending(f => f.Timestamp).Take(400).ToList();
+            _conversations = PacketConversations.Group(allMatches).ToList();
+        }
+        catch (FormatException ex) { _filterError = ex.Message; }
         if (_autoScroll && _filteredFrames.Count > 0 && _selectedFrame == null)
         {
             _selectedFrame = _filteredFrames[0];
         }
     }
+
+    private List<PacketFrame> QueryFilteredFrames()
+    {
+        var predicate = PacketDisplayFilter.Compile(_displayFilter);
+        var source = _offlineFrames ?? ScoutService.GetRecentFrames(maxFrames: ScoutService.BufferCapacity);
+        return source.Where(f => (!_selectedProtocol.HasValue || _selectedProtocol == NetworkProtocol.Unknown || MatchesProtocol(f, _selectedProtocol.Value))
+            && (!_useSharedTimeWindow || (Investigation.Start is null || f.Timestamp >= Investigation.Start) && (Investigation.End is null || f.Timestamp <= Investigation.End))
+            && (string.IsNullOrWhiteSpace(_selectedProcess) || f.ProcessName?.Equals(_selectedProcess, StringComparison.OrdinalIgnoreCase) == true)
+            && (string.IsNullOrWhiteSpace(_searchFilter) || f.SourceIp.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) || f.DestinationIp.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) || f.Summary.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) || f.SourcePort?.ToString() == _searchFilter || f.DestinationPort?.ToString() == _searchFilter)
+            && predicate(f)).ToList();
+    }
+
+    private static bool MatchesProtocol(PacketFrame frame, NetworkProtocol protocol) => protocol switch
+    {
+        NetworkProtocol.IPv6 => frame.CaptureLayer == "IPv6" || frame.Details.Any(detail => detail.Layer == "IPv6"),
+        NetworkProtocol.IPv4 => frame.CaptureLayer == "IPv4" || frame.EtherType == 0x0800 || frame.Details.Any(detail => detail.Layer == "IPv4"),
+        _ => frame.Protocol == protocol || frame.TransportProtocol == protocol
+    };
 
     private void RefreshUI()
     {
@@ -454,14 +540,68 @@
     private void SelectFrame(PacketFrame frame)
     {
         _selectedFrame = frame;
+        Investigation.Select(frame);
     }
 
     private async Task CopyPayloadHexAsync()
     {
-        if (_selectedFrame?.Payload == null) return;
-        var hex = Convert.ToHexString(_selectedFrame.Payload);
+        var bytes = _selectedFrame?.RawData ?? _selectedFrame?.Payload;
+        if (bytes == null) return;
+        var hex = Convert.ToHexString(bytes);
         await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", hex);
     }
+
+    private void SelectConversation(PacketConversation conversation)
+    {
+        _filteredFrames = conversation.Frames.OrderByDescending(f => f.Timestamp).ToList();
+        _selectedFrame = _filteredFrames.FirstOrDefault(); _activeView = "packets";
+        if (_selectedFrame is not null) Investigation.Select(_selectedFrame);
+    }
+
+    private void FollowStream(PacketConversation conversation)
+    {
+        _followStreamText = TcpStreamReassembler.Render(conversation);
+        _filteredFrames = conversation.Frames.OrderByDescending(frame => frame.Timestamp).ToList();
+        _selectedFrame = _filteredFrames.FirstOrDefault();
+        if (_selectedFrame is not null) Investigation.Select(_selectedFrame);
+        _activeView = "packets";
+    }
+
+    private async Task SaveFilterAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_displayFilter)) return;
+        try
+        {
+            _savedFilters = _savedFilters.Append(_displayFilter.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            await JSRuntime.InvokeVoidAsync("upuautPreferences.set", "upuaut.scout.filters", _savedFilters);
+            _filterError = "Saved filter locally. Paste it into Display Filter to reuse it.";
+        }
+        catch { _filterError = "Could not save this filter in local storage."; }
+    }
+
+    private void OnSavedFilterSelected(ChangeEventArgs e)
+    {
+        var selected = e.Value?.ToString();
+        if (!string.IsNullOrWhiteSpace(selected)) { _displayFilter = selected; ApplyFilters(); }
+    }
+
+    private void OpenCapture()
+    {
+        var dialog = new OpenFileDialog { Filter = "PCAPNG capture (*.pcapng)|*.pcapng", CheckFileExists = true };
+        if (dialog.ShowDialog() != true) return;
+        try { _offlineFrames = PcapNgFile.Read(dialog.FileName); ApplyFilters(); if (_offlineFrames.Count == 250_000) _filterError = "Import reached the safety limit of 250,000 frames; save a smaller capture to inspect the remainder."; }
+        catch (Exception ex) { _filterError = $"Could not open capture: {ex.Message}"; }
+    }
+
+    private void SaveCapture()
+    {
+        var dialog = new SaveFileDialog { Filter = "PCAPNG capture (*.pcapng)|*.pcapng", DefaultExt = ".pcapng", FileName = $"upuaut-{DateTime.Now:yyyyMMdd-HHmmss}.pcapng" };
+        if (dialog.ShowDialog() != true) return;
+        try { PcapNgFile.Write(dialog.FileName, QueryFilteredFrames()); }
+        catch (Exception ex) { _filterError = $"Could not save capture: {ex.Message}"; }
+    }
+
+    private void CloseOfflineCapture() { _offlineFrames = null; ApplyFilters(); }
 
     private static string FormatPort(int? port) => port.HasValue ? $":{port.Value}" : "";
 
@@ -481,6 +621,8 @@
         NetworkProtocol.TLS => "proto-tls",
         NetworkProtocol.HTTP => "proto-http",
         NetworkProtocol.ICMP => "proto-icmp",
+        NetworkProtocol.ICMPv6 => "proto-icmp",
+        NetworkProtocol.IPv6 => "proto-other",
         _ => "proto-other"
     };
 

@@ -330,7 +330,14 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         }
 
         // Time Range
-        if (filter.TimeRange != LogTimeRange.AllTime)
+        if (filter.TimeRange == LogTimeRange.Custom)
+        {
+            if (filter.CustomStartTime is { } start)
+                conditions.Add($"TimeCreated[@SystemTime >= '{System.Security.SecurityElement.Escape(start.ToUniversalTime().ToString("o"))}']");
+            if (filter.CustomEndTime is { } end)
+                conditions.Add($"TimeCreated[@SystemTime <= '{System.Security.SecurityElement.Escape(end.ToUniversalTime().ToString("o"))}']");
+        }
+        else if (filter.TimeRange != LogTimeRange.AllTime)
         {
             long ms = filter.TimeRange switch
             {
@@ -353,12 +360,26 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         // Provider Name
         if (!string.IsNullOrWhiteSpace(filter.ProviderName))
         {
-            conditions.Add($"Provider[@Name='{filter.ProviderName}']");
+            conditions.Add($"Provider[@Name={ToXPathLiteral(filter.ProviderName)}]");
         }
 
         return conditions.Count > 0
             ? $"*[System[{string.Join(" and ", conditions)}]]"
             : "*";
+    }
+
+    private static string ToXPathLiteral(string value)
+    {
+        if (!value.Contains('\'')) return $"'{value}'";
+        if (!value.Contains('"')) return $"\"{value}\"";
+        var parts = value.Split('\'');
+        var args = new List<string>();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (parts[i].Length > 0) args.Add($"'{parts[i]}'");
+            if (i < parts.Length - 1) args.Add("\"'\"");
+        }
+        return $"concat({string.Join(",", args)})";
     }
 
     private static LogSeverityLevel MapLevel(byte? level)

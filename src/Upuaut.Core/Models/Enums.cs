@@ -21,5 +21,6 @@ public enum NetworkProtocol
     DNS,
     TLS,
     HTTP,
-    ARP
+    ARP,
+    ICMPv6
 }

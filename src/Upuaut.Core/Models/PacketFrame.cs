@@ -9,6 +9,7 @@ public record PacketFrame
     public int? SourcePort { get; init; }
     public int? DestinationPort { get; init; }
     public NetworkProtocol Protocol { get; init; } = NetworkProtocol.Unknown;
+    public NetworkProtocol TransportProtocol { get; init; } = NetworkProtocol.Unknown;
     public int TotalLength { get; init; }
     public string Summary { get; init; } = string.Empty;
     public int? ProcessId { get; init; }
@@ -21,4 +22,20 @@ public record PacketFrame
     public string? SourceMac { get; init; }
     public string? DestinationMac { get; init; }
     public ushort? EtherType { get; init; }
+    public byte? IpTtl { get; init; }
+    public byte? IpProtocolNumber { get; init; }
+    public ushort? IpIdentification { get; init; }
+    public int? IpFragmentOffset { get; init; }
+    public int? IpHeaderLength { get; init; }
+    public int? EthernetHeaderLength { get; init; }
+    public int? TransportHeaderLength { get; init; }
+    public int? TransportPayloadOffset { get; init; }
+    public uint? TcpSequenceNumber { get; init; }
+    public uint? TcpAcknowledgmentNumber { get; init; }
+    public byte? TcpFlags { get; init; }
+    public ushort? TcpWindow { get; init; }
+    public string? DnsQueryName { get; init; }
+    public IReadOnlyList<PacketDetail> Details { get; init; } = Array.Empty<PacketDetail>();
 }
+
+public sealed record PacketDetail(string Layer, string Name, string Value);

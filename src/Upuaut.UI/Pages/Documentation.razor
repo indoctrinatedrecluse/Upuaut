@@ -153,21 +153,25 @@
                 <ol>
                     <li>Choose a channel and time range, then select <strong>Query Logs</strong>.</li>
                     <li>Filter by severity, provider, or search text. Quick Triage presets cover common crash, network, storage, and security investigations.</li>
-                    <li>Select an event to inspect it, switch to Failure Clusters to group related records, or export a triage report.</li>
+                    <li>Use Event ID, Provider, severity, time range, and search together. Failure Clusters group records by provider, event ID, severity, and a normalized message prefix.</li>
+                    <li>Select an event to inspect it, save/load an investigation JSON case, or export filtered JSON/CSV.</li>
                     <li>To inspect an offline log, select <strong>Load .evtx</strong> and enter its full file path.</li>
                 </ol>
                 <h4>Inspect network traffic with Scout</h4>
                 <ol>
                     <li>Choose an adapter and a capture mode before starting.</li>
                     <li><strong>Native IPv4</strong> uses Windows raw sockets and requires administrator privileges. <strong>Ethernet</strong> uses Npcap and captures link-layer frames.</li>
-                    <li>Select <strong>Start Capture</strong>, then filter by protocol, process, IP address, port, domain, or payload.</li>
-                    <li>Select a packet to inspect its details. Select <strong>Stop Capture</strong> to end collection; <strong>Clear</strong> clears the in-memory buffer.</li>
+                    <li>Optionally enter a capture filter such as <code>tcp.port == 443</code> before starting. This is evaluated in user space before packets enter Scout's buffer.</li>
+                    <li>Use the display filter for buffered packets. For example: <code>ip.src == 10.0.0.5 &amp;&amp; tcp.port == 443</code>, <code>dns.qry.name contains example</code>, <code>tls</code>, or <code>process contains chrome</code>.</li>
+                    <li>Select a packet to inspect the decoded layer tree and full captured bytes. Conversations can be grouped by endpoints; TCP Follow shows sequence-ordered bytes and marks capture gaps.</li>
+                    <li>Open or save PCAPNG files. Imports support Ethernet and raw IPv4/IPv6 and stop at 250,000 frames. The live FIFO buffer holds up to 15,000 frames.</li>
+                    <li>Use <strong>Stop Capture</strong> to end collection; <strong>Clear</strong> clears the live in-memory buffer. Ctrl+1/2/3 navigates to Chronicles, Scout, and Scales.</li>
                 </ol>
-                <p>Capture visibility depends on adapter, permissions, and mode. Ethernet dissection currently covers IPv4 and ARP. Process attribution depends on matching traffic to a current local socket.</p>
+                <p>Capture visibility depends on adapter, permissions, and mode. Capture filters do not configure Npcap/kernel filtering. TLS payloads remain encrypted; process attribution is best effort for local IPv4 sockets.</p>
                 <h4>Triage status</h4>
-                <p>The Scales route provides an early temporal-correlation preview between recent System/Application warning or error events and packets already in Scout's capture buffer. A nearby packet is not proof of causation, and weighted anomaly scoring is not active yet.</p>
+                <p>The Scales route places recent warning/error events beside packets already in Scout's buffer. Its percentage is only normalized time proximity within ±2.5 seconds, not causal confidence. Notes and the full event/packet matches can be saved as a case JSON or CSV.</p>
             ",
-            RawText: "getting started user guide dashboard Chronicles event logs query severity provider preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap filter protocol IP port domain payload stop clear Triage correlation preview time proximity"
+            RawText: "getting started user guide dashboard Chronicles event logs query severity provider event ID saved investigation JSON CSV preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap capture display filter IPv6 PCAPNG TCP follow stream conversation raw bytes shared time keyboard shortcuts Triage correlation preview notes temporal proximity"
         ),
         new(
             Id: "in-process-blazor-hybrid",
@@ -217,8 +221,12 @@
 
                 <h4>3. The Oracle Explanation &amp; 1-Click Remediation</h4>
                 <p>Every identified error is paired with a plain-English diagnosis, root cause hypothesis, and an immediate PowerShell command (such as DISM, SFC, or Netsh) ready to copy and execute.</p>
+
+                <h4>4. Structured queries, presets &amp; cases</h4>
+                <p>Use Event ID, provider, severity, channel, time range (including a custom start/end), and free text together. Save a named filter preset in this Windows user profile for repeated queries. Save an investigation JSON case to preserve the filter and displayed event records; load it later to continue offline review. Filtered records can be exported as JSON or CSV.</p>
+                <p>Failure Clusters are grouped by provider, event ID, severity, and the first 80 characters of a message after replacing numbers and GUIDs. A repeated signature is a useful grouping clue, not proof of a common cause.</p>
             ",
-            RawText: "The Duat Chronicles EventLogReader XPath optimization BSOD BugCheck App Crashes Event 1000 Event 4625 DNS 1014 The Oracle 1-Click Remediation"
+            RawText: "The Duat Chronicles EventLogReader XPath optimization structured Event ID provider custom time named filter presets investigation JSON case export CSV failure clusters grouping signature"
         ),
 
         new(
@@ -239,7 +247,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                 <p>This asks the Windows TCP/IP stack to deliver IPv4 traffic visible to the selected interface. Raw-socket access requires elevated permissions; adapter and Windows filtering affect which traffic is visible.</p>
 
                 <h4>2. Optional Ethernet Capture</h4>
-                <p>Select <strong>Ethernet frames (Npcap)</strong> when Npcap is installed and its capture service is available. This mode exposes link-layer details and currently dissects IPv4 and ARP. IPv6 dissection is not included.</p>
+                <p>Select <strong>Ethernet frames (Npcap)</strong> when Npcap is installed and its capture service is available. It exposes Ethernet/VLAN details and dissects IPv4, IPv6 extension headers, ARP, TCP, UDP, and ICMPv6. Raw socket mode remains IPv4-only.</p>
 
                 <h4>3. Process Attribution (iphlpapi.dll)</h4>
                 <p>Scout consults the Windows TCP and UDP endpoint tables to associate packets with local processes where a current socket matches the packet endpoints. Attribution may be unavailable for unmatched or closed sockets. Resolved details can include:</p>
@@ -249,10 +257,12 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                     <li>Active TCP state (Established, TimeWait, CloseWait, Listen).</li>
                 </ul>
 
-                <h4>4. Filters &amp; Packet Inspection</h4>
-                <p>Use protocol buttons and the search field to filter visible packets. Select a packet to inspect decoded fields and available raw bytes. Packet export is not included in this release.</p>
+                <h4>4. Filters, conversations &amp; packet inspection</h4>
+                <p>Capture filters are user-space predicates applied before buffering; they do not reduce packets delivered by the capture backend. Display filters support common fields joined with <code>&amp;&amp;</code>: <code>ip.src == 10.0.0.5</code>, <code>tcp.port == 443</code>, <code>udp.dstport == 53</code>, <code>dns.qry.name contains example</code>, <code>tls</code>, and <code>process contains chrome</code>. Unsupported syntax is reported inline.</p>
+                <p>The bounded live ring buffer retains 15,000 frames and reports FIFO overwrites, user-space filtered frames, parser rejects, and socket errors. Conversations group the filtered packets by endpoint pair. TCP Follow orders segments by sequence number, trims overlaps, and marks sequence gaps; it cannot restore packets that were never captured. TLS bytes remain encrypted.</p>
+                <p>Open and save PCAPNG captures using Ethernet or raw IP link types. Imports accept IPv4/IPv6 raw packets and Ethernet, and are limited to 250,000 frames. The packet inspector shows decoded fields and full frame bytes.</p>
             ",
-            RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless Ethernet Npcap IPv4 ARP IPv6 iphlpapi GetExtendedTcpTable GetExtendedUdpTable best effort PID attribution TCP UDP DNS ICMP filters packet inspection"
+            RawText: "The Scout Packet Capture SIO_RCVALL raw sockets driverless Ethernet Npcap IPv4 IPv6 ARP ICMPv6 TCP UDP DNS TLS filters capture display PCAPNG pcap follow stream conversation ring buffer IP Helper best effort PID attribution"
         ),
 
         new(

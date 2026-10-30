@@ -15,5 +15,6 @@ public record EventCluster
     public DateTime LastSeen { get; init; }
     public LogRecord Exemplar { get; init; } = default!;
     public IReadOnlyList<string> DistinctProcesses { get; init; } = Array.Empty<string>();
+    public string GroupingReason { get; init; } = "Same provider, event ID, severity, and normalized message prefix.";
     public TimeSpan Duration => LastSeen - FirstSeen;
 }

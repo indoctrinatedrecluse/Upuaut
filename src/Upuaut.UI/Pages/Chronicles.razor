@@ -1,7 +1,10 @@
 @page "/chronicles"
 @namespace Upuaut.UI.Pages
+@using Microsoft.Win32
 @inject IChroniclesService ChroniclesService
 @inject IJSRuntime JSRuntime
+@inject Upuaut.UI.Shared.InvestigationContext Investigation
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>Upuaut — The Duat Chronicles</PageTitle>
@@ -183,11 +186,32 @@
                           OnClick="ExportReportAsync">
                 Export Triage Report
             </FluentButton>
+            <button class="pill-btn" @onclick="ExportJson">JSON</button>
+            <button class="pill-btn" @onclick="ExportCsv">CSV</button>
+            <button class="pill-btn" @onclick="SaveInvestigation">Save investigation</button>
+            <button class="pill-btn" @onclick="LoadInvestigation">Load investigation</button>
+            <button class="pill-btn" @onclick="ComparePreviousPeriodAsync">Compare prior period</button>
+            <input class="upuaut-search-input" style="width:150px" @bind="_queryPresetName" placeholder="Preset name" />
+            <button class="pill-btn" @onclick="SaveQueryPresetAsync">Save filter preset</button>
+            <select class="upuaut-select" value="" @onchange="LoadQueryPresetAsync"><option value="">Filter presets…</option>@foreach (var preset in _savedQueryPresets) { <option value="@preset.Name">@preset.Name</option> }</select>
         </div>
+    </div>
+    <div class="chronicles-query-fields">
+        <label>Event ID <input type="number" class="upuaut-search-input" @bind="_eventIdText" placeholder="Any" /></label>
+        <label>Provider <input class="upuaut-search-input" @bind="_providerQuery" placeholder="Any provider" /></label>
+        <button class="pill-btn" @onclick="ApplyStructuredQueryAsync">Apply structured query</button>
+        @if (_filter.TimeRange == LogTimeRange.Custom)
+        {
+            <label>From <input type="datetime-local" @bind="_customStart" /></label><label>To <input type="datetime-local" @bind="_customEnd" /></label>
+        }
     </div>
 
     <!-- Interactive Time Histogram -->
     <EventHistogram Logs="@FilteredLogs" BucketCount="24" />
+    @if (_comparison is { } comparison)
+    {
+        <div class="chronicles-comparison"><strong>Equal-window comparison</strong><span>Current: @comparison.CurrentCount events (@comparison.CurrentIssues issues)</span><span>Prior: @comparison.PriorCount events (@comparison.PriorIssues issues)</span><span>@(comparison.CurrentCount - comparison.PriorCount >= 0 ? "+" : "")@(comparison.CurrentCount - comparison.PriorCount) total change</span><small>@comparison.PriorStart.ToLocalTime():g → @comparison.PriorEnd.ToLocalTime():g · compared with @comparison.CurrentStart.ToLocalTime():g → @comparison.CurrentEnd.ToLocalTime():g</small></div>
+    }
 
     <!-- KPI Summary Row -->
     <div class="kpi-row">
@@ -254,6 +278,7 @@
             }
             else if (_viewMode == ViewMode.Clusters)
             {
+                <div class="cluster-method-note"><strong>Why these events are grouped:</strong> same provider, event ID, severity, and first 80 message characters after replacing numeric values and GUIDs with placeholders. Counts summarize repeats; they do not imply a shared root cause. Cluster ID: @_selectedCluster?.Fingerprint</div>
                 <EventClusterView Clusters="@_clusters"
                                   SelectedCluster="@_selectedCluster"
                                   OnClusterSelected="OnClusterSelected" />
@@ -328,6 +353,7 @@
                         <h2 class="oracle-headline">
                             @(_selectedLog.Explanation?.Summary ?? "Windows Event Record")
                         </h2>
+                        <button class="pill-btn" @onclick="OpenSelectedInScales">Send selected event to Scales</button>
 
                         @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.DecodedStatusCode))
                         {
@@ -525,6 +551,14 @@
     private bool _showEvtxPrompt;
     private string _evtxFilePath = string.Empty;
     private string? _loadedFile;
+    private string _eventIdText = string.Empty;
+    private string _providerQuery = string.Empty;
+    private string _queryPresetName = string.Empty;
+    private List<ChroniclesPreset> _savedQueryPresets = new();
+    private bool _presetsLoaded;
+    private PeriodComparison? _comparison;
+    private DateTime? _customStart;
+    private DateTime? _customEnd;
 
     private int _criticalCount;
     private int _errorCount;
@@ -536,8 +570,32 @@
         ChroniclesService.LogReceived += OnLiveLogReceived;
         ChroniclesService.StatusChanged += OnServiceStatusChanged;
 
+        _filter.TimeRange = Investigation.TimeRange;
+        _customStart = Investigation.Start?.ToLocalTime();
+        _customEnd = Investigation.End?.ToLocalTime();
+        if (Investigation.SelectedLog is { } selectedEvidence)
+        {
+            _filter.Channel = selectedEvidence.Channel;
+            _filter.EventId = selectedEvidence.EventId;
+            _eventIdText = selectedEvidence.EventId.ToString();
+            _providerQuery = selectedEvidence.ProviderName;
+        }
+
         _availableChannels = ChroniclesService.GetAvailableChannels();
         await TriggerQueryAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_presetsLoaded) return;
+        _presetsLoaded = true;
+        try
+        {
+            var saved = await JSRuntime.InvokeAsync<string[]>("upuautPreferences.get", "upuaut.chronicles.presets");
+            _savedQueryPresets = saved.Select(value => System.Text.Json.JsonSerializer.Deserialize<ChroniclesPreset>(value)).Where(preset => preset is not null).Cast<ChroniclesPreset>().ToList();
+            StateHasChanged();
+        }
+        catch { _savedQueryPresets = new(); }
     }
 
     private void SetViewMode(ViewMode mode)
@@ -583,6 +641,7 @@
         _loadedFile = null;
         _selectedProviderFacet = string.Empty;
         _filter.SelectedProviders = null;
+        _eventIdText = string.Empty; _providerQuery = string.Empty; _customStart = null; _customEnd = null;
 
         switch (presetName)
         {
@@ -661,6 +720,16 @@
 
     private async Task TriggerQueryAsync()
     {
+        if (_filter.TimeRange == LogTimeRange.Custom && (_customStart is null || _customEnd is null || _customEnd <= _customStart))
+        {
+            _statusMessage = "Set a valid custom start and end time before querying.";
+            return;
+        }
+        _filter.EventId = int.TryParse(_eventIdText, out var eventId) ? eventId : null;
+        _filter.ProviderName = string.IsNullOrWhiteSpace(_providerQuery) ? null : _providerQuery.Trim();
+        _filter.CustomStartTime = _customStart;
+        _filter.CustomEndTime = _customEnd;
+        Investigation.SetRange(_filter.TimeRange, _customStart, _customEnd);
         _isLoading = true;
         _selectedLog = null;
         StateHasChanged();
@@ -714,12 +783,21 @@
     private void SelectLog(LogRecord log)
     {
         _selectedLog = log;
+        Investigation.Select(log);
+    }
+
+    private void OpenSelectedInScales()
+    {
+        if (_selectedLog is null) return;
+        Investigation.Select(_selectedLog);
+        Navigation.NavigateTo("/weigher");
     }
 
     private void OnClusterSelected(EventCluster cluster)
     {
         _selectedCluster = cluster;
         _selectedLog = cluster.Exemplar;
+        Investigation.Select(cluster.Exemplar);
     }
 
     private void OnSearchInput(ChangeEventArgs e)
@@ -733,6 +811,8 @@
         get
         {
             var query = _allLogs.Where(l => _filter.Levels.Contains(l.Level));
+            if (_filter.EventId.HasValue) query = query.Where(l => l.EventId == _filter.EventId.Value);
+            if (!string.IsNullOrWhiteSpace(_filter.ProviderName)) query = query.Where(l => l.ProviderName.Contains(_filter.ProviderName, StringComparison.OrdinalIgnoreCase));
 
             if (_hideBenignNoise)
             {
@@ -845,6 +925,118 @@
         await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", md);
         _statusMessage = $"Exported complete triage report ({FilteredLogs.Count} events) to clipboard!";
     }
+
+    private Task ApplyStructuredQueryAsync() => TriggerQueryAsync();
+
+    private async Task ComparePreviousPeriodAsync()
+    {
+        if (Investigation.Start is not { } currentStart || Investigation.End is not { } currentEnd || currentEnd <= currentStart)
+        {
+            _statusMessage = "Choose a finite time range before comparing periods."; return;
+        }
+        try
+        {
+            var duration = currentEnd - currentStart; var priorStart = currentStart - duration;
+            var priorFilter = CloneFilter(_filter); priorFilter.TimeRange = LogTimeRange.Custom; priorFilter.CustomStartTime = priorStart; priorFilter.CustomEndTime = currentStart;
+            var priorLogs = await ChroniclesService.QueryEventLogsAsync(priorFilter);
+            if (_hideBenignNoise) priorLogs = priorLogs.Where(log => log.Explanation?.TriageRating != TriageSeverity.BenignNoise).ToArray();
+            if (!string.IsNullOrWhiteSpace(_selectedProviderFacet)) priorLogs = priorLogs.Where(log => log.ProviderName.Equals(_selectedProviderFacet, StringComparison.OrdinalIgnoreCase)).ToArray();
+            var current = FilteredLogs;
+            static int Issues(IEnumerable<LogRecord> records) => records.Count(record => record.Level is LogSeverityLevel.Warning or LogSeverityLevel.Error or LogSeverityLevel.Critical);
+            _comparison = new PeriodComparison(current.Count, Issues(current), priorLogs.Count, Issues(priorLogs), currentStart, currentEnd, priorStart, currentStart);
+            _statusMessage = "Compared the selected range with the immediately preceding period of equal length.";
+        }
+        catch (Exception ex) { _statusMessage = $"Period comparison failed: {ex.Message}"; }
+    }
+
+    private async Task SaveQueryPresetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_queryPresetName)) { _statusMessage = "Enter a name for this query preset."; return; }
+        try
+        {
+            _filter.EventId = int.TryParse(_eventIdText, out var eventId) ? eventId : null;
+            _filter.ProviderName = string.IsNullOrWhiteSpace(_providerQuery) ? null : _providerQuery.Trim();
+            _filter.CustomStartTime = _customStart; _filter.CustomEndTime = _customEnd;
+            var preset = new ChroniclesPreset(_queryPresetName.Trim(), CloneFilter(_filter), _hideBenignNoise);
+            _savedQueryPresets.RemoveAll(item => item.Name.Equals(preset.Name, StringComparison.OrdinalIgnoreCase)); _savedQueryPresets.Add(preset);
+            await JSRuntime.InvokeVoidAsync("upuautPreferences.set", "upuaut.chronicles.presets", _savedQueryPresets.Select(item => System.Text.Json.JsonSerializer.Serialize(item)).ToArray());
+            _statusMessage = $"Saved query preset '{preset.Name}' on this PC.";
+        }
+        catch (Exception ex) { _statusMessage = $"Could not save query preset: {ex.Message}"; }
+    }
+
+    private async Task LoadQueryPresetAsync(ChangeEventArgs args)
+    {
+        var name = args.Value?.ToString(); if (string.IsNullOrWhiteSpace(name)) return;
+        var preset = _savedQueryPresets.FirstOrDefault(item => item.Name == name); if (preset is null) return;
+        _filter = CloneFilter(preset.Filter); _hideBenignNoise = preset.HideBenignNoise;
+        _eventIdText = _filter.EventId?.ToString() ?? string.Empty; _providerQuery = _filter.ProviderName ?? string.Empty;
+        _customStart = _filter.CustomStartTime; _customEnd = _filter.CustomEndTime;
+        await TriggerQueryAsync();
+    }
+
+    private void ExportJson() => ExportToFile(LogExportFormat.Json, "json");
+    private void ExportCsv() => ExportToFile(LogExportFormat.Csv, "csv");
+
+    private void ExportToFile(LogExportFormat format, string extension)
+    {
+        var dialog = new SaveFileDialog { Filter = $"{extension.ToUpperInvariant()} file (*.{extension})|*.{extension}", DefaultExt = $".{extension}", FileName = $"upuaut-events-{DateTime.Now:yyyyMMdd-HHmmss}.{extension}" };
+        if (dialog.ShowDialog() != true) return;
+        try { File.WriteAllText(dialog.FileName, ChroniclesService.ExportLogs(FilteredLogs, format)); _statusMessage = $"Exported {FilteredLogs.Count:N0} filtered events to {dialog.FileName}."; }
+        catch (Exception ex) { _statusMessage = $"Export failed: {ex.Message}"; }
+    }
+
+    private void SaveInvestigation()
+    {
+        var dialog = new SaveFileDialog { Filter = "Upuaut investigation (*.upuaut-case.json)|*.upuaut-case.json", DefaultExt = ".upuaut-case.json", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.upuaut-case.json" };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            _filter.EventId = int.TryParse(_eventIdText, out var eventId) ? eventId : null;
+            _filter.ProviderName = string.IsNullOrWhiteSpace(_providerQuery) ? null : _providerQuery.Trim();
+            _filter.CustomStartTime = _customStart; _filter.CustomEndTime = _customEnd;
+            var snapshot = new InvestigationSnapshot(DateTimeOffset.Now, _filter, _hideBenignNoise, FilteredLogs);
+            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(snapshot, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            _statusMessage = $"Saved investigation with {snapshot.Events.Count:N0} displayed events.";
+        }
+        catch (Exception ex) { _statusMessage = $"Could not save investigation: {ex.Message}"; }
+    }
+
+    private void LoadInvestigation()
+    {
+        var dialog = new OpenFileDialog { Filter = "Upuaut investigation (*.upuaut-case.json)|*.upuaut-case.json", CheckFileExists = true };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var snapshot = System.Text.Json.JsonSerializer.Deserialize<InvestigationSnapshot>(File.ReadAllText(dialog.FileName)) ?? throw new InvalidDataException("The case file is empty.");
+            _filter = snapshot.Filter; _hideBenignNoise = snapshot.HideBenignNoise; _allLogs = snapshot.Events.ToList();
+            _eventIdText = _filter.EventId?.ToString() ?? string.Empty; _providerQuery = _filter.ProviderName ?? string.Empty;
+            _customStart = _filter.CustomStartTime; _customEnd = _filter.CustomEndTime; _loadedFile = dialog.FileName; ProcessLogs();
+            _statusMessage = $"Loaded investigation containing {_allLogs.Count:N0} events.";
+        }
+        catch (Exception ex) { _statusMessage = $"Could not load investigation: {ex.Message}"; }
+    }
+
+    private sealed class InvestigationSnapshot
+    {
+        public InvestigationSnapshot() { }
+        public InvestigationSnapshot(DateTimeOffset savedAt, LogFilterOptions filter, bool hideBenignNoise, IReadOnlyList<LogRecord> events) { SavedAt = savedAt; Filter = filter; HideBenignNoise = hideBenignNoise; Events = events; }
+        public DateTimeOffset SavedAt { get; init; }
+        public LogFilterOptions Filter { get; init; } = new();
+        public bool HideBenignNoise { get; init; }
+        public IReadOnlyList<LogRecord> Events { get; init; } = Array.Empty<LogRecord>();
+    }
+    private sealed class ChroniclesPreset
+    {
+        public ChroniclesPreset() { }
+        public ChroniclesPreset(string name, LogFilterOptions filter, bool hideBenignNoise) { Name = name; Filter = filter; HideBenignNoise = hideBenignNoise; }
+        public string Name { get; init; } = string.Empty;
+        public LogFilterOptions Filter { get; init; } = new();
+        public bool HideBenignNoise { get; init; }
+    }
+    private sealed record PeriodComparison(int CurrentCount, int CurrentIssues, int PriorCount, int PriorIssues,
+        DateTime CurrentStart, DateTime CurrentEnd, DateTime PriorStart, DateTime PriorEnd);
+    private static LogFilterOptions CloneFilter(LogFilterOptions filter) => System.Text.Json.JsonSerializer.Deserialize<LogFilterOptions>(System.Text.Json.JsonSerializer.Serialize(filter)) ?? new LogFilterOptions();
 
     private async Task CopyTextAsync(string text)
     {

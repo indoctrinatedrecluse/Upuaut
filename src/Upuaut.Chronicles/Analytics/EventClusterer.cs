@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Upuaut.Core.Models;
 
 namespace Upuaut.Chronicles.Analytics;
@@ -53,7 +54,8 @@ public class EventClusterer
     private static string GenerateFingerprint(LogRecord log)
     {
         // Normalize message: strip variable digits, GUIDs, and timestamps
-        var msgPrefix = log.Message.Length > 80 ? log.Message[..80] : log.Message;
+        var normalized = Regex.Replace(log.Message, @"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b|\b\d+\b", "#");
+        var msgPrefix = normalized.Length > 80 ? normalized[..80] : normalized;
         var rawKey = $"{log.ProviderName}_{log.EventId}_{log.Level}_{msgPrefix.Trim()}";
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
