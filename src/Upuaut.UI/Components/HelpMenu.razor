@@ -116,7 +116,7 @@
     private readonly HelpTopic[] _topics =
     [
         new("GETTING STARTED", "Choose a workspace", "The dashboard is the launch point for Upuaut’s available tools.",
-        ["Open Chronicles to query local Windows event logs or load an exported .evtx file.", "Open Scout to inspect live network traffic. Choose a capture mode and adapter before starting.", "Use the Scales (Triage) entry to view its current work-in-progress status."]),
+        ["Open Chronicles to query local Windows event logs or load an exported .evtx file.", "Open Scout to inspect live network traffic. Choose a capture mode and adapter before starting.", "Use the Scales (Triage) entry to compare recent events with packets already in Scout’s buffer."]),
         new("CHRONICLES · EVENT LOGS", "Investigate Windows events", "Chronicles filters event records and helps group related failures.",
         ["Choose a channel such as System or Application and a time range, then select Query Logs.", "Narrow the results by severity, provider, or text; use a Quick Triage preset for common crash, network, storage, or security issues.", "Select an event to inspect its details. Switch to Failure Clusters to group similar events, or use Export Triage Report to save the current findings.", "To inspect a saved log, select Load .evtx and enter the full path to the file."]),
         new("SCOUT · PACKET CAPTURE", "Capture and inspect traffic", "Scout offers native IPv4 capture and optional Ethernet capture through Npcap.",
@@ -125,7 +125,7 @@
         ["Check that the chosen adapter is active and is the interface carrying the traffic.", "For Native IPv4, restart Upuaut with administrator privileges if Windows denies raw-socket capture.", "For Ethernet mode, install Npcap and confirm its capture service is running; this mode currently dissects IPv4 and ARP.", "Process attribution can be unavailable for packets that do not match a current local TCP/UDP socket."]),
         new("DISPLAY & PERFORMANCE", "Adjust the app canvas", "The animated background can be disabled for reduced motion or slower computers.",
         ["Use the prominent Canvas Motion switch in the top bar to turn the animated canvas and launch splash on or off.", "Open Diagnostics & Logs from the top bar when you need application logs or crash-reporting information."]),
-        new("TRIAGE · WORK IN PROGRESS", "The Scales status", "The Triage route is available as a status page while its correlation and scoring features are being developed.",
-        ["The WIP page does not show live findings or imply that anomaly scoring is active.", "Chronicles and Scout remain separate tools; no unified event-and-packet correlation is included yet."])
+        new("TRIAGE · EARLY PREVIEW", "Compare events with nearby packets", "The Scales can query recent System/Application warnings and errors and compare them with packets already in Scout’s buffer.",
+        ["Choose event channels and a time window, then select Analyze Available Signals. This does not start packet capture.", "An event is paired with its nearest buffered packet when their timestamps are within 2.5 seconds.", "The display indicates temporal proximity only. It does not determine that a packet caused an event; weighted anomaly scoring is not implemented yet."])
     ];
 }

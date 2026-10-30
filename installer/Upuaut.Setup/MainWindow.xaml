@@ -7,13 +7,15 @@
         Loaded="Window_Loaded">
     <Grid ClipToBounds="True">
         <MediaElement x:Name="InstallVideo" LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                      Stretch="UniformToFill" Volume="0" IsMuted="True" Opacity="0.25" MediaEnded="InstallVideo_MediaEnded" />
+                      Stretch="UniformToFill" Volume="0" IsMuted="True" Opacity="0.68"
+                      MediaOpened="InstallVideo_MediaOpened" MediaEnded="InstallVideo_MediaEnded" MediaFailed="InstallVideo_MediaFailed" />
+        <Image x:Name="InstallPoster" Stretch="UniformToFill" Opacity="0.82" Visibility="Collapsed" IsHitTestVisible="False" />
         <Rectangle>
             <Rectangle.Fill>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#F2090A0D" Offset="0" />
-                    <GradientStop Color="#D9090A0D" Offset="0.55" />
-                    <GradientStop Color="#F20A0D15" Offset="1" />
+                    <GradientStop Color="#A9090A0D" Offset="0" />
+                    <GradientStop Color="#80090A0D" Offset="0.55" />
+                    <GradientStop Color="#B30A0D15" Offset="1" />
                 </LinearGradientBrush>
             </Rectangle.Fill>
         </Rectangle>
@@ -47,7 +49,7 @@
                     <TextBlock x:Name="VersionLabel" Text="VERSION 1.0.0" Foreground="#777985" FontFamily="Consolas" FontSize="10" Margin="0,30,0,0" />
                 </StackPanel>
 
-                <Border x:Name="InstallPanel" Grid.Column="1" CornerRadius="10" BorderBrush="#564B35" BorderThickness="1" Background="#E50E1017" Padding="27">
+                <Border x:Name="InstallPanel" Grid.Column="1" CornerRadius="10" BorderBrush="#806E5130" BorderThickness="1" Background="#C20E1017" Padding="27">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <StackPanel>
@@ -62,6 +64,7 @@
                                 <TextBox x:Name="InstallPathBox" Height="38" Padding="10,8" VerticalContentAlignment="Center" Background="#12131A" Foreground="#E5E7EB" BorderBrush="#3C3940" />
                                 <Button Grid.Column="1" Content="Browse" Margin="8,0,0,0" Click="Browse_Click" />
                             </Grid>
+                            <TextBlock x:Name="ExistingInstallStatusText" Visibility="Collapsed" Foreground="#7DD3A8" FontFamily="Consolas" FontSize="9" TextWrapping="Wrap" Margin="0,7,0,0" />
                         </StackPanel>
 
                         <StackPanel Grid.Row="2" Margin="0,21,0,0">
@@ -69,7 +72,8 @@
                             <Border Margin="0,9,0,0" Padding="12" BorderBrush="#292B35" BorderThickness="1" Background="#111219">
                                 <StackPanel>
                                     <TextBlock Text="For this Windows account" Foreground="#E5E7EB" FontSize="12" FontWeight="SemiBold" />
-                                    <TextBlock Text="No system-wide changes. A Start Menu shortcut will be created." Foreground="#8D909A" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock Text="Per-user install. A Start Menu shortcut will always be created." Foreground="#8D909A" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,7" />
+                                    <CheckBox x:Name="CreateDesktopShortcutCheckBox" Content="Create a desktop shortcut" IsChecked="True" Foreground="#E5E7EB" FontSize="11" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -87,7 +91,7 @@
                     </Grid>
                 </Border>
 
-                <Border x:Name="UninstallPanel" Grid.Column="1" CornerRadius="10" BorderBrush="#564B35" BorderThickness="1" Background="#E50E1017" Padding="27" Visibility="Collapsed">
+                <Border x:Name="UninstallPanel" Grid.Column="1" CornerRadius="10" BorderBrush="#806E5130" BorderThickness="1" Background="#C20E1017" Padding="27" Visibility="Collapsed">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <StackPanel>

@@ -1,23 +1,220 @@
 @page "/weigher"
 @namespace Upuaut.UI.Pages
+@using Upuaut.Core.Models
+@using Upuaut.Scout.Services
+@inject IChroniclesService ChroniclesService
+@inject ScoutManager ScoutService
 @inject NavigationManager Navigation
 
-<PageTitle>Upuaut — The Scales of Ma'at · Work in Progress</PageTitle>
+<PageTitle>Upuaut — The Scales of Ma’at</PageTitle>
 
-<div class="wip-backdrop" role="presentation">
-    <section class="wip-dialog" role="dialog" aria-modal="true" aria-labelledby="wip-title">
-        <div class="wip-sigil" aria-hidden="true">⚖</div>
-        <span class="wip-kicker">THE SCALES // DEVELOPMENT CHAMBER</span>
-        <h1 id="wip-title">This subsystem is still in progress</h1>
-        <p>
-            Ma’at’s Triage interface is under active development. Its correlation and anomaly-scoring features are not
-            available yet, so this page does not display live findings.
-        </p>
-        <div class="wip-status"><span></span> WORK IN PROGRESS <b>·</b> NOT AVAILABLE IN THIS BUILD</div>
-        <button class="wip-return" @onclick="ReturnToDashboard">Return to the dashboard <span aria-hidden="true">→</span></button>
+<div class="triage-page">
+    <header class="triage-page-header">
+        <div>
+            <span class="triage-eyebrow">MA’AT // SIGNAL CORRELATION PREVIEW</span>
+            <h1>⚖ The Scales</h1>
+            <p>Place Windows events beside recent Scout traffic to inspect what happened around the same time.</p>
+        </div>
+        <div class="triage-controls">
+            <label>
+                <span>EVENT CHANNEL</span>
+                <select class="upuaut-select" @bind="_channel" disabled="@_isLoading">
+                    <option value="Both">System + Application</option>
+                    <option value="System">System</option>
+                    <option value="Application">Application</option>
+                </select>
+            </label>
+            <label>
+                <span>TIME WINDOW</span>
+                <select class="upuaut-select" @bind="_timeWindow" disabled="@_isLoading">
+                    <option value="LastHour">Last hour</option>
+                    <option value="Last24Hours">Last 24 hours</option>
+                    <option value="Last7Days">Last 7 days</option>
+                </select>
+            </label>
+            <FluentButton Appearance="ButtonAppearance.Primary" IconStart="@(new Icons.Regular.Size16.Scales())" Loading="_isLoading" OnClick="AnalyzeAsync">
+                @(_hasAnalyzed ? "Refresh Analysis" : "Analyze Available Signals")
+            </FluentButton>
+        </div>
+    </header>
+
+    <div class="triage-preview-note">
+        <span class="triage-preview-pulse"></span>
+        <div><strong>Correlation preview</strong><span>Time proximity is evidence to inspect, not proof that one signal caused another.</span></div>
+        <span class="triage-window-chip">± 2.5 SEC</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="triage-status" role="status">@_statusMessage</div>
+    }
+
+    <section class="triage-summary-grid" aria-label="Analysis summary">
+        <article class="triage-summary-card"><span>EVENTS REVIEWED</span><strong>@_items.Count</strong><small>@_channel · @_timeWindowLabel</small></article>
+        <article class="triage-summary-card"><span>TEMPORAL MATCHES</span><strong>@_items.Count(item => item.NearestPacket is not null)</strong><small>Packet within 2.5 seconds</small></article>
+        <article class="triage-summary-card"><span>SCOUT BUFFER</span><strong>@_packetCount.ToString("N0")</strong><small>Previously captured frames</small></article>
+        <article class="triage-summary-card triage-summary-alert"><span>ERRORS / CRITICAL</span><strong>@_items.Count(item => item.Log.Level is LogSeverityLevel.Error or LogSeverityLevel.Critical)</strong><small>Included in this review</small></article>
     </section>
+
+    <section class="triage-results-panel">
+        <div class="triage-results-heading">
+            <div><span class="triage-eyebrow">RECENT SIGNALS</span><h2>Event and packet timeline</h2></div>
+            <span class="triage-result-count">@(_hasAnalyzed ? $"{_items.Count} EVENTS" : "ANALYSIS NOT RUN")</span>
+        </div>
+
+        @if (!_hasAnalyzed && !_isLoading)
+        {
+            <div class="triage-empty-state">
+                <span class="triage-empty-sigil">⚖</span>
+                <strong>Choose a window and analyze available signals</strong>
+                <p>Chronicles will query the selected Windows event channels. Scout traffic is read from its current in-memory capture buffer.</p>
+                <div class="triage-empty-actions">
+                    <button @onclick='() => Navigation.NavigateTo("chronicles")'>Open Chronicles</button>
+                    <button @onclick='() => Navigation.NavigateTo("scout")'>Open Scout</button>
+                </div>
+            </div>
+        }
+        else if (_hasAnalyzed && _items.Count == 0 && !_isLoading)
+        {
+            <div class="triage-empty-state compact"><strong>No matching warning or error events were returned.</strong><p>Try a wider time window, a different channel, or review channel permissions.</p></div>
+        }
+        else
+        {
+            <div class="triage-table-scroll">
+                <table class="triage-table">
+                    <thead><tr><th>TIME</th><th>SEVERITY</th><th>EVENT</th><th>NEARBY SCOUT TRAFFIC</th><th>TIME DELTA</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr class="@(_selectedItem?.Log.RecordId == item.Log.RecordId && _selectedItem?.Log.Channel == item.Log.Channel ? "selected" : "")" @onclick="() => SelectItem(item)">
+                                <td class="triage-time">@item.Log.Timestamp.ToLocalTime().ToString("MMM dd HH:mm:ss")</td>
+                                <td><span class="triage-severity @SeverityClass(item.Log.Level)">@item.Log.Level.ToString().ToUpperInvariant()</span></td>
+                                <td><strong>@item.Log.ProviderName</strong><span class="triage-event-detail">Event @item.Log.EventId · @item.Log.Channel</span></td>
+                                <td>
+                                    @if (item.NearestPacket is { } packet)
+                                    {
+                                        <strong>@packet.Protocol · @packet.Summary</strong>
+                                        <span class="triage-event-detail">@packet.SourceIp@Port(packet.SourcePort) → @packet.DestinationIp@Port(packet.DestinationPort) · @(packet.ProcessName ?? "Process unavailable")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="triage-no-match">No packet in the selected time window</span>
+                                    }
+                                </td>
+                                <td class="triage-time-delta">@(item.TimeDelta is { } delta ? $"{delta.TotalMilliseconds:+0;-0;0} ms" : "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (_selectedItem is { } selected)
+    {
+        <section class="triage-detail-panel">
+            <div><span class="triage-eyebrow">SELECTED EVENT · @selected.Log.Channel · ID @selected.Log.EventId</span><h2>@(selected.Log.Explanation?.Summary ?? selected.Log.Message)</h2></div>
+            <p><strong>Provider:</strong> @selected.Log.ProviderName <span>·</span> <strong>Time:</strong> @selected.Log.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff")</p>
+            @if (selected.Log.ProcessId is { } processId)
+            {
+                <p><strong>Process ID:</strong> @processId</p>
+            }
+            @if (selected.NearestPacket is { } nearby)
+            {
+                <p><strong>Nearest captured frame:</strong> @nearby.Protocol, @nearby.SourceIp@Port(nearby.SourcePort) → @nearby.DestinationIp@Port(nearby.DestinationPort), @Math.Abs(selected.TimeDelta?.TotalMilliseconds ?? 0).ToString("N0") ms from this event.</p>
+                <p class="triage-caveat">This is a time-based association only. It does not establish that the packet caused the event.</p>
+            }
+            else
+            {
+                <p class="triage-caveat">No buffered packet fell within 2.5 seconds of this event. Scout only contributes packets captured before this analysis.</p>
+            }
+        </section>
+    }
 </div>
 
 @code {
-    private void ReturnToDashboard() => Navigation.NavigateTo("/");
+    private const int CorrelationWindowMilliseconds = 2500;
+    private string _channel = "Both";
+    private LogTimeRange _timeWindow = LogTimeRange.Last24Hours;
+    private List<TriageItem> _items = new();
+    private TriageItem? _selectedItem;
+    private int _packetCount;
+    private bool _isLoading;
+    private bool _hasAnalyzed;
+    private string _statusMessage = "";
+
+    private string _timeWindowLabel => _timeWindow switch
+    {
+        LogTimeRange.LastHour => "Last hour",
+        LogTimeRange.Last7Days => "Last 7 days",
+        _ => "Last 24 hours"
+    };
+
+    private async Task AnalyzeAsync()
+    {
+        if (_isLoading) return;
+        _isLoading = true;
+        _statusMessage = "Reading event channels and the current Scout buffer…";
+        _selectedItem = null;
+
+        try
+        {
+            var channels = _channel == "Both" ? new[] { "System", "Application" } : new[] { _channel };
+            var requests = channels.Select(channel => ChroniclesService.QueryEventLogsAsync(new LogFilterOptions
+            {
+                Channel = channel,
+                TimeRange = _timeWindow,
+                Levels = new HashSet<LogSeverityLevel> { LogSeverityLevel.Warning, LogSeverityLevel.Error, LogSeverityLevel.Critical },
+                MaxEvents = 1200
+            }));
+            var channelResults = await Task.WhenAll(requests);
+            var logs = channelResults.SelectMany(records => records)
+                .OrderByDescending(record => record.Timestamp)
+                .Take(1500)
+                .ToList();
+
+            var packets = ScoutService.GetRecentFrames(maxFrames: 2500);
+            _packetCount = packets.Count;
+            _items = logs.Select(log => Correlate(log, packets)).ToList();
+            _hasAnalyzed = true;
+            var matches = _items.Count(item => item.NearestPacket is not null);
+            _statusMessage = $"Reviewed {_items.Count:N0} events and {_packetCount:N0} buffered packets. {matches:N0} event(s) have nearby packet traffic.";
+        }
+        catch (Exception ex)
+        {
+            _statusMessage = $"The analysis could not complete: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static TriageItem Correlate(LogRecord log, IReadOnlyList<PacketFrame> packets)
+    {
+        var eventTime = AsUtc(log.Timestamp);
+        var nearest = packets
+            .Select(packet => (Packet: packet, Delta: AsUtc(packet.Timestamp) - eventTime))
+            .Where(candidate => Math.Abs(candidate.Delta.TotalMilliseconds) <= CorrelationWindowMilliseconds)
+            .OrderBy(candidate => Math.Abs(candidate.Delta.TotalMilliseconds))
+            .FirstOrDefault();
+
+        return nearest.Packet is null
+            ? new TriageItem(log, null, null)
+            : new TriageItem(log, nearest.Packet, nearest.Delta);
+    }
+
+    private static DateTime AsUtc(DateTime value) => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+    private static string Port(int? port) => port is null ? "" : $":{port}";
+
+    private static string SeverityClass(LogSeverityLevel level) => level switch
+    {
+        LogSeverityLevel.Critical => "critical",
+        LogSeverityLevel.Error => "error",
+        _ => "warning"
+    };
+
+    private void SelectItem(TriageItem item) => _selectedItem = item;
+
+    private sealed record TriageItem(LogRecord Log, PacketFrame? NearestPacket, TimeSpan? TimeDelta);
 }

@@ -165,9 +165,9 @@
                 </ol>
                 <p>Capture visibility depends on adapter, permissions, and mode. Ethernet dissection currently covers IPv4 and ARP. Process attribution depends on matching traffic to a current local socket.</p>
                 <h4>Triage status</h4>
-                <p>The Scales route currently displays a work-in-progress notice. Unified event and packet correlation and weighted anomaly scoring are not active.</p>
+                <p>The Scales route provides an early temporal-correlation preview between recent System/Application warning or error events and packets already in Scout's capture buffer. A nearby packet is not proof of causation, and weighted anomaly scoring is not active yet.</p>
             ",
-            RawText: "getting started user guide dashboard Chronicles event logs query severity provider preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap filter protocol IP port domain payload stop clear Triage work in progress"
+            RawText: "getting started user guide dashboard Chronicles event logs query severity provider preset clusters export evtx Scout packet capture adapter Raw IPv4 administrator Ethernet Npcap filter protocol IP port domain payload stop clear Triage correlation preview time proximity"
         ),
         new(
             Id: "in-process-blazor-hybrid",
@@ -305,7 +305,7 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                     <li><code>src/Upuaut.Core</code>: Shared models, diagnostic logging (AppLogger), and crash reporter (CrashReporter).</li>
                     <li><code>src/Upuaut.Chronicles</code>: Windows Event Log ingestion engine, XPath query compiler, and The Oracle forensic decoder.</li>
                     <li><code>src/Upuaut.Scout</code>: Driverless raw socket capture engine, IP Helper P/Invoke, and protocol dissectors.</li>
-                    <li><code>src/Upuaut.Weigher</code>: system anomaly correlation work in progress; its route shows a work-in-progress notice.</li>
+                    <li><code>src/Upuaut.Weigher</code>: early time-proximity preview joining recent Windows warnings/errors with packets already buffered by Scout.</li>
                     <li><code>tests/Upuaut.Tests</code>: Unit test suite for dissectors, log decoders, and forensic heuristics.</li>
                 </ul>
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 
 namespace Upuaut.Setup;
@@ -28,15 +29,52 @@ public partial class MainWindow : Window
             InstallPathBox.Text = key?.GetValue("InstallLocation") as string ?? AppContext.BaseDirectory;
             InstalledPathLabel.Text = InstallPathBox.Text;
         }
+        else
+        {
+            DetectExistingInstallation();
+        }
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        var videoPath = Path.Combine(AppContext.BaseDirectory, "media", "upuaut-installer-loop.mp4");
-        if (!File.Exists(videoPath)) videoPath = Path.Combine(InstallDirectory, "media", "upuaut-installer-loop.mp4");
-        if (!File.Exists(videoPath)) return;
+        var mediaDirectory = Path.Combine(AppContext.BaseDirectory, "media");
+        var installMediaDirectory = Path.Combine(InstallDirectory, "media");
+        var posterPath = ExistingFile(mediaDirectory, installMediaDirectory, "upuaut-splash-poster.jpg");
+        if (posterPath is not null)
+        {
+            InstallPoster.Source = new BitmapImage(new Uri(posterPath));
+            InstallPoster.Visibility = Visibility.Visible;
+        }
+
+        var videoPath = ExistingFile(mediaDirectory, installMediaDirectory, "upuaut-installer-loop.mp4");
+        if (videoPath is null)
+        {
+            StatusText.Text = posterPath is null ? "Ready when you are." : "Still artwork active · video backdrop not found.";
+            return;
+        }
+
         InstallVideo.Source = new Uri(videoPath);
+    }
+
+    private static string? ExistingFile(string firstDirectory, string secondDirectory, string filename)
+    {
+        var first = Path.Combine(firstDirectory, filename);
+        if (File.Exists(first)) return first;
+        var second = Path.Combine(secondDirectory, filename);
+        return File.Exists(second) ? second : null;
+    }
+
+    private void InstallVideo_MediaOpened(object sender, RoutedEventArgs e)
+    {
+        InstallPoster.Visibility = Visibility.Collapsed;
+        InstallVideo.Position = TimeSpan.Zero;
         InstallVideo.Play();
+    }
+
+    private void InstallVideo_MediaFailed(object sender, System.Windows.ExceptionRoutedEventArgs e)
+    {
+        InstallPoster.Visibility = InstallPoster.Source is null ? Visibility.Collapsed : Visibility.Visible;
+        StatusText.Text = InstallPoster.Source is null ? "Ready when you are." : "Still artwork active · video could not be decoded.";
     }
 
     private void InstallVideo_MediaEnded(object sender, RoutedEventArgs e)
@@ -45,6 +83,66 @@ public partial class MainWindow : Window
         InstallVideo.Position = TimeSpan.Zero;
         InstallVideo.Play();
     }
+
+    private void DetectExistingInstallation()
+    {
+        var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Upuaut");
+        string? registryPath = null;
+        string? installedVersion = null;
+        var hasRegistryEntry = false;
+        using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\Upuaut"))
+        {
+            hasRegistryEntry = key is not null;
+            registryPath = key?.GetValue("InstallLocation") as string;
+            installedVersion = key?.GetValue("DisplayVersion") as string;
+        }
+
+        var processDirectory = Path.GetDirectoryName(Environment.ProcessPath);
+        var detected = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        void AddIfInstalled(string? candidate, string source)
+        {
+            if (string.IsNullOrWhiteSpace(candidate)) return;
+            try
+            {
+                var fullPath = Path.GetFullPath(candidate);
+                if (!IsUpuautInstallation(fullPath)) return;
+                if (!detected.TryGetValue(fullPath, out var sources)) detected[fullPath] = sources = new List<string>();
+                sources.Add(source);
+            }
+            catch { }
+        }
+
+        AddIfInstalled(registryPath, "Windows installed-apps entry");
+        AddIfInstalled(defaultPath, "default install folder");
+        AddIfInstalled(processDirectory, "setup launch folder");
+
+        var selected = detected.FirstOrDefault(candidate => candidate.Value.Contains("Windows installed-apps entry"));
+        if (selected.Key is null) selected = detected.FirstOrDefault(candidate => candidate.Key.Equals(defaultPath, StringComparison.OrdinalIgnoreCase));
+        if (selected.Key is null) selected = detected.FirstOrDefault();
+
+        if (selected.Key is not null)
+        {
+            InstallPathBox.Text = selected.Key;
+            InstallButton.Content = "UPDATE UPUAUT  ›";
+            var allSources = detected.SelectMany(candidate => candidate.Value).Distinct(StringComparer.OrdinalIgnoreCase);
+            var sourceText = string.Join(" + ", allSources);
+            ExistingInstallStatusText.Text = $"EXISTING INSTALL DETECTED · {sourceText}{(string.IsNullOrWhiteSpace(installedVersion) ? "" : $" · v{installedVersion}")}. Setup will update {selected.Key}.";
+            ExistingInstallStatusText.Visibility = Visibility.Visible;
+            StatusText.Text = "Existing installation found. Its files will be updated in place.";
+        }
+        else if (hasRegistryEntry)
+        {
+            ExistingInstallStatusText.Text = "A Windows uninstall entry exists, but its install files were not found. Setup will install to the default location.";
+            ExistingInstallStatusText.Foreground = System.Windows.Media.Brushes.Orange;
+            ExistingInstallStatusText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private static bool IsUpuautInstallation(string directory) =>
+        Directory.Exists(directory) &&
+        (File.Exists(Path.Combine(directory, "Upuaut.App.exe")) ||
+         File.Exists(Path.Combine(directory, "Upuaut.install-manifest.json")) ||
+         File.Exists(Path.Combine(directory, "Uninstall.exe")));
 
     private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -79,6 +177,16 @@ public partial class MainWindow : Window
         StatusText.Text = "Preparing the destination...";
         try
         {
+            foreach (var process in Process.GetProcessesByName("Upuaut.App"))
+            {
+                using (process)
+                {
+                    process.CloseMainWindow();
+                    if (!process.WaitForExit(4000))
+                        throw new InvalidOperationException("Upuaut is still running. Close it and select Update Upuaut again.");
+                }
+            }
+
             Directory.CreateDirectory(target);
             var installedFiles = ReadInstallManifest(target);
             for (var i = 0; i < files.Length; i++)
@@ -116,6 +224,11 @@ public partial class MainWindow : Window
             }
             WriteInstallManifest(target, installedFiles);
             CreateShortcut(appExe);
+            var desktopShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Upuaut.lnk");
+            if (CreateDesktopShortcutCheckBox.IsChecked == true)
+                CreateShortcut(appExe, desktopShortcut: true);
+            else if (File.Exists(desktopShortcut))
+                File.Delete(desktopShortcut);
             CreateShortcut(uninstallerExe, "Uninstall Upuaut", "--uninstall");
             WriteUninstaller(target, uninstallerExe);
             StatusText.Text = "Upuaut is ready. The path is open.";
@@ -133,11 +246,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void CreateShortcut(string executable, string shortcutName = "Upuaut", string arguments = "")
+    private static void CreateShortcut(string executable, string shortcutName = "Upuaut", string arguments = "", bool desktopShortcut = false)
     {
         var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("Windows Script Host is unavailable; could not create the Start Menu shortcut.");
         dynamic shell = Activator.CreateInstance(shellType)!;
-        var shortcutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", $"{shortcutName}.lnk");
+        var shortcutDirectory = desktopShortcut
+            ? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs");
+        var shortcutPath = Path.Combine(shortcutDirectory, $"{shortcutName}.lnk");
         Directory.CreateDirectory(Path.GetDirectoryName(shortcutPath)!);
         dynamic shortcut = shell.CreateShortcut(shortcutPath);
         shortcut.TargetPath = executable;
@@ -231,8 +347,9 @@ public partial class MainWindow : Window
     private static string CreateCleanupScript(string installDirectory, bool removeUserData)
     {
         var startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs");
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var data = System.Text.Json.JsonSerializer.Serialize(new { installDirectory, startMenu, localAppData, removeUserData });
+        var data = System.Text.Json.JsonSerializer.Serialize(new { installDirectory, startMenu, desktop, localAppData, removeUserData });
         var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(data));
         var script = Path.Combine(Path.GetTempPath(), $"Upuaut-Uninstall-{Guid.NewGuid():N}.ps1");
         File.WriteAllText(script, $$"""
@@ -242,6 +359,8 @@ public partial class MainWindow : Window
             $startMenu = [System.IO.Path]::GetFullPath($data.startMenu)
             Remove-Item -LiteralPath (Join-Path $startMenu 'Upuaut.lnk') -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath (Join-Path $startMenu 'Uninstall Upuaut.lnk') -Force -ErrorAction SilentlyContinue
+            $desktop = [System.IO.Path]::GetFullPath($data.desktop)
+            Remove-Item -LiteralPath (Join-Path $desktop 'Upuaut.lnk') -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Upuaut' -Recurse -Force -ErrorAction SilentlyContinue
             $install = [System.IO.Path]::GetFullPath($data.installDirectory)
             $manifestPath = Join-Path $install 'Upuaut.install-manifest.json'

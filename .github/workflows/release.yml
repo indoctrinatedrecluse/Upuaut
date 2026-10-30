@@ -61,6 +61,10 @@ jobs:
           } else {
             Write-Warning "No installer video at $installerVideo; setup will use its dark and gold fallback canvas."
           }
+          $installerPoster = 'src/Upuaut.App/wwwroot/media/upuaut-splash-poster.jpg'
+          if (Test-Path $installerPoster) {
+            Copy-Item $installerPoster (Join-Path $stage 'media/upuaut-splash-poster.jpg') -Force
+          }
           $archive = "artifacts/Upuaut-Setup-win-x64-v$env:UPUAUT_VERSION.zip"
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal -Force
           "UPUAUT_ARCHIVE=$archive" >> $env:GITHUB_ENV

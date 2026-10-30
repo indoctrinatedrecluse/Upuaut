@@ -201,8 +201,9 @@ Upuaut/
 - [x] **About & Architect Specs (`/about`):** Detailed application specifications and background credentials.
 
 ### Phase 5: The Scales (Correlation & Anomaly Detection) ⚪
-- [ ] The `/weigher` route currently shows a work-in-progress notice; it does not report live triage results.
-- [ ] Correlated timeline view matching network drops to system event errors.
+- [x] Initial `/weigher` preview queries System/Application warnings and errors and lines them up with already-buffered Scout packets within ±2.5 seconds.
+- [ ] Causal/root-cause analysis and automated heuristic severity scoring; temporal proximity alone is not causal evidence.
+- [ ] Expanded cross-signal timeline with grouping beyond the current event-by-event time-proximity preview.
 - [ ] Automated heuristic triage (highlighting suspicious error bursts and timeouts).
 - [ ] Capture export (`.pcapng` and `.evtx` / structured `.json`).
 
