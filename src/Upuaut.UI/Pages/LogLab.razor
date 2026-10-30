@@ -284,6 +284,7 @@
                                 <div class="llm-review-heading"><span>AI SECOND OPINION</span><small>@(_llmConfiguration.HasApiKey ? _llmConfiguration.Provider.ToString().ToUpperInvariant() + " Â· ON REQUEST" : "DISABLED Â· CONFIGURE AI SERVICES")</small></div>
                                 <button class="log-lab-tool-btn llm-review-button" @onclick="RequestLlmReview" disabled="@(_llmBusy || !_llmConfiguration.HasApiKey)">@(_llmBusy ? "ANALYZING SELECTED ENTRY..." : "REQUEST AI REVIEW")</button>
                                 <p>Only this selected entry is submitted. The local rule-based findings above remain available without an API key.</p>
+                                @if (_llmResultEntryIndex == selected.Index && _llmBudget is { } logBudget) { <p class="llm-review-budget" title="@logBudget.Explain()">PROMPT @logBudget.Describe().ToUpperInvariant()</p> }
                                 @if (_llmBusy) { <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER Â· WAITING FOR ANALYSIS</div> }
                                 @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmResult)) { <article class="llm-review-result"><div>AI RESPONSE · MARKDOWN · VERIFY AGAINST ORIGINAL LOG</div><section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_llmResult))</section></article> }
                                 @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmError)) { <div class="llm-review-error" role="alert">@_llmError</div> }
@@ -363,6 +364,7 @@
     private string _llmResult = string.Empty;
     private string _llmError = string.Empty;
     private int? _llmResultEntryIndex;
+    private AiPromptBudget? _llmBudget;
     private bool _showWholeDocument;
     private int _entryLimit = 500;
     private string _categoryFilter = string.Empty;
@@ -453,9 +455,18 @@
     {
         if (_selectedEntry is null || !_llmConfiguration.HasApiKey || _llmBusy) return;
         var selected = _selectedEntry;
-        var context = $"File type: {_document?.FileTypeLabel ?? "unknown"}\nFormat: {_document?.Format.ToString() ?? "unknown"}\nSource: {selected.Source ?? "unknown"}\nSource line: {selected.SourceLine}\nSeverity: {selected.Severity}\n\nRaw entry:\n{selected.RawText}";
-        _llmBusy = true; _llmResult = string.Empty; _llmError = string.Empty; _llmResultEntryIndex = selected.Index;
-        try { _llmResult = await LlmAssistant.AnalyzeAsync(context); }
+        var request = AiPromptEngine.BuildLogEntryRequest(
+            selected.RawText,
+            _document?.FileTypeLabel,
+            _document?.Format.ToString(),
+            selected.Source,
+            selected.SourceLine,
+            selected.Severity.ToString(),
+            selected.Timestamp?.UtcDateTime,
+            selected.Fields,
+            selected.InterpretationBasis);
+        _llmBusy = true; _llmResult = string.Empty; _llmError = string.Empty; _llmBudget = null; _llmResultEntryIndex = selected.Index;
+        try { _llmResult = await LlmAssistant.AnalyzeInvestigationAsync(request); _llmBudget = request.Budget; }
         catch (Exception ex)
         {
             Logger.LogWarning("Manual AI review failed ({ErrorType}); provider response details and log contents are omitted from application logs.", ex.GetType().Name);

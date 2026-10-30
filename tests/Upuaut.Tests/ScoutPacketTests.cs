@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using Upuaut.Core.Models;
 using Upuaut.Scout.Parsers;
 using Xunit;
@@ -131,5 +132,207 @@ public class ScoutPacketTests
         Assert.NotNull(frame);
         Assert.True(frame.HasErrorOrRetransmit);
         Assert.Contains("CONN RESET/REFUSED", frame.Summary);
+    }
+
+    [Fact]
+    public void DnsQueryWithNonHostnameLabelBytesIsSuppressed()
+    {
+        // A crafted label carrying CR/LF and header-like text must never reach the summary or the evidence list.
+        var label = Encoding.ASCII.GetBytes("evil\r\nInjected");
+        var dnsLength = 12 + 1 + label.Length + 1;
+        var packet = BuildUdpPacket(49152, 53, dnsLength);
+        var dns = new byte[dnsLength];
+        dns[5] = 1; // QDCOUNT = 1
+        dns[12] = (byte)label.Length;
+        label.CopyTo(dns, 13);
+        dns[13 + label.Length] = 0;
+        dns.CopyTo(packet, 28);
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 5);
+
+        Assert.NotNull(frame);
+        Assert.Equal(NetworkProtocol.DNS, frame.Protocol);
+        Assert.Null(frame.DnsQueryName);
+        Assert.DoesNotContain("\r", frame.Summary);
+        Assert.DoesNotContain("\n", frame.Summary);
+        Assert.DoesNotContain("Injected", frame.Summary);
+        Assert.Contains("DNS Datagram", frame.Summary);
+    }
+
+    [Fact]
+    public void DnsQueryWithOversizedOrPointerLabelIsSuppressed()
+    {
+        var label = Enumerable.Repeat((byte)'a', 64).ToArray();
+        var dnsLength = 12 + 1 + label.Length + 1;
+        var packet = BuildUdpPacket(49152, 53, dnsLength);
+        packet[28 + 5] = 1; // QDCOUNT = 1
+        packet[28 + 12] = 0x40; // Invalid label length (64) with compression bits set
+        label.CopyTo(packet, 28 + 13);
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 6);
+
+        Assert.NotNull(frame);
+        Assert.Null(frame.DnsQueryName);
+        Assert.Contains("DNS Datagram", frame.Summary);
+    }
+
+    [Fact]
+    public void TruncatedIpv4CaptureIsFlaggedAndClamped()
+    {
+        var packet = new byte[40];
+
+        packet[0] = 0x45;
+        packet[2] = 0x05; packet[3] = 0xDC; // Declares 1500 bytes but only 40 were captured
+        packet[8] = 64;
+        packet[9] = 6; // TCP
+
+        packet[12] = 192; packet[13] = 168; packet[14] = 0; packet[15] = 2;
+        packet[16] = 192; packet[17] = 168; packet[18] = 0; packet[19] = 3;
+
+        packet[20] = 0x1F; packet[21] = 0x90;
+        packet[22] = 0x00; packet[23] = 0x50;
+        packet[32] = 0x50;
+        packet[33] = 0x02; // SYN
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 7);
+
+        Assert.NotNull(frame);
+        Assert.Equal(40, frame.TotalLength);
+        Assert.Contains("[Truncated]", frame.Summary);
+        Assert.Contains(frame.Details, detail => detail.Name == "Capture" && detail.Value.Contains("Truncated", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TcpSegmentWithInvalidDataOffsetIsFlaggedInsteadOfDropped()
+    {
+        var packet = new byte[40];
+
+        packet[0] = 0x45;
+        packet[2] = 0x00; packet[3] = 40;
+        packet[8] = 64;
+        packet[9] = 6; // TCP
+
+        packet[12] = 10; packet[13] = 0; packet[14] = 0; packet[15] = 5;
+        packet[16] = 10; packet[17] = 0; packet[18] = 0; packet[19] = 6;
+
+        packet[20] = 0x30; packet[21] = 0x39;
+        packet[22] = 0x01; packet[23] = 0xBB;
+        packet[32] = 0x00; // Data offset 0 is impossible
+        packet[33] = 0x10; // ACK
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 8);
+
+        Assert.NotNull(frame);
+        Assert.Equal(NetworkProtocol.TCP, frame.Protocol);
+        Assert.True(frame.HasErrorOrRetransmit);
+        Assert.Contains("[INVALID TCP HEADER LENGTH]", frame.Summary);
+        Assert.Contains(frame.Details, detail => detail.Name == "Header length anomaly");
+        Assert.Equal(40, frame.TransportPayloadOffset!.Value);
+    }
+
+    [Fact]
+    public void UdpDatagramWithImpossibleLengthIsFlaggedInsteadOfDropped()
+    {
+        var packet = BuildUdpPacket(5000, 5001, 12);
+        packet[24] = 0x00; packet[25] = 0x04; // Declares 4 bytes, below the 8-byte UDP header
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 9);
+
+        Assert.NotNull(frame);
+        Assert.Equal(NetworkProtocol.UDP, frame.Protocol);
+        Assert.True(frame.HasErrorOrRetransmit);
+        Assert.Contains("[INVALID UDP LENGTH]", frame.Summary);
+        Assert.Contains(frame.Details, detail => detail.Name == "Length anomaly");
+    }
+
+    [Fact]
+    public void HttpEvidenceMasksControlCharactersAndDropsQueryStrings()
+    {
+        var payload = Encoding.ASCII.GetBytes("GET /index.html?token=secret HTTP/1.1\r\nHost: example.test\u001b[31m\r\nUser-Agent: probe\r\n\r\n");
+        var packet = new byte[20 + 20 + payload.Length];
+
+        packet[0] = 0x45;
+        packet[2] = (byte)(packet.Length >> 8); packet[3] = (byte)packet.Length;
+        packet[8] = 64;
+        packet[9] = 6; // TCP
+
+        packet[12] = 10; packet[13] = 0; packet[14] = 0; packet[15] = 7;
+        packet[16] = 10; packet[17] = 0; packet[18] = 0; packet[19] = 8;
+
+        packet[20] = 0xC0; packet[21] = 0x00;
+        packet[22] = 0x00; packet[23] = 0x50;
+        packet[32] = 0x50;
+        packet[33] = 0x18; // PSH + ACK
+        payload.CopyTo(packet, 40);
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 10);
+
+        Assert.NotNull(frame);
+        Assert.Equal(NetworkProtocol.HTTP, frame.Protocol);
+        Assert.NotNull(frame.Interpretation);
+        var request = Assert.Single(frame.Interpretation!.Evidence, item => item.Label == "HTTP request");
+        Assert.Equal("GET /index.html", request.Value);
+        var host = Assert.Single(frame.Interpretation.Evidence, item => item.Label == "HTTP Host");
+        Assert.Contains("example.test", host.Value);
+        Assert.All(frame.Interpretation.Evidence, item => Assert.DoesNotContain('\u001b', item.Value));
+    }
+
+    [Fact]
+    public void Ipv4PacketDeclaringTotalLengthBelowHeaderIsFlaggedInsteadOfDropped()
+    {
+        var packet = new byte[32];
+
+        packet[0] = 0x45;
+        packet[2] = 0x00; packet[3] = 0x0A; // Declares 10 bytes, below the 20-byte header
+        packet[8] = 64;
+        packet[9] = 1; // ICMP
+
+        packet[12] = 172; packet[13] = 16; packet[14] = 0; packet[15] = 1;
+        packet[16] = 172; packet[17] = 16; packet[18] = 0; packet[19] = 2;
+
+        var frame = PacketParser.ParseIPv4Packet(packet, packet.Length, 11);
+
+        Assert.NotNull(frame);
+        Assert.Equal(32, frame.TotalLength);
+        Assert.Contains("[INVALID IP LENGTH]", frame.Summary);
+        Assert.Contains(frame.Details, detail => detail.Name == "Length anomaly");
+    }
+
+    [Fact]
+    public void Ipv6PacketWithTruncatedExtensionChainIsFlaggedInsteadOfDropped()
+    {
+        var packet = new byte[48];
+
+        packet[0] = 0x60;
+        packet[4] = 0x00; packet[5] = 0x64; // Declares 100 payload bytes but only 8 were captured
+        packet[6] = 0; // Hop-by-Hop Options
+        packet[7] = 64;
+        packet[40] = 6; // Following header claims TCP
+        packet[41] = 7; // Extension length ((7 + 1) * 8 = 64 bytes) exceeds the capture
+
+        var frame = PacketParser.ParseIPv6Packet(packet, packet.Length, 12);
+
+        Assert.NotNull(frame);
+        Assert.Contains("[MALFORMED EXTENSION CHAIN]", frame.Summary);
+        Assert.Contains("[Truncated]", frame.Summary);
+        Assert.Contains(frame.Details, detail => detail.Name == "Extension chain anomaly");
+    }
+
+    private static byte[] BuildUdpPacket(int sourcePort, int destinationPort, int payloadLength)
+    {
+        var packet = new byte[20 + 8 + payloadLength];
+        packet[0] = 0x45;
+        packet[2] = (byte)(packet.Length >> 8); packet[3] = (byte)packet.Length;
+        packet[8] = 64;
+        packet[9] = 17; // UDP
+
+        packet[12] = 10; packet[13] = 0; packet[14] = 0; packet[15] = 1;
+        packet[16] = 1; packet[17] = 1; packet[18] = 1; packet[19] = 1;
+
+        packet[20] = (byte)(sourcePort >> 8); packet[21] = (byte)sourcePort;
+        packet[22] = (byte)(destinationPort >> 8); packet[23] = (byte)destinationPort;
+        var udpLength = 8 + payloadLength;
+        packet[24] = (byte)(udpLength >> 8); packet[25] = (byte)udpLength;
+        return packet;
     }
 }

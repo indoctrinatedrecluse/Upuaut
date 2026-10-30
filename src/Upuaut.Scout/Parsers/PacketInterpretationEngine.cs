@@ -142,17 +142,53 @@ internal static class PacketInterpretationEngine
     private static bool TryReadDnsName(ReadOnlySpan<byte> packet, int start, out string name)
     {
         name = string.Empty;
+        if (start < 0 || start >= packet.Length) return false;
         if (!TrySkipDnsName(packet, start, out var end)) return false;
-        var labels = new List<string>(); var cursor = start; var jumps = 0;
+        var labels = new List<string>(); var cursor = start; var jumps = 0; var wireLength = 0;
         while (cursor < packet.Length && jumps++ <= 16)
         {
             var size = packet[cursor++];
             if (size == 0) break;
             if ((size & 0xC0) == 0xC0) { if (cursor >= packet.Length) return false; cursor = ((size & 0x3F) << 8) | packet[cursor]; continue; }
             if (size > 63 || cursor + size > packet.Length) return false;
+            if (!IsPlausibleDnsLabel(packet.Slice(cursor, size))) return false;
+            wireLength += size + 1;
+            if (wireLength > 255) return false;
             labels.Add(Encoding.ASCII.GetString(packet.Slice(cursor, size))); cursor += size;
         }
         name = string.Join('.', labels); return end > start && labels.Count > 0;
+    }
+
+    /// <summary>
+    /// Rejects label bytes that are not hostname-shaped so decoded names can never smuggle control
+    /// characters, quotes, or line breaks into evidence lists and reports.
+    /// </summary>
+    private static bool IsPlausibleDnsLabel(ReadOnlySpan<byte> label)
+    {
+        if (label.Length == 0) return false;
+        foreach (var value in label)
+        {
+            if (value is >= (byte)'a' and <= (byte)'z' or >= (byte)'A' and <= (byte)'Z' or >= (byte)'0' and <= (byte)'9' or (byte)'-' or (byte)'_' or (byte)'.') continue;
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces control characters in captured text with a visible placeholder and bounds its length.
+    /// Captured headers are attacker-controlled bytes, so they must never reach the UI or an export verbatim.
+    /// </summary>
+    private static string Printable(string value, int maximumLength)
+    {
+        var limited = value.Length <= maximumLength ? value : value[..maximumLength];
+        return string.Create(limited.Length, limited, static (destination, source) =>
+        {
+            for (var i = 0; i < source.Length; i++)
+            {
+                var character = source[i];
+                destination[i] = char.IsControl(character) ? '\u00B7' : character;
+            }
+        });
     }
 
     private static void DecodeHttp(byte[] data, int offset, int length, List<EvidenceObservation> evidence, ref string headline, List<string> advice)
@@ -163,7 +199,7 @@ internal static class PacketInterpretationEngine
         var text = Encoding.Latin1.GetString(bytes[..end]);
         var lines = text.Split("\r\n", StringSplitOptions.None);
         if (lines.Length == 0) return;
-        var first = lines[0].Trim();
+        var first = Printable(lines[0].Trim(), 512);
         if (first.StartsWith("HTTP/", StringComparison.OrdinalIgnoreCase))
         {
             var parts = first.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
@@ -185,7 +221,7 @@ internal static class PacketInterpretationEngine
             var name = line[..colon].Trim(); var value = line[(colon + 1)..].Trim();
             if (value.Length == 0 || name.Equals("Authorization", StringComparison.OrdinalIgnoreCase) || name.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase) || name.Equals("Cookie", StringComparison.OrdinalIgnoreCase) || name.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)) continue;
             if (name.Equals("Host", StringComparison.OrdinalIgnoreCase) || name.Equals("Server", StringComparison.OrdinalIgnoreCase) || name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) || name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
-                evidence.Add(new($"HTTP {name}", value.Length > 256 ? value[..256] : value, "Non-credential HTTP header observed in the captured request or response."));
+                evidence.Add(new($"HTTP {Printable(name, 64)}", Printable(value, 256), "Non-credential HTTP header observed in the captured request or response; control characters are masked."));
         }
         advice.Add("Review cleartext request targets and headers with care; this view deliberately omits authorization and cookie values.");
     }

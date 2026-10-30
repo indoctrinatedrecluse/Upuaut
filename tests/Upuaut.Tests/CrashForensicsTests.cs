@@ -7,6 +7,20 @@ namespace Upuaut.Tests;
 
 public sealed class CrashForensicsTests
 {
+    private static readonly string[] ExpandedKnowledgeIds =
+    [
+        "redis-persistence-misconf",
+        "redis-command-not-allowed",
+        "sqlite-database-locked",
+        "mysql-lock-wait-timeout",
+        "go-context-deadline-exceeded",
+        "rabbitmq-access-refused",
+        "dotnet-access-denied",
+        "dotnet-file-sharing-violation",
+        "windows-whea-hardware-error",
+        "windows-application-error-1000"
+    ];
+
     [Fact]
     public void Minidump_reader_extracts_bounded_system_and_exception_metadata()
     {
@@ -56,10 +70,15 @@ public sealed class CrashForensicsTests
         var document = await parser.ImportFileAsync(Path.Combine(AppContext.BaseDirectory, "scratch", "21-expanded-knowledge-cases.txt"));
         var analysis = new LogAnalysisEngine().Analyze(document);
 
-        Assert.True(LogKnowledgeBase.GetBuiltInPatterns().Count >= 40);
+        Assert.True(LogKnowledgeBase.GetBuiltInPatterns().Count >= 50);
         Assert.Contains(analysis.Entries.Values, entry => entry.KnowledgeId == "dotnet-assembly-load-failure");
         Assert.Contains(analysis.Entries.Values, entry => entry.KnowledgeId == "dotnet-tls-authentication-failure");
         Assert.Contains(analysis.Entries.Values, entry => entry.KnowledgeId == "java-heap-out-of-memory");
+        var matchedKnowledgeIds = analysis.Entries.Values
+            .Where(entry => entry.KnowledgeId is not null)
+            .Select(entry => entry.KnowledgeId!)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.All(ExpandedKnowledgeIds, id => Assert.Contains(id, matchedKnowledgeIds));
         Assert.All(analysis.Entries.Values.Where(entry => entry.KnowledgeId is not null), entry =>
         {
             Assert.NotEmpty(entry.KnowledgeSource!);

@@ -268,6 +268,23 @@ public sealed class LogLabFixtureTests
         Assert.Empty(new LogSequenceAnalysisEngine().Analyze(document));
     }
 
+    [Fact]
+    public async Task Oversized_field_values_are_truncated_without_losing_structure()
+    {
+        var huge = new string('a', 40_000);
+        var content = $"2026-10-30T20:00:00Z INFO stage=start payload={huge}\n" +
+                      $"2026-10-30T20:00:01Z INFO stage=end payload={huge}";
+        var document = await ImportBytes(Encoding.UTF8.GetBytes(content), ".log");
+
+        Assert.Equal(LogDocumentFormat.KeyValue, document.Format);
+        Assert.Equal(2, document.Entries.Count);
+
+        var payload = document.Entries[0].Fields["payload"];
+        Assert.True(payload.Length < huge.Length);
+        Assert.Contains("truncated", payload, StringComparison.OrdinalIgnoreCase);
+        Assert.All(document.Entries, entry => Assert.True(entry.Message.Length < 16_400));
+    }
+
     private Task<LogDocument> ImportFixture(string fileName) =>
         _parser.ImportFileAsync(Path.Combine(AppContext.BaseDirectory, "scratch", fileName));
 

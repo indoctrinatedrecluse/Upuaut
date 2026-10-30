@@ -1,14 +1,20 @@
 @page "/scout"
 @namespace Upuaut.UI.Pages
 @using System.Text
+@using Upuaut.Core.AI
 @using Upuaut.Core.Interfaces
 @using Upuaut.Core.Models
 @using Upuaut.Scout.Services
+@using Microsoft.Extensions.Logging
 @using Microsoft.Win32
 @inject ICaptureEngine CaptureEngine
 @inject ScoutManager ScoutService
 @inject IJSRuntime JSRuntime
 @inject Upuaut.UI.Shared.InvestigationContext Investigation
+@inject ILlmAssistantService LlmAssistant
+@inject IAiConfigurationService AiConfiguration
+@inject AiSettingsDialogCoordinator AiSettings
+@inject Microsoft.Extensions.Logging.ILogger<Scout> Logger
 @implements IDisposable
 
 <PageTitle>Upuaut — The Scout (Packet Sniffer)</PageTitle>
@@ -307,6 +313,40 @@
                         </section>
                     }
 
+                    <!-- Guarded AI review: button-triggered, single-frame scope -->
+                    <section class="llm-review-card" style="margin: 0 1rem 1rem;">
+                        <div class="llm-review-heading">
+                            <span>AI FRAME REVIEW</span>
+                            <small>@(_aiConfiguration.HasApiKey ? $"{_aiConfiguration.Provider.ToString().ToUpperInvariant()} · ON REQUEST" : "DISABLED · CONFIGURE AI SERVICES")</small>
+                        </div>
+                        <button class="pill-btn llm-review-button" @onclick="RequestAiFrameReview"
+                                disabled="@(_aiBusy || !_aiConfiguration.HasApiKey)">
+                            @(_aiBusy ? "ANALYZING SELECTED FRAME..." : "REQUEST AI REVIEW")
+                        </button>
+                        <p>Only this frame is submitted: decoded headers, dissector fields, the Seer reading, and a printable payload preview. The capture buffer, sibling frames, and raw secrets are never sent.</p>
+                        @if (!_aiConfiguration.HasApiKey)
+                        {
+                            <button class="pill-btn" style="margin-top: .45rem;" @onclick="AiSettings.Open">CONFIGURE AI SERVICES</button>
+                        }
+                        @if (_aiBusy)
+                        {
+                            <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER · WAITING FOR ANALYSIS</div>
+                        }
+                        @if (IsAiReviewForSelectedFrame && _aiBudget is { } budget)
+                        {
+                            <p class="llm-review-budget" title="@budget.Explain()">PROMPT @budget.Describe().ToUpperInvariant()</p>
+                        }
+                        @if (IsAiReviewForSelectedFrame && !string.IsNullOrWhiteSpace(_aiResult))
+                        {
+                            <article class="llm-review-result"><div>AI RESPONSE · MARKDOWN · VERIFY AGAINST CAPTURED BYTES</div><section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_aiResult))</section></article>
+                        }
+                        @if (IsAiReviewForSelectedFrame && !string.IsNullOrWhiteSpace(_aiError))
+                        {
+                            <div class="llm-review-error" role="alert">@_aiError</div>
+                        }
+                    </section>
+
+
                     <div class="inspector-body">
                         <!-- Process Attribution Card -->
                         <div class="section-block">
@@ -431,10 +471,21 @@
     private ScoutStatistics _stats = new(0, 0, 0, new Dictionary<NetworkProtocol, int>(), new Dictionary<string, int>());
     private System.Threading.Timer? _refreshTimer;
 
+    private AiConfiguration _aiConfiguration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
+    private bool _aiBusy;
+    private string _aiResult = string.Empty;
+    private string _aiError = string.Empty;
+    private AiPromptBudget? _aiBudget;
+    private long? _aiFrameNumber;
+
+    private bool IsAiReviewForSelectedFrame => _selectedFrame is not null && _aiFrameNumber == _selectedFrame.FrameNumber;
+
     protected override void OnInitialized()
     {
         RefreshDevices();
         _selectedFrame = Investigation.SelectedFrame;
+        _aiConfiguration = AiConfiguration.LoadConfiguration();
+        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
 
         ScoutService.PacketReceived += OnPacketReceived;
 
@@ -594,6 +645,67 @@
         await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", hex);
     }
 
+    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() =>
+    {
+        _aiConfiguration = AiConfiguration.LoadConfiguration();
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// Sends exactly one selected frame to the configured provider. The prompt is assembled by
+    /// <see cref="AiPromptEngine"/> so headers, fields, and payload previews stay inside a hard
+    /// character ceiling; nothing is transmitted until the operator presses the button.
+    /// </summary>
+    private async Task RequestAiFrameReview()
+    {
+        if (_selectedFrame is not { } frame || !_aiConfiguration.HasApiKey || _aiBusy) return;
+
+        var request = AiPromptEngine.BuildPacketRequest(
+            frame.FrameNumber,
+            frame.Protocol.ToString(),
+            frame.TransportProtocol == NetworkProtocol.Unknown ? null : frame.TransportProtocol.ToString(),
+            frame.SourceIp,
+            frame.SourcePort,
+            frame.DestinationIp,
+            frame.DestinationPort,
+            frame.ProcessName,
+            frame.ProcessId,
+            frame.TotalLength,
+            frame.Summary,
+            frame.Payload,
+            frame.Details.Select(detail => (detail.Layer, detail.Name, detail.Value)).ToArray(),
+            frame.Interpretation?.Headline,
+            frame.Interpretation?.Recommendations);
+
+        _aiBusy = true;
+        _aiResult = string.Empty;
+        _aiError = string.Empty;
+        _aiBudget = null;
+        _aiFrameNumber = frame.FrameNumber;
+
+        try
+        {
+            _aiResult = await LlmAssistant.AnalyzeInvestigationAsync(request);
+            _aiBudget = request.Budget;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("Manual AI frame review failed ({ErrorType}); payload bytes and capture data are omitted from application logs.", ex.GetType().Name);
+            _aiError = ex switch
+            {
+                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
+                HttpRequestException => $"AI provider request failed: {ex.Message}",
+                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
+                InvalidOperationException => ex.Message,
+                _ => "AI review failed unexpectedly. The local dissection and Seer reading are still available. Check the application log for the error type."
+            };
+        }
+        finally
+        {
+            _aiBusy = false;
+        }
+    }
+
     private void SelectConversation(PacketConversation conversation)
     {
         _filteredFrames = conversation.Frames.OrderByDescending(f => f.Timestamp).ToList();
@@ -710,6 +822,7 @@
     public void Dispose()
     {
         _refreshTimer?.Dispose();
+        AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
         ScoutService.PacketReceived -= OnPacketReceived;
     }
 }

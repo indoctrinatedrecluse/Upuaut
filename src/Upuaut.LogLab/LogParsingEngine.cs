@@ -29,6 +29,12 @@ public sealed class LogParsingEngine : ILogParsingEngine
     private static readonly Regex Syslog5424Pattern = new(@"^<(?<priority>\d{1,3})>(?<version>\d{1,2})\s+(?<timestamp>\S+)\s+(?<host>\S+)\s+(?<app>\S+)\s+(?<procid>\S+)\s+(?<msgid>\S+)\s+(?<structured>(?:\[(?:\\.|[^\]])*\])+|-)(?:\s+(?<message>.*))?$", RegexOptions.Compiled | RegexOptions.CultureInvariant, PatternTimeout);
     private static readonly Regex Syslog3164Pattern = new(@"^(?:<(?<priority>\d{1,3})>)?(?<timestamp>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?<host>[A-Za-z0-9_.-]+)\s+(?<app>[A-Za-z0-9_./-]+)(?:\[(?<procid>\d+)\])?:\s*(?<message>.*)$", RegexOptions.Compiled | RegexOptions.CultureInvariant, PatternTimeout);
     private static readonly Regex AccessLogPattern = new(@"^(?<client>\S+)\s+(?<ident>\S+)\s+(?<user>\S+)\s+\[(?<timestamp>[^\]]+)\]\s+""(?<request>[^""]*)""\s+(?<status>\d{3})\s+(?<bytes>\S+)(?:\s+""(?<referer>[^""]*)""\s+""(?<agent>[^""]*)"")?$", RegexOptions.Compiled | RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex CsvHeaderNamePattern = new(@"^[A-Za-z_][A-Za-z0-9_ .-]{0,63}$", RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex AccessTimestampOffsetPattern = new(@"(?<hour>[+-]\d{2})(?<minute>\d{2})$", RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex SourceBracketPattern = new(@"\[([^\]]{1,120})\]", RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex PythonFramePattern = new(@"^File ""[^""]+"", line \d+", RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex PythonErrorPattern = new(@"^[A-Za-z_][A-Za-z0-9_.]*Error:", RegexOptions.CultureInvariant, PatternTimeout);
+    private static readonly Regex ExceptionTypePattern = new(@"^(?:[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Fault))(?::|\s|$)", RegexOptions.CultureInvariant, PatternTimeout);
     private static readonly HashSet<string> CsvHeaderNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "timestamp", "time", "datetime", "date", "level", "severity", "loglevel", "source", "provider",
@@ -303,9 +309,9 @@ public sealed class LogParsingEngine : ILogParsingEngine
         if (lines.Length >= 2 && TryParseCsvRow(lines[0], out var header) && TryParseCsvRow(lines[1], out var row) &&
             IsCredibleCsvHeader(header) && header.Count >= 2 && header.Count == row.Count)
             return LogDocumentFormat.Csv;
-        if (lines.Any(line => IniSectionPattern.IsMatch(line)) && lines.Any(line => KeyValuePattern.IsMatch(line)))
+        if (lines.Any(line => SafeIsMatch(IniSectionPattern, line)) && lines.Any(line => SafeIsMatch(KeyValuePattern, line)))
             return LogDocumentFormat.Ini;
-        if (lines.Length >= 2 && lines.Count(line => KeyValuePattern.Matches(line).Count >= 2) >= Math.Max(2, lines.Length / 2))
+        if (lines.Length >= 2 && lines.Count(line => SafeMatches(KeyValuePattern, line) is { Count: >= 2 }) >= Math.Max(2, lines.Length / 2))
             return LogDocumentFormat.KeyValue;
         return LogDocumentFormat.PlainText;
     }
@@ -314,13 +320,37 @@ public sealed class LogParsingEngine : ILogParsingEngine
     {
         if (headers.Count < 2 || headers.Any(string.IsNullOrWhiteSpace)) return false;
         var normalized = headers.Select(header => Regex.Replace(header.Trim(), @"[^A-Za-z0-9]", string.Empty)).ToArray();
-        if (normalized.Any(header => TimestampPattern.IsMatch(header))) return false;
+        if (normalized.Any(header => SafeIsMatch(TimestampPattern, header))) return false;
         var recognized = normalized.Count(CsvHeaderNames.Contains);
-        return recognized >= 2 || recognized >= 1 && normalized.All(header => Regex.IsMatch(header, @"^[A-Za-z_][A-Za-z0-9_ .-]{0,63}$", RegexOptions.CultureInvariant));
+        return recognized >= 2 || recognized >= 1 && normalized.All(header => SafeIsMatch(CsvHeaderNamePattern, header));
     }
 
-    private static bool IsSyslogLine(string line) => Syslog5424Pattern.IsMatch(line) || Syslog3164Pattern.IsMatch(line);
-    private static bool IsAccessLogLine(string line) => AccessLogPattern.IsMatch(line);
+    private static bool IsSyslogLine(string line) => SafeIsMatch(Syslog5424Pattern, line) || SafeIsMatch(Syslog3164Pattern, line);
+    private static bool IsAccessLogLine(string line) => SafeIsMatch(AccessLogPattern, line);
+
+    /// <summary>
+    /// Evaluates a timeout-protected pattern without letting a pathological line abort the whole import.
+    /// A timeout is treated as "no match" so the caller falls back to plain-text handling for that line.
+    /// </summary>
+    private static bool SafeIsMatch(Regex regex, string input)
+    {
+        try { return regex.IsMatch(input); }
+        catch (RegexMatchTimeoutException) { return false; }
+    }
+
+    /// <summary>Timeout-tolerant counterpart of <see cref="Regex.Match(string)"/> returning an unsuccessful match.</summary>
+    private static Match SafeMatch(Regex regex, string input)
+    {
+        try { return regex.Match(input); }
+        catch (RegexMatchTimeoutException) { return Match.Empty; }
+    }
+
+    /// <summary>Timeout-tolerant counterpart of <see cref="Regex.Matches(string)"/> returning <c>null</c> when the pattern times out.</summary>
+    private static MatchCollection? SafeMatches(Regex regex, string input)
+    {
+        try { var matches = regex.Matches(input); _ = matches.Count; return matches; }
+        catch (RegexMatchTimeoutException) { return null; }
+    }
 
     private static bool IsJsonValue(string line)
     {
@@ -420,7 +450,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
-            var sectionMatch = IniSectionPattern.Match(line);
+            var sectionMatch = SafeMatch(IniSectionPattern, line);
             if (sectionMatch.Success)
             {
                 if (current is not null) sections.Add(current);
@@ -481,9 +511,9 @@ public sealed class LogParsingEngine : ILogParsingEngine
         {
             var line = lines[i];
             if (string.IsNullOrWhiteSpace(line)) continue;
-            var match = Syslog5424Pattern.Match(line);
+            var match = SafeMatch(Syslog5424Pattern, line);
             var rfc5424 = match.Success;
-            if (!match.Success) match = Syslog3164Pattern.Match(line);
+            if (!match.Success) match = SafeMatch(Syslog3164Pattern, line);
             if (!match.Success)
             {
                 malformed++;
@@ -526,7 +556,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
         {
             var line = lines[i];
             if (string.IsNullOrWhiteSpace(line)) continue;
-            var match = AccessLogPattern.Match(line);
+            var match = SafeMatch(AccessLogPattern, line);
             if (!match.Success)
             {
                 malformed++;
@@ -617,7 +647,9 @@ public sealed class LogParsingEngine : ILogParsingEngine
     private static Dictionary<string, string> ParseKeyValueFields(string line)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (Match match in KeyValuePattern.Matches(line).Take(MaximumFieldsPerEntry))
+        var matches = SafeMatches(KeyValuePattern, line);
+        if (matches is null) return fields;
+        foreach (Match match in matches.Take(MaximumFieldsPerEntry))
             fields[match.Groups["key"].Value] = Limit(Unquote(match.Groups["value"].Value));
         return fields;
     }
@@ -660,7 +692,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
 
     private static DateTimeOffset? ParseAccessTimestamp(string value)
     {
-        var offsetMatch = Regex.Match(value, @"(?<hour>[+-]\d{2})(?<minute>\d{2})$");
+        var offsetMatch = SafeMatch(AccessTimestampOffsetPattern, value);
         if (offsetMatch.Success) value = value[..offsetMatch.Index] + offsetMatch.Groups["hour"].Value + ":" + offsetMatch.Groups["minute"].Value;
         return DateTimeOffset.TryParseExact(value, "dd/MMM/yyyy:HH:mm:ss zzz",
             CultureInfo.GetCultureInfo("en-US"), DateTimeStyles.None, out var parsed) ? parsed : null;
@@ -750,7 +782,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
                 }
                 entries.Add(CreateTextEntry(entries.Count + 1, i + 1, lines[i]));
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException and not OperationCanceledException)
             {
                 if (warnings is not null && warnings.Count < MaximumDetailedWarnings)
                     warnings.Add($"Line {i + 1} could not be analyzed ({ex.GetType().Name}: {ex.Message}); it was retained as raw text.");
@@ -770,20 +802,20 @@ public sealed class LogParsingEngine : ILogParsingEngine
         var trimmed = line.TrimStart();
         return char.IsWhiteSpace(line[0]) ||
             trimmed.StartsWith("Traceback (most recent call last)", StringComparison.OrdinalIgnoreCase) ||
-            Regex.IsMatch(trimmed, @"^File ""[^""]+"", line \d+", RegexOptions.CultureInvariant, PatternTimeout) ||
-            Regex.IsMatch(trimmed, @"^[A-Za-z_][A-Za-z0-9_.]*Error:", RegexOptions.CultureInvariant, PatternTimeout) ||
+            SafeIsMatch(PythonFramePattern, trimmed) ||
+            SafeIsMatch(PythonErrorPattern, trimmed) ||
             trimmed.StartsWith("Caused by:", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("Inner exception:", StringComparison.OrdinalIgnoreCase) ||
-            Regex.IsMatch(trimmed, @"^(?:[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Fault))(?::|\s|$)", RegexOptions.CultureInvariant, PatternTimeout);
+            SafeIsMatch(ExceptionTypePattern, trimmed);
     }
 
     private static ParsedLogEntry CreateTextEntry(int index, int line, string text)
     {
         var fields = ParseKeyValueFields(text);
-        var timestampMatch = TimestampPattern.Match(text);
+        var timestampMatch = SafeMatch(TimestampPattern, text);
         DateTimeOffset? timestamp = ParseTimestamp(GetField(fields, "timestamp", "time", "datetime", "date", "ts", "@timestamp"));
         if (timestamp is null && timestampMatch.Success) timestamp = ParseTimestamp(timestampMatch.Value.Replace(',', '.'));
-        var severityMatch = SeverityPattern.Match(text);
+        var severityMatch = SafeMatch(SeverityPattern, text);
         var severity = ParseSeverity(GetField(fields, "level", "severity", "loglevel", "status", "statuscode"), text);
             if (severityMatch.Success)
             {
@@ -792,9 +824,9 @@ public sealed class LogParsingEngine : ILogParsingEngine
             }
         if (timestamp is not null) fields["Timestamp"] = timestamp.Value.ToString("O", CultureInfo.InvariantCulture);
         if (severity != LogEntrySeverity.Unknown) fields["Severity"] = severity.ToString();
-        var code = ErrorCodePattern.Match(text);
+        var code = SafeMatch(ErrorCodePattern, text);
         if (code.Success) { fields["Code"] = code.Value; fields.TryAdd("ErrorCode", code.Value); }
-        var sourceMatch = Regex.Match(text, @"\[([^\]]{1,120})\]", RegexOptions.CultureInvariant);
+        var sourceMatch = SafeMatch(SourceBracketPattern, text);
         var source = GetField(fields, "source", "provider", "logger", "component", "service", "application", "host", "program") ??
             (sourceMatch.Success ? sourceMatch.Groups[1].Value : null);
         if (source is not null) fields["Source"] = source;
@@ -892,7 +924,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
         }
         if (!string.IsNullOrWhiteSpace(message))
         {
-            var match = SeverityPattern.Match(message);
+            var match = SafeMatch(SeverityPattern, message);
             if (match.Success) return ParseSeverity(match.Value, null);
         }
         return LogEntrySeverity.Unknown;

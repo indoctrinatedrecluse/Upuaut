@@ -11,10 +11,12 @@ namespace Upuaut.Scout.Parsers;
 /// </summary>
 public static class PacketParser
 {
+    private const int MaximumDnsLabels = 127;
+    private const int MaximumDnsNameLength = 253;
+
     public static PacketFrame? ParseIPv4Packet(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
     {
         if (buffer is null || length < 20 || length > buffer.Length) return null;
-        if (length < 20) return null; // Minimum IPv4 header length
 
         // Byte 0: Version & IHL
         byte verAndIhl = buffer[0];
@@ -24,10 +26,15 @@ public static class PacketParser
         int ipHeaderLength = (verAndIhl & 0x0F) * 4;
         if (ipHeaderLength < 20 || length < ipHeaderLength) return null;
 
-        // Total Length
-        int totalLength = (buffer[2] << 8) | buffer[3];
-        if (totalLength < ipHeaderLength) return null;
-        if (totalLength > length) totalLength = length;
+        // Total Length. Capture engines often deliver fewer bytes than the header advertises (snaplen or
+        // mid-stream capture), so the captured size wins and the truncation is surfaced to the operator.
+        int declaredTotalLength = (buffer[2] << 8) | buffer[3];
+        // A total length smaller than the header it describes is impossible. Parsing the captured bytes and
+        // flagging the anomaly keeps such frames visible instead of silently discarding them.
+        bool malformedTotalLength = declaredTotalLength < ipHeaderLength;
+        if (malformedTotalLength) declaredTotalLength = length;
+        bool truncatedCapture = declaredTotalLength > length;
+        int totalLength = truncatedCapture ? length : declaredTotalLength;
 
         // TTL & Protocol
         byte ttl = buffer[8];
@@ -59,6 +66,8 @@ public static class PacketParser
 
         int transportOffset = ipHeaderLength;
         int transportLength = totalLength - transportOffset;
+        if (malformedTotalLength) details.Add(new PacketDetail("IPv4", "Length anomaly", $"The declared total length is smaller than the {ipHeaderLength}-byte header; the captured {length} bytes were parsed."));
+        if (truncatedCapture) details.Add(new PacketDetail("IPv4", "Capture", $"Truncated: {length} of {declaredTotalLength} bytes captured"));
         int fragmentField = (buffer[6] << 8) | buffer[7];
         bool fragmented = (fragmentField & 0x3FFF) != 0;
         bool moreFragments = (fragmentField & 0x2000) != 0;
@@ -83,7 +92,10 @@ public static class PacketParser
                                  buffer[transportOffset + 11]);
 
             byte tcpHeaderLen = (byte)(((buffer[transportOffset + 12] >> 4) & 0x0F) * 4);
-            if (tcpHeaderLen < 20 || tcpHeaderLen > transportLength) return null;
+            // A segment with an impossible data offset is still reported. Dropping malformed frames would hide
+            // flows from the operator, so the header is parsed with the minimum 20-byte offset and flagged.
+            bool malformedTcpHeader = tcpHeaderLen < 20 || tcpHeaderLen > transportLength;
+            tcpHeaderLen = malformedTcpHeader ? (byte)20 : tcpHeaderLen;
             byte flags = buffer[transportOffset + 13];
 
             bool fin = (flags & 0x01) != 0;
@@ -137,6 +149,13 @@ public static class PacketParser
                 summary += " [CONN RESET/REFUSED]";
             }
 
+            if (malformedTcpHeader)
+            {
+                hasErrorOrRetransmit = true;
+                summary += " [INVALID TCP HEADER LENGTH]";
+                details.Add(new PacketDetail("TCP", "Header length anomaly", "The declared data offset is outside 20 bytes and the captured segment length; the minimum 20-byte header was used."));
+            }
+
             if (payloadOffset < totalLength)
             {
                 int payloadLen = totalLength - payloadOffset;
@@ -150,8 +169,11 @@ public static class PacketParser
             protocol = NetworkProtocol.UDP;
             srcPort = (buffer[transportOffset] << 8) | buffer[transportOffset + 1];
             dstPort = (buffer[transportOffset + 2] << 8) | buffer[transportOffset + 3];
-            int udpLen = (buffer[transportOffset + 4] << 8) | buffer[transportOffset + 5];
-            if (udpLen < 8 || (udpLen > transportLength && !moreFragments)) return null;
+            int declaredUdpLength = (buffer[transportOffset + 4] << 8) | buffer[transportOffset + 5];
+            // Impossible datagram lengths are clamped into the captured transport bytes instead of dropping the
+            // frame, so malformed traffic stays visible in the capture view.
+            bool malformedUdpLength = declaredUdpLength < 8 || (declaredUdpLength > transportLength && !moreFragments);
+            int udpLen = malformedUdpLength ? Math.Clamp(declaredUdpLength, 8, transportLength) : declaredUdpLength;
 
             int payloadOffset = transportOffset + 8;
             int payloadLen = Math.Min(Math.Max(0, udpLen - 8), Math.Max(0, totalLength - payloadOffset));
@@ -171,6 +193,13 @@ public static class PacketParser
             else
             {
                 summary = $"UDP {srcPort} → {dstPort} Len={udpLen}";
+            }
+
+            if (malformedUdpLength)
+            {
+                hasErrorOrRetransmit = true;
+                summary += " [INVALID UDP LENGTH]";
+                details.Add(new PacketDetail("UDP", "Length anomaly", $"The declared datagram length is outside the captured transport bytes; {udpLen} of {transportLength} bytes were parsed."));
             }
 
             if (payloadLen > 0 && payloadOffset < buffer.Length)
@@ -205,6 +234,8 @@ public static class PacketParser
             summary = $"IPv4 Protocol {protocolByte} (TTL={ttl})";
         }
         if (fragmented) summary += " [Fragmented]";
+        if (malformedTotalLength) summary += " [INVALID IP LENGTH]";
+        if (truncatedCapture) summary += " [Truncated]";
 
         // Process Attribution via IP Helper
         int? processId = null;
@@ -246,21 +277,22 @@ public static class PacketParser
     public static PacketFrame? ParseIPv6Packet(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
     {
         if (buffer is null || length < 40 || length > buffer.Length || (buffer[0] >> 4) != 6) return null;
-        var payloadLength = (buffer[4] << 8) | buffer[5];
-        var totalLength = Math.Min(length, 40 + payloadLength);
+        var declaredPayloadLength = (buffer[4] << 8) | buffer[5];
+        var truncatedCapture = 40 + declaredPayloadLength > length;
+        var totalLength = Math.Min(length, 40 + declaredPayloadLength);
         var hopLimit = buffer[7]; var source = new IPAddress(buffer.AsSpan(8, 16)).ToString(); var destination = new IPAddress(buffer.AsSpan(24, 16)).ToString();
         var trafficClass = (byte)(((buffer[0] & 0x0F) << 4) | (buffer[1] >> 4)); var flowLabel = ((buffer[1] & 0x0F) << 16) | (buffer[2] << 8) | buffer[3];
-        byte next = buffer[6]; var baseNextHeader = next; var offset = 40; var fragmentOffset = 0; var fragmented = false; var details = new List<PacketDetail>
+        byte next = buffer[6]; var baseNextHeader = next; var offset = 40; var fragmentOffset = 0; var fragmented = false; var malformedExtensionChain = false; var details = new List<PacketDetail>
         {
-            new("IPv6", "Version", "6"), new("IPv6", "Traffic class", $"0x{trafficClass:X2}"), new("IPv6", "Flow label", $"0x{flowLabel:X5}"), new("IPv6", "Payload length", payloadLength.ToString()), new("IPv6", "Next header", next.ToString()), new("IPv6", "Hop limit", hopLimit.ToString()),
+            new("IPv6", "Version", "6"), new("IPv6", "Traffic class", $"0x{trafficClass:X2}"), new("IPv6", "Flow label", $"0x{flowLabel:X5}"), new("IPv6", "Payload length", declaredPayloadLength.ToString()), new("IPv6", "Next header", next.ToString()), new("IPv6", "Hop limit", hopLimit.ToString()),
             new("IPv6", "Source", source), new("IPv6", "Destination", destination)
         };
         for (var depth = 0; depth < 8 && next is 0 or 43 or 44 or 51 or 60 or 135; depth++)
         {
-            if (offset + 2 > totalLength) return null;
+            if (offset + 2 > totalLength) { malformedExtensionChain = true; break; }
             var extension = next; var following = buffer[offset];
             var extensionLength = extension switch { 44 => 8, 51 => (buffer[offset + 1] + 2) * 4, _ => (buffer[offset + 1] + 1) * 8 };
-            if (extensionLength < 8 || offset + extensionLength > totalLength) return null;
+            if (extensionLength < 8 || offset + extensionLength > totalLength) { malformedExtensionChain = true; break; }
             details.Add(new PacketDetail("IPv6 Extension", extension switch { 0 => "Hop-by-Hop Options", 43 => "Routing", 44 => "Fragment", 51 => "Authentication", 60 => "Destination Options", _ => "Mobility" }, $"{extensionLength} bytes"));
             if (extension == 44)
             {
@@ -268,16 +300,23 @@ public static class PacketParser
             }
             offset += extensionLength; next = following;
         }
-        if (next is 0 or 43 or 44 or 51 or 60 or 135) return null;
-        var transport = next switch { 6 => NetworkProtocol.TCP, 17 => NetworkProtocol.UDP, 58 => NetworkProtocol.ICMPv6, _ => NetworkProtocol.Unknown };
+        if (next is 0 or 43 or 44 or 51 or 60 or 135) malformedExtensionChain = true;
+        var transport = malformedExtensionChain ? NetworkProtocol.Unknown : next switch { 6 => NetworkProtocol.TCP, 17 => NetworkProtocol.UDP, 58 => NetworkProtocol.ICMPv6, _ => NetworkProtocol.Unknown };
         var protocol = transport; int? sourcePort = null, destinationPort = null; int? transportHeaderLength = null, payloadOffset = null;
         uint? sequence = null, ack = null; byte? flags = null; ushort? window = null; byte[]? payload = null; string? dns = null;
         var summary = $"IPv6 protocol {next} ({source} → {destination})";
+        if (malformedExtensionChain)
+        {
+            summary += " [MALFORMED EXTENSION CHAIN]";
+            details.Add(new PacketDetail("IPv6", "Extension chain anomaly", "The extension header chain is truncated or deeper than the 8-header inspection limit; transport fields were not decoded."));
+        }
         if (fragmentOffset == 0 && transport == NetworkProtocol.TCP && totalLength - offset >= 20)
         {
             sourcePort = (buffer[offset] << 8) | buffer[offset + 1]; destinationPort = (buffer[offset + 2] << 8) | buffer[offset + 3];
             sequence = ReadUInt32(buffer, offset + 4); ack = ReadUInt32(buffer, offset + 8); var headerLength = (buffer[offset + 12] >> 4) * 4; flags = buffer[offset + 13]; window = (ushort)((buffer[offset + 14] << 8) | buffer[offset + 15]);
-            if (headerLength < 20 || offset + headerLength > totalLength) return null;
+            // Malformed data offsets are flagged instead of discarding the frame, mirroring the IPv4 path.
+            var malformedHeader = headerLength < 20 || offset + headerLength > totalLength;
+            if (malformedHeader) headerLength = 20;
             transportHeaderLength = headerLength; payloadOffset = offset + headerLength;
             var payloadLengthTcp = totalLength - payloadOffset.Value;
             var flagNames = new[] { (0x02, "SYN"), (0x10, "ACK"), (0x01, "FIN"), (0x04, "RST"), (0x08, "PSH") }.Where(f => (flags.Value & f.Item1) != 0).Select(f => f.Item2);
@@ -285,16 +324,20 @@ public static class PacketParser
             else if (LooksLikeTls(buffer, payloadOffset.Value, payloadLengthTcp)) { protocol = NetworkProtocol.TLS; summary = $"TLS {sourcePort} → {destinationPort}"; }
             else if (LooksLikeHttp(buffer, payloadOffset.Value, payloadLengthTcp)) { protocol = NetworkProtocol.HTTP; summary = $"HTTP {sourcePort} → {destinationPort}"; }
             else summary = $"TCP [{string.Join(",", flagNames)}] {sourcePort} → {destinationPort} Seq={sequence} Ack={ack}";
+            if (malformedHeader) { summary += " [INVALID TCP HEADER LENGTH]"; details.Add(new PacketDetail("TCP", "Header length anomaly", "The declared data offset is outside 20 bytes and the captured segment length; the minimum 20-byte header was used.")); }
             if (payloadLengthTcp > 0) payload = buffer.AsSpan(payloadOffset.Value, Math.Min(payloadLengthTcp, 512)).ToArray();
             details.AddRange(new[] { new PacketDetail("TCP", "Source port", sourcePort.Value.ToString()), new PacketDetail("TCP", "Destination port", destinationPort.Value.ToString()), new PacketDetail("TCP", "Sequence number", sequence.Value.ToString()), new PacketDetail("TCP", "Acknowledgment number", ack.Value.ToString()), new PacketDetail("TCP", "Flags", string.Join(",", flagNames)), new PacketDetail("TCP", "Window", window.Value.ToString()) });
         }
         else if (fragmentOffset == 0 && transport == NetworkProtocol.UDP && totalLength - offset >= 8)
         {
             sourcePort = (buffer[offset] << 8) | buffer[offset + 1]; destinationPort = (buffer[offset + 2] << 8) | buffer[offset + 3]; var udpLength = (buffer[offset + 4] << 8) | buffer[offset + 5];
-            if (udpLength < 8 || udpLength > totalLength - offset) return null;
+            // Impossible datagram lengths are clamped to the captured transport bytes and reported, not dropped.
+            var malformedUdp = udpLength < 8 || udpLength > totalLength - offset;
+            if (malformedUdp) udpLength = Math.Clamp(udpLength, 8, totalLength - offset);
             transportHeaderLength = 8; payloadOffset = offset + 8; var dataLength = udpLength - 8;
             if (sourcePort == 53 || destinationPort == 53) { protocol = NetworkProtocol.DNS; dns = TryExtractDnsQuery(buffer, payloadOffset.Value, dataLength); summary = dns is null ? $"DNS UDP {sourcePort} → {destinationPort}" : $"DNS Query: {dns}"; }
             else summary = $"UDP {sourcePort} → {destinationPort} Len={udpLength}";
+            if (malformedUdp) { summary += " [INVALID UDP LENGTH]"; details.Add(new PacketDetail("UDP", "Length anomaly", "The declared datagram length is outside the captured transport bytes; the available bytes were parsed.")); }
             if (dataLength > 0) payload = buffer.AsSpan(payloadOffset.Value, Math.Min(dataLength, 512)).ToArray();
             details.AddRange(new[] { new PacketDetail("UDP", "Source port", sourcePort.Value.ToString()), new PacketDetail("UDP", "Destination port", destinationPort.Value.ToString()), new PacketDetail("UDP", "Length", udpLength.ToString()) });
         }
@@ -305,6 +348,7 @@ public static class PacketParser
             details.Add(new PacketDetail("ICMPv6", "Type / code", $"{type} / {code}"));
         }
         if (fragmented) summary += " [Fragmented]";
+        if (truncatedCapture) { summary += " [Truncated]"; details.Add(new PacketDetail("IPv6", "Capture", $"Truncated: {length} of {40 + declaredPayloadLength} bytes captured")); }
         return WithInterpretation(new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, SourceIp = source, DestinationIp = destination, SourcePort = sourcePort,
             DestinationPort = destinationPort, Protocol = protocol == NetworkProtocol.Unknown ? NetworkProtocol.IPv6 : protocol, TransportProtocol = transport,
             TotalLength = totalLength, Summary = summary, Payload = payload, InterfaceName = interfaceName, CaptureLayer = "IPv6", RawData = buffer.AsSpan(0, totalLength).ToArray(),
@@ -394,31 +438,51 @@ public static class PacketParser
 
     private static string? TryExtractDnsQuery(byte[] buffer, int offset, int length)
     {
-        try
+        if (buffer is null || offset < 0 || offset >= buffer.Length || length < 12) return null;
+        var available = Math.Min(length, buffer.Length - offset);
+        if (available <= 12) return null; // No room for a question name in the captured bytes.
+
+        var limit = offset + available;
+        var cursor = offset + 12; // DNS Question section follows the 12-byte header.
+        var name = new StringBuilder(64);
+        var labels = 0;
+
+        while (cursor < limit && labels < MaximumDnsLabels)
         {
-            if (length < 12 || offset + 12 >= buffer.Length) return null;
+            byte labelLength = buffer[cursor++];
+            if (labelLength == 0) break; // End of QNAME.
+            // Compression pointers and reserved label types are not valid inside a question name, and a label
+            // longer than 63 bytes cannot be represented in DNS; abandon the name rather than emit noise.
+            if ((labelLength & 0xC0) != 0 || labelLength > 63) return null;
+            if (cursor + labelLength > limit) return null;
+            if (!IsPlausibleDnsLabel(buffer.AsSpan(cursor, labelLength))) return null;
 
-            // DNS Question section starts at offset + 12
-            int qOffset = offset + 12;
-            var sb = new StringBuilder();
+            if (name.Length > 0) name.Append('.');
+            name.Append(Encoding.ASCII.GetString(buffer, cursor, labelLength));
+            if (name.Length > MaximumDnsNameLength) return null;
 
-            while (qOffset < offset + length && qOffset < buffer.Length)
-            {
-                byte labelLen = buffer[qOffset++];
-                if (labelLen == 0) break; // End of QNAME
-
-                if (qOffset + labelLen > buffer.Length || qOffset + labelLen > offset + length) break;
-
-                if (sb.Length > 0) sb.Append('.');
-                sb.Append(Encoding.ASCII.GetString(buffer, qOffset, labelLen));
-                qOffset += labelLen;
-            }
-
-            return sb.Length > 0 ? sb.ToString() : null;
+            cursor += labelLength;
+            labels++;
         }
-        catch
+
+        return name.Length > 0 ? name.ToString() : null;
+    }
+
+    /// <summary>
+    /// Accepts only hostname-shaped label bytes so captured names can never carry control characters,
+    /// quotes, or line breaks into summaries, evidence lists, and exports.
+    /// </summary>
+    private static bool IsPlausibleDnsLabel(ReadOnlySpan<byte> label)
+    {
+        if (label.Length == 0) return false;
+        foreach (var value in label)
         {
-            return null;
+            if (value is >= (byte)'a' and <= (byte)'z') continue;
+            if (value is >= (byte)'A' and <= (byte)'Z') continue;
+            if (value is >= (byte)'0' and <= (byte)'9') continue;
+            if (value is (byte)'-' or (byte)'_' or (byte)'.') continue;
+            return false;
         }
+        return true;
     }
 }

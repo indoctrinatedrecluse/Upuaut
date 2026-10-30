@@ -4,6 +4,28 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-31
+
+### Added
+
+- **Guarded AI review in every workspace:** Scout, Weigher, Log Lab, and Crash Forensics each gained a manual, button-triggered AI review panel. Each panel submits exactly one unit — a single selected frame, one correlated event with its nearest log entry and nearest frame, one parsed log entry, or one crash artifact — and never the surrounding buffer, sibling rows, notes, or dump contents.
+- **Visible prompt budget:** every AI request is assembled by a shared prompt engine with a hard character ceiling, and the panel reports the characters submitted against that ceiling plus a tooltip listing each guardrail that compacted the unit. Requests built outside the engine are still re-bounded before transmission.
+- **Ten additional curated log patterns:** Redis background-save and memory-limit rejections, SQLite `SQLITE_BUSY`, InnoDB lock-wait timeout, Go `context deadline exceeded`, RabbitMQ `ACCESS_REFUSED`, .NET access-denied and file-sharing violations, WHEA hardware errors, and Windows Application Error `1000` faulting modules. The shipped dataset now holds 51 patterns, and a fixture-backed test asserts every one of the new IDs still matches a representative synthetic line.
+
+### Changed
+
+- **Packet inspection keeps malformed traffic visible:** Scout no longer drops frames that carry truncated captures or impossible header lengths. A capture shorter than the declared IPv4/IPv6 length is clamped and marked `[Truncated]` with the captured/declared byte counts; a TCP data offset below the 20-byte minimum or a UDP length below 8 bytes is marked `[INVALID TCP HEADER LENGTH]` / `[INVALID UDP LENGTH]` and dissected with the minimum/clamped header; an IPv4 total length below its own header is marked `[INVALID IP LENGTH]`; and a truncated or overly deep IPv6 extension chain is marked `[MALFORMED EXTENSION CHAIN]` instead of being discarded. Flagged frames still reach the grid, the interpretation panel, and exports.
+- **Captured bytes are treated as untrusted text:** DNS question names are parsed with strict bounds, a 63-byte label ceiling, a 253-byte name ceiling, and a hostname charset allow-list, so compression pointers, oversized labels, and control characters now suppress the name instead of leaking into summaries. Packet interpretation passes decoded HTTP/DNS text through a printable filter that masks control characters and caps length, keeps only credential-free HTTP headers (Host, Server, Content-Type, Content-Length — Authorization, Proxy-Authorization, Cookie, and Set-Cookie are dropped), and strips query strings and fragments from request targets before they become evidence, summaries, or export rows.
+- **Log import degrades instead of aborting on pathological lines:** all structured-format regular expressions now run behind timeout-tolerant helpers, so a single adversarial line falls back to plain-text handling rather than failing the whole import; oversized field values and messages are truncated with a marker instead of building unbounded strings.
+- **AI prompt compaction notes** now compare compacted length instead of object identity, so a reported compaction always reflects a real reduction.
+- **AI requests share one bounded schema:** provider calls now carry a structured request (domain, system instruction, bounded user prompt) instead of a pre-formatted string, so DeepSeek/OpenAI-compatible chat payloads and Gemini `system_instruction` payloads receive identical guardrails and slightly larger output ceilings.
+- Advance app, setup, and workflow fallback metadata to `0.6.0`.
+
+### Verification
+
+- `dotnet build Upuaut.sln` completed with 0 warnings and 0 errors.
+- Automated suite passed: 80 tests, including malformed-packet flagging, DNS label rejection, HTTP evidence sanitisation, and oversized log field truncation.
+
 ## [0.5.2] - 2026-10-31
 
 ### Added
