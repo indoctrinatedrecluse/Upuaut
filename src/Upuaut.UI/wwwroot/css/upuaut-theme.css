@@ -2199,7 +2199,7 @@ body, html {
 .upuaut-shell { position: relative; isolation: isolate; }
 .upuaut-main, .upuaut-sidebar { position: relative; z-index: 1; }
 .upuaut-sidebar { background: rgba(15, 16, 21, 0.78); backdrop-filter: blur(14px); }
-.upuaut-header { background-color: rgba(15, 16, 21, 0.72); backdrop-filter: blur(12px); }
+.upuaut-header { background-color: rgba(15, 16, 21, 0.9); }
 .upuaut-content { background-color: rgba(9, 10, 13, 0.24); }
 .has-motion-canvas .upuaut-content { background-color: rgba(9, 10, 13, 0.18); }
 
@@ -3493,11 +3493,13 @@ body, html {
 .help-menu-panel strong { font-size: .82rem; }
 .help-menu-panel small { margin-top: .18rem; color: var(--upuaut-text-dim); font-size: .68rem; }
 .help-modal-backdrop {
-    position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 1.5rem;
+    position: fixed; z-index: 20000; inset: 0; display: flex; align-items: flex-start; justify-content: center;
+    overflow: auto; box-sizing: border-box; padding: max(18px, 3vh) max(12px, 2vw);
     background: rgba(3,4,7,.82); backdrop-filter: blur(9px);
 }
 .help-modal-panel {
-    position: relative; display: flex; flex-direction: column; width: min(780px, 94vw); max-height: min(88vh, 900px);
+    position: relative; display: flex; flex: 0 1 auto; flex-direction: column; width: min(780px, 94vw);
+    max-height: calc(100vh - max(36px, 6vh)); max-height: calc(100dvh - max(36px, 6vh)); margin-block: auto;
     overflow: hidden; color: var(--upuaut-text); background: linear-gradient(150deg, rgba(27,29,39,.99), rgba(12,13,18,.99));
     border: 1px solid rgba(212,175,55,.46); border-radius: 13px;
     box-shadow: 0 24px 90px rgba(0,0,0,.68), 0 0 35px rgba(212,175,55,.11);
@@ -3602,8 +3604,8 @@ body, html {
 .triage-caveat { color: #d4bb7d !important; }
 
 @media (max-width: 760px) {
-    .help-modal-backdrop { padding: .6rem; }
-    .help-modal-panel { max-height: 94vh; }
+    .help-modal-backdrop { padding: max(10px, 2vh) .6rem; }
+    .help-modal-panel { max-height: calc(100vh - max(20px, 4vh)); max-height: calc(100dvh - max(20px, 4vh)); }
     .help-modal-footer { align-items: flex-start; flex-direction: column; }
     .about-link-url { font-size: .58rem; }
     .triage-summary-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }

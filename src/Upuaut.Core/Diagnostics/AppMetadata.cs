@@ -5,7 +5,7 @@ namespace Upuaut.Core.Diagnostics;
 /// <summary>Build metadata displayed consistently throughout the app.</summary>
 public static class AppMetadata
 {
-    public const string FallbackVersion = "0.5.0";
+    public const string FallbackVersion = "0.5.1";
 
     public static string DisplayVersion =>
         Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? FallbackVersion;

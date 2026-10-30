@@ -1,5 +1,5 @@
-.update-modal-backdrop { z-index: 12000; }
-.update-modal { width: min(760px, 92vw); max-width: 760px; max-height: min(82vh, 820px); margin: auto; }
+.update-modal-backdrop { z-index: 20001; }
+.update-modal { width: min(760px, 92vw); max-width: 760px; max-height: calc(100vh - max(36px, 6vh)); max-height: calc(100dvh - max(36px, 6vh)); }
 .update-status { color: #c7c8ce; line-height: 1.65; margin: 20px 0; }
 .update-release-card { border: 1px solid #776337; background: linear-gradient(135deg, #19170f, #101116); border-radius: 8px; padding: 18px; max-height: 270px; overflow: auto; }
 .update-release-card h3 { color: #f0d997; margin: 9px 0; }

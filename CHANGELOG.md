@@ -4,6 +4,19 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-31
+
+### Fixed
+
+- **Modal visibility and interaction:** Help, About, Documentation, and update dialogs now render in a viewport-safe overlay with guaranteed top clearance and internal scrolling on shorter screens. Removed the header backdrop filter that caused nested fixed dialogs to position relative to the header and clip behind it.
+- **Hotfix metadata:** advance app, installer, and workflow fallback versions to `0.5.1`.
+
+### Verification
+
+- Windows Release builds completed with 0 warnings and 0 errors for the desktop app and setup project.
+- Self-contained Windows x64 publishes completed for the app and single-file installer; required release media is present.
+- Automated suite passed: 55 tests.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

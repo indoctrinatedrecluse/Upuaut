@@ -68,7 +68,7 @@ See the searchable in-app Documentation page for workspace workflows and `instal
 
 ## Release
 
-Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.5.0`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. Release notes contain only that version's section from `CHANGELOG.md`. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
+Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.5.1`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. Release notes contain only that version's section from `CHANGELOG.md`. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [LICENSE](LICENSE) for the MIT license.
 
