@@ -1,6 +1,4 @@
 ﻿@implements IDisposable
-@using Markdig
-@using Markdig.Renderers
 @using Microsoft.Extensions.Logging
 @using Upuaut.Core.Updates
 @inject UpdateDialogCoordinator Coordinator
@@ -23,7 +21,7 @@
                     <h3>@release.Name</h3>
                     @if (!string.IsNullOrWhiteSpace(release.Notes))
                     {
-                        <article class="update-markdown">@((MarkupString)RenderMarkdown(release.Notes))</article>
+                        <article class="update-markdown">@((MarkupString)SafeMarkdownRenderer.Render(release.Notes))</article>
                     }
                 </div>
             }
@@ -48,8 +46,6 @@
 }
 
 @code {
-    private static readonly MarkdownPipeline ReleaseNotesPipeline = new MarkdownPipelineBuilder().UsePipeTables().UseTaskLists().DisableHtml().Build();
-    private const int MaximumReleaseNotesCharacters = 100_000;
     private bool _showUpdates;
     private bool _updateBusy;
     private double _updateProgress;
@@ -62,26 +58,6 @@
     {
         if (firstRender) _ = CheckForStartupUpdate();
         return Task.CompletedTask;
-    }
-
-    private static string RenderMarkdown(string markdown)
-    {
-        var bounded = markdown.Length > MaximumReleaseNotesCharacters ? markdown[..MaximumReleaseNotesCharacters] + "\n\n_Release notes truncated by Upuaut._" : markdown;
-        var document = Markdig.Markdown.Parse(bounded, ReleaseNotesPipeline);
-        using var writer = new StringWriter();
-        var renderer = new Markdig.Renderers.HtmlRenderer(writer) { LinkRewriter = RewriteReleaseLink };
-        ReleaseNotesPipeline.Setup(renderer);
-        renderer.Render(document);
-        return System.Text.RegularExpressions.Regex.Replace(writer.ToString(), "<img\\b[^>]*>", string.Empty,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
-            TimeSpan.FromMilliseconds(100));
-    }
-
-    private static string RewriteReleaseLink(string url)
-    {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
-            return absolute.Scheme is "https" or "http" or "mailto" ? url : string.Empty;
-        return url.StartsWith('#') ? url : string.Empty;
     }
 
     private void HandleOpenRequested() => _ = InvokeAsync(OpenUpdates);

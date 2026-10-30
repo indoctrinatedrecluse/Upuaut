@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\Upuaut.Scout\Upuaut.Scout.csproj" />
     <ProjectReference Include="..\..\src\Upuaut.LogLab\Upuaut.LogLab.csproj" />
     <ProjectReference Include="..\..\src\Upuaut.CrashForensics\Upuaut.CrashForensics.csproj" />
+    <ProjectReference Include="..\..\src\Upuaut.UI\Upuaut.UI.csproj" />
   </ItemGroup>
 
   <ItemGroup>

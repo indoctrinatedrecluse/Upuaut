@@ -1,4 +1,4 @@
-﻿# Upuaut
+# Upuaut
 
 Upuaut is a Windows desktop toolkit for investigating Windows event logs, inspecting network packets, and comparing nearby system and network signals. It combines a WPF host with a Blazor Hybrid interface and a dark, Egyptian-inspired visual theme.
 
@@ -11,7 +11,7 @@ Upuaut is a Windows desktop toolkit for investigating Windows event logs, inspec
 - **Crash Forensics** inspects Windows user-mode minidumps and WER reports locally, extracts exception and available managed-runtime evidence, and reuses Log Lab's curated knowledge. Crash findings in Log Lab can be handed to this workspace with the source entry attached. Kernel dumps are identified and referred to WinDbg for deep analysis.
 - **Crash Forensics** inspects Windows user-mode minidumps and WER reports locally, extracts exception and available managed-runtime evidence, and reuses Log Lab's curated knowledge. Crash findings in Log Lab can be handed to this workspace with the source entry attached. Kernel dumps are identified and referred to WinDbg for deep analysis.
 
-Log Lab's built-in scenario knowledge is a versioned offline dataset of source-attributed error patterns, representative signatures, evidence labels, uncertainty-aware explanations, and safe investigation steps. The parser loads these patterns directly into its runtime rules, with fixture tests checking real matches; it is extended from primary vendor and project documentation and tested with synthetic examples. Third-party production log corpora are not redistributed. An optional AI second opinion supports DeepSeek, Gemini, and OpenAI-compatible endpoints. It is manual-only, sends only the selected entry when requested, and stores the API key encrypted for the current Windows account.
+Log Lab's built-in scenario knowledge is a versioned offline dataset of source-attributed error patterns, representative signatures, evidence labels, uncertainty-aware explanations, and safe investigation steps. The parser loads these patterns directly into its runtime rules, with fixture tests checking real matches; it is extended from primary vendor and project documentation and tested with synthetic examples. Third-party production log corpora are not redistributed. Optional AI features share settings through the AI Services button in the top bar or Help → Configure AI Settings. The API key is encrypted for the current Windows account, and features make provider requests only after the user explicitly asks.
 
 Event and packet explanations expose their category, readable headline, tags, evidence, and suggested checks. These are deterministic rules and investigative guidance, not automated root-cause diagnoses.
 
@@ -68,7 +68,7 @@ See the searchable in-app Documentation page for workspace workflows and `instal
 
 ## Release
 
-Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.5.1`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. Release notes contain only that version's section from `CHANGELOG.md`. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
+Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.5.2`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. Release notes contain only that version's section from `CHANGELOG.md`. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [LICENSE](LICENSE) for the MIT license.
 

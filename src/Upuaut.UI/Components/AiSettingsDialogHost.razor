@@ -1,0 +1,129 @@
+@implements IDisposable
+@using Upuaut.Core.AI
+@using Microsoft.Extensions.Logging
+@inject AiSettingsDialogCoordinator Coordinator
+@inject IAiConfigurationService AiConfiguration
+@inject ILogger<AiSettingsDialogHost> Logger
+
+@if (_open)
+{
+    <div class="help-modal-backdrop ai-settings-backdrop" @onclick="Close">
+        <section class="help-modal-panel ai-settings-modal" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" @onclick:stopPropagation="true">
+            <header class="help-modal-header ai-settings-header">
+                <div><span class="help-menu-label">UPUAUT // SHARED INTELLIGENCE CONFIG</span><h2 id="ai-settings-title">AI Service Settings</h2></div>
+                <button class="help-modal-close" aria-label="Close AI settings" @onclick="Close">×</button>
+            </header>
+            <p class="ai-settings-intro">Configure one local provider profile for optional AI features across Upuaut. Services only make requests when you explicitly ask them to.</p>
+            <div class="ai-settings-grid">
+                <label>PROVIDER
+                    <select @bind="_provider" @bind:after="ProviderChanged">
+                        <option value="@AiProvider.DeepSeek">DeepSeek</option>
+                        <option value="@AiProvider.Gemini">Google Gemini</option>
+                        <option value="@AiProvider.OpenAiCompatible">OpenAI-compatible endpoint</option>
+                    </select>
+                </label>
+                <label>MODEL ID<input @bind="_model" maxlength="128" placeholder="Provider model ID" /></label>
+                <label class="ai-settings-endpoint">API BASE / ENDPOINT URL<input @bind="_endpoint" maxlength="2048" spellcheck="false" placeholder="https://…" /></label>
+                <label class="ai-settings-key">API KEY<input @bind="_apiKey" type="password" autocomplete="new-password" maxlength="4096" placeholder="@(_configuration.HasApiKey ? "Saved securely · enter to replace" : "Paste provider API key")" /></label>
+            </div>
+            <div class="ai-settings-security"><span>◈</span><p><strong>@(_configuration.HasApiKey ? "KEY PROTECTED ON THIS DEVICE" : "NO KEY CONFIGURED")</strong><br />The key is encrypted with Windows DPAPI for this account. It is never displayed after saving and is not sent unless an AI feature is explicitly invoked. Provider retention and billing follow its terms.</p></div>
+            @if (!string.IsNullOrWhiteSpace(_status))
+            {
+                <div class="ai-settings-status @(_error ? "is-error" : "")" role="status">@_status</div>
+            }
+            <footer class="ai-settings-footer">
+                <button class="ai-settings-clear" @onclick="ClearKey" disabled="@(!_configuration.HasApiKey)">REMOVE SAVED KEY</button>
+                <span>@(_configuration.HasApiKey ? "CONFIGURED · REQUESTS ARE MANUAL ONLY" : "AI-POWERED FEATURES REMAIN DISABLED")</span>
+                <button class="ai-settings-save" @onclick="Save">SAVE SETTINGS</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    private bool _open;
+    private AiConfiguration _configuration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
+    private AiProvider _provider = AiProvider.DeepSeek;
+    private string _endpoint = "https://api.deepseek.com/chat/completions";
+    private string _model = "deepseek-flash";
+    private string _apiKey = string.Empty;
+    private string _status = string.Empty;
+    private bool _error;
+
+    protected override void OnInitialized() => Coordinator.OpenRequested += Open;
+
+    private void Open()
+    {
+        try
+        {
+            _configuration = AiConfiguration.LoadConfiguration();
+            _provider = _configuration.Provider;
+            _endpoint = _configuration.EndpointUrl;
+            _model = _configuration.Model;
+            _apiKey = string.Empty;
+            _status = string.Empty;
+            _error = false;
+            _open = true;
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not load shared AI settings");
+            _status = "Saved AI settings could not be loaded. Check the application log.";
+            _error = true;
+            _open = true;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ProviderChanged()
+    {
+        switch (_provider)
+        {
+            case AiProvider.DeepSeek: _endpoint = "https://api.deepseek.com/chat/completions"; _model = "deepseek-flash"; break;
+            case AiProvider.Gemini: _endpoint = "https://generativelanguage.googleapis.com/v1beta"; _model = "gemini-3.8-flash"; break;
+            case AiProvider.OpenAiCompatible: _endpoint = "https://api.openai.com/v1"; _model = ""; break;
+        }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            AiConfiguration.SaveConfiguration(new(_provider, _endpoint, _model, _configuration.HasApiKey), _apiKey);
+            _apiKey = string.Empty;
+            _configuration = AiConfiguration.LoadConfiguration();
+            Coordinator.NotifyConfigurationChanged();
+            _status = "Shared AI settings saved securely for this Windows account.";
+            _error = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not save shared AI settings");
+            _status = ex.Message;
+            _error = true;
+        }
+    }
+
+    private void ClearKey()
+    {
+        try
+        {
+            AiConfiguration.ClearApiKey();
+            _apiKey = string.Empty;
+            _configuration = AiConfiguration.LoadConfiguration();
+            Coordinator.NotifyConfigurationChanged();
+            _status = "Saved API key removed. Local and non-AI features remain available.";
+            _error = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not remove shared AI key");
+            _status = "Could not remove the saved key. Check the application log.";
+            _error = true;
+        }
+    }
+
+    private void Close() => _open = false;
+    public void Dispose() => Coordinator.OpenRequested -= Open;
+}

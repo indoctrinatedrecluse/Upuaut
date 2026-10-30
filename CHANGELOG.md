@@ -4,6 +4,25 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-31
+
+### Added
+
+- **Shared AI Services settings:** replace the header's .NET badge with a prominent AI settings button and add Help → Configure AI Settings. Provider, model, endpoint, and the DPAPI-protected API key are shared through a provider-neutral configuration service so future AI features can reuse one local profile.
+
+### Changed
+
+- Move AI provider setup out of Log Lab into the shared settings modal; Log Lab refreshes its AI availability when settings change and keeps requests manual-only.
+- Ask providers for concise Markdown and render AI responses using the same bounded, safe Markdown renderer used for release notes, with formatted headings, lists, tables, and code blocks.
+- Release notes continue to render as Markdown; unsafe HTML and external images are suppressed and links are restricted to safe schemes.
+- Advance app, setup, and workflow fallback metadata to `0.5.2`.
+
+### Verification
+
+- Windows Release builds completed with 0 warnings and 0 errors for the desktop app and setup project.
+- Self-contained Windows x64 publishes completed for the app and single-file installer; required release media is present.
+- Automated suite passed: 57 tests, including Markdown rendering and unsafe-content suppression.
+
 ## [0.5.1] - 2026-10-31
 
 ### Fixed
