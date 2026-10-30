@@ -46,7 +46,7 @@
                     <TextBlock Text="Windows System Triage &amp; Network Intelligence" Foreground="#C5C6CB" FontSize="16" Margin="0,4,0,0" />
                     <Border Height="1" Width="260" HorizontalAlignment="Left" Margin="0,24,0,18" Background="#776337" />
                     <TextBlock Text="Scout live traffic. Read the signs in Windows event logs. Bring the hidden path into view." Foreground="{StaticResource Muted}" FontSize="13" TextWrapping="Wrap" LineHeight="22" MaxWidth="390" />
-                    <TextBlock x:Name="VersionLabel" Text="VERSION 0.2.0" Foreground="#777985" FontFamily="Consolas" FontSize="10" Margin="0,30,0,0" />
+                    <TextBlock x:Name="VersionLabel" Text="VERSION 0.3.0" Foreground="#777985" FontFamily="Consolas" FontSize="10" Margin="0,30,0,0" />
                 </StackPanel>
 
                 <Border x:Name="InstallPanel" Grid.Column="1" CornerRadius="10" BorderBrush="#806E5130" BorderThickness="1" Background="#C20E1017" Padding="27">

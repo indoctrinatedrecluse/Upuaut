@@ -1,7 +1,23 @@
+@using Microsoft.Extensions.Logging
+@inject Microsoft.Extensions.Logging.ILogger<App> Logger
+
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        <ErrorBoundary>
+            <ChildContent>
+                <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </ChildContent>
+            <ErrorContent Context="exception">
+                <div class="app-error-boundary" role="alert">
+                    <span>FIELD REPORT // INTERFACE RECOVERY</span>
+                    <h2>This view encountered an unexpected error.</h2>
+                    <p>Upuaut recorded the diagnostic details in its application logs. You can return to the dashboard or reopen this workspace.</p>
+                    <a href="/">RETURN TO DASHBOARD</a>
+                </div>
+                @{ LogRenderFailure(exception); }
+            </ErrorContent>
+        </ErrorBoundary>
     </Found>
     <NotFound>
         <LayoutView Layout="@typeof(MainLayout)">
@@ -12,3 +28,8 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    private void LogRenderFailure(Exception exception) =>
+        Logger.LogError(exception, "Unhandled Blazor component/render failure was contained by the application error boundary");
+}

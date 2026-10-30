@@ -54,6 +54,7 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        AppLogger.Fatal("UnhandledException", "Unhandled WPF dispatcher exception intercepted", e.Exception);
         var dumpPath = CrashReporter.GenerateCrashDump(e.Exception, "WPF Dispatcher UI Thread Exception");
 
         var message = $"A critical UI thread exception occurred:\n\n{e.Exception.Message}\n\n" +
@@ -78,6 +79,7 @@ public partial class App : Application
     {
         if (e.ExceptionObject is Exception ex)
         {
+            AppLogger.Fatal("UnhandledException", $"Unhandled AppDomain exception (terminating={e.IsTerminating})", ex);
             CrashReporter.GenerateCrashDump(ex, $"AppDomain Unhandled (IsTerminating={e.IsTerminating})");
         }
         else
@@ -88,6 +90,7 @@ public partial class App : Application
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
+        AppLogger.Error("UnhandledException", "Unobserved background task exception intercepted", e.Exception);
         CrashReporter.GenerateCrashDump(e.Exception, "Background TaskScheduler Unobserved Task Exception");
         // Mark as observed so the process doesn't terminate unexpectedly
         e.SetObserved();

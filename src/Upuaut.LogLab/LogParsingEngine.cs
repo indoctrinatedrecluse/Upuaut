@@ -15,6 +15,7 @@ namespace Upuaut.LogLab;
 public sealed class LogParsingEngine : ILogParsingEngine
 {
     private const int MaximumEntries = 200_000;
+    private const int MaximumDetailedWarnings = 250;
     private const int MaximumFieldsPerEntry = 512;
     private const int MaximumFieldValueLength = 16_384;
     private const int MaximumJsonDepth = 64;
@@ -28,30 +29,58 @@ public sealed class LogParsingEngine : ILogParsingEngine
         var fullPath = Path.GetFullPath(path);
         var info = new FileInfo(fullPath);
         if (!info.Exists) throw new FileNotFoundException("The selected log file was not found.", fullPath);
-        if (info.Length == 0) throw new InvalidDataException("The selected file is empty.");
         if (info.Length > ILogParsingEngine.DefaultMaximumFileBytes)
             throw new InvalidDataException($"The selected file is {FormatBytes(info.Length)}. Phase 1 supports files up to {FormatBytes(ILogParsingEngine.DefaultMaximumFileBytes)}.");
 
         var bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        var (text, encodingName) = Decode(bytes);
-        if (text.Contains('\0')) throw new InvalidDataException("The selected file contains binary data and cannot be imported as a text log.");
+        string text;
+        string encodingName;
+        var warnings = new List<string>();
+        try { (text, encodingName) = Decode(bytes); }
+        catch (DecoderFallbackException ex)
+        {
+            text = Encoding.UTF8.GetString(bytes);
+            encodingName = "UTF-8 (replacement fallback)";
+            warnings.Add($"The declared Unicode encoding contains invalid byte sequences; replacement characters were used so the source remains inspectable. {ex.Message}");
+        }
 
         var sourceLines = text.Split('\n').Select(line => line.EndsWith('\r') ? line[..^1] : line).ToArray();
-        var warnings = new List<string>();
-        var format = DetectFormat(text);
-        var entries = format switch
+        var format = LogDocumentFormat.PlainText;
+        List<ParsedLogEntry> entries;
+        try
         {
-            LogDocumentFormat.JsonLines => ParseJsonLines(sourceLines, warnings),
-            LogDocumentFormat.Json => ParseJson(text, sourceLines, warnings),
-            LogDocumentFormat.Xml => ParseXml(text, warnings),
-            LogDocumentFormat.Csv => ParseCsv(sourceLines, warnings),
-            _ => ParsePlainText(sourceLines)
-        };
+            if (text.Contains('\0'))
+            {
+                warnings.Add("This file contains binary or mixed content. It is shown as decoded raw text; parsed fields may be incomplete.");
+                entries = ParsePlainText(sourceLines);
+            }
+            else
+            {
+                format = DetectFormat(text);
+                entries = format switch
+                {
+                    LogDocumentFormat.JsonLines => ParseJsonLines(sourceLines, warnings),
+                    LogDocumentFormat.Json => ParseJson(text, sourceLines, warnings),
+                    LogDocumentFormat.Xml => ParseXml(text, warnings),
+                    LogDocumentFormat.Csv => ParseCsv(sourceLines, warnings),
+                    _ => ParsePlainText(sourceLines)
+                };
+            }
 
-        if (entries.Count == 0 && sourceLines.Any(line => !string.IsNullOrWhiteSpace(line)))
+            if (entries.Count == 0 && sourceLines.Any(line => !string.IsNullOrWhiteSpace(line)))
+            {
+                warnings.Add("The selected format produced no entries. The original content is shown in raw-text mode.");
+                entries = ParsePlainText(sourceLines);
+                format = LogDocumentFormat.PlainText;
+            }
+            if (warnings.Any(warning => warning.Contains("raw-text mode", StringComparison.OrdinalIgnoreCase)))
+                format = LogDocumentFormat.PlainText;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
         {
-            warnings.Add("The input was retained, but no structured entries could be extracted. Review the source text or try a custom parser profile in a future release.");
+            warnings.Add($"Structured parsing failed ({ex.GetType().Name}: {ex.Message}). The complete decoded source is retained in raw-text mode.");
             entries = ParsePlainText(sourceLines);
             format = LogDocumentFormat.PlainText;
         }
@@ -101,6 +130,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
 
     private static (string Text, string Name) Decode(byte[] bytes)
     {
+        if (bytes.Length == 0) return (string.Empty, "UTF-8 (empty file)");
         if (bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) return (new UTF8Encoding(false, true).GetString(bytes, 3, bytes.Length - 3), "UTF-8 (BOM)");
         if (bytes.AsSpan().StartsWith(new byte[] { 0xFF, 0xFE, 0x00, 0x00 })) return (new UTF32Encoding(false, true, true).GetString(bytes, 4, bytes.Length - 4), "UTF-32 LE");
         if (bytes.AsSpan().StartsWith(new byte[] { 0x00, 0x00, 0xFE, 0xFF })) return (new UTF32Encoding(true, true, true).GetString(bytes, 4, bytes.Length - 4), "UTF-32 BE");
@@ -135,6 +165,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
     private static List<ParsedLogEntry> ParseJsonLines(string[] lines, List<string> warnings)
     {
         var entries = new List<ParsedLogEntry>();
+        var malformedLines = 0;
         for (var i = 0; i < lines.Length && entries.Count < MaximumEntries; i++)
         {
             var line = lines[i]; if (string.IsNullOrWhiteSpace(line)) continue;
@@ -143,8 +174,16 @@ public sealed class LogParsingEngine : ILogParsingEngine
                 using var json = JsonDocument.Parse(line, new JsonDocumentOptions { MaxDepth = MaximumJsonDepth });
                 entries.Add(CreateJsonEntry(entries.Count + 1, i + 1, i + 1, json.RootElement, line));
             }
-            catch (JsonException ex) { warnings.Add($"Line {i + 1} is not valid JSON and was retained as plain text: {ex.Message}"); entries.Add(CreateTextEntry(entries.Count + 1, i + 1, line)); }
+            catch (JsonException ex)
+            {
+                malformedLines++;
+                if (malformedLines <= MaximumDetailedWarnings)
+                    warnings.Add($"Line {i + 1} is not valid JSON and was retained as plain text: {ex.Message}");
+                entries.Add(CreateTextEntry(entries.Count + 1, i + 1, line));
+            }
         }
+        if (malformedLines > MaximumDetailedWarnings)
+            warnings.Add($"{malformedLines - MaximumDetailedWarnings:N0} additional malformed JSON Lines were retained as plain text; detailed notes are capped to keep the review responsive.");
         return entries;
     }
 
@@ -173,7 +212,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
         }
         catch (JsonException ex)
         {
-            warnings.Add($"JSON parsing stopped: {ex.Message}");
+            warnings.Add($"JSON parsing stopped ({ex.Message}); the complete original source is shown in raw-text mode.");
             return ParsePlainText(lines);
         }
     }
@@ -198,7 +237,7 @@ public sealed class LogParsingEngine : ILogParsingEngine
         }
         catch (XmlException ex)
         {
-            warnings.Add($"XML parsing failed; the original text is still available: {ex.Message}");
+            warnings.Add($"XML parsing failed ({ex.Message}); the complete original source is shown in raw-text mode.");
             return ParsePlainText(text.Split('\n').Select(line => line.TrimEnd('\r')).ToArray());
         }
     }
@@ -208,11 +247,14 @@ public sealed class LogParsingEngine : ILogParsingEngine
         var nonEmptyIndices = Enumerable.Range(0, lines.Length).Where(i => !string.IsNullOrWhiteSpace(lines[i])).ToArray();
         if (nonEmptyIndices.Length == 0 || !TryParseCsvRow(lines[nonEmptyIndices[0]], out var headers)) return ParsePlainText(lines);
         var entries = new List<ParsedLogEntry>();
+        var malformedRows = 0;
         foreach (var lineIndex in nonEmptyIndices.Skip(1).Take(MaximumEntries))
         {
             if (!TryParseCsvRow(lines[lineIndex], out var values) || values.Count != headers.Count)
             {
-                warnings.Add($"CSV line {lineIndex + 1} has an unmatched quote or a different number of columns; it is retained as plain text.");
+                malformedRows++;
+                if (malformedRows <= MaximumDetailedWarnings)
+                    warnings.Add($"CSV line {lineIndex + 1} has an unmatched quote or a different number of columns; it is retained as plain text.");
                 entries.Add(CreateTextEntry(entries.Count + 1, lineIndex + 1, lines[lineIndex]));
                 continue;
             }
@@ -225,6 +267,8 @@ public sealed class LogParsingEngine : ILogParsingEngine
             var source = GetField(fields, "source", "provider", "logger", "component", "service", "application");
             entries.Add(new ParsedLogEntry(entries.Count + 1, lineIndex + 1, lineIndex + 1, time, severity, source, Limit(message), lines[lineIndex], fields, "CSV columns mapped by the header row."));
         }
+        if (malformedRows > MaximumDetailedWarnings)
+            warnings.Add($"{malformedRows - MaximumDetailedWarnings:N0} additional malformed CSV rows were retained as plain text; detailed notes are capped to keep the review responsive.");
         return entries;
     }
 

@@ -179,10 +179,11 @@
             Category: "log-lab",
             CategoryName: "General-purpose Log Lab",
             Title: "Import and inspect logs in Log Lab",
-            Summary: "Use the Phase 2 preview to import logs, inspect extracted fields, and review evidence-backed scenario labels and investigative checks.",
+            Summary: "Import unfamiliar logs, inspect extracted fields, review scenario labels, and keep the original source available when parsing is incomplete.",
             Icon: "⌕",
             HtmlContent: @"
-                <p>Open <strong>Log Lab (Preview)</strong> from the navigation and import a log file. Log Lab recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
+                <p>Open <strong>Log Lab</strong> from the navigation and import a log file. Log Lab recognizes plain text, JSON, JSON Lines (NDJSON), XML, and CSV. Files are limited to 32 MiB, and parsing stops after 200,000 entries.</p>
+                <p>Unknown formats and malformed structured logs fall back to decoded raw text. If scenario or timeline analysis fails, the original source stays open in the raw editor and the reason is recorded in Upuaut diagnostics. Empty or binary-like files can also be inspected as raw text; field extraction may be limited.</p>
                 <h4>Search and inspect</h4>
                 <ol>
                     <li>Search across entry messages, raw lines, and extracted fields. Use the severity selector to narrow the list.</li>
@@ -207,7 +208,7 @@
                 <h4>Interpretation limits</h4>
                 <p>Extraction, classification, and sequence grouping are best-effort, and format detection can be uncertain. Review parser notes and compare fields with the raw source before drawing conclusions.</p>
             ",
-            RawText: "Log Lab general purpose log parsing preview import text plain text JSON JSONL NDJSON XML CSV source line provenance severity search fields raw editor full source pretty format JSON XML reset 32 MiB 200000 entries best effort parser notes scenario classification evidence tags recommendations sequence repeated failures warning error recovery reports Markdown JSON custom regex parser profiles field extraction timeout built-in .NET console Apache error Nginx access RFC 3164 syslog side by side report sections timeline UTC time buckets component filter source filter time range saved search filter presets sequence window same component"
+            RawText: "Log Lab general purpose log parsing robust raw fallback unknown format malformed binary import text plain text JSON JSONL NDJSON XML CSV source line provenance severity search fields raw editor full source pretty format JSON XML reset 32 MiB 200000 entries best effort parser notes scenario classification evidence tags recommendations sequence repeated failures warning error recovery reports Markdown JSON custom regex parser profiles field extraction timeout built-in .NET console Apache error Nginx access RFC 3164 syslog side by side report sections timeline UTC time buckets component filter source filter time range saved search filter presets sequence window same component"
         ),
         new(
             Id: "in-process-blazor-hybrid",

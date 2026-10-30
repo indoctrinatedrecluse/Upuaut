@@ -10,6 +10,7 @@ using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
 using Upuaut.LogLab;
 using Upuaut.Scout.Services;
+using Upuaut.Core.Updates;
 
 namespace Upuaut.App;
 
@@ -113,8 +114,11 @@ public partial class MainWindow : Window
             services.AddSingleton<ILogParserProfileService, LogParserProfileService>();
             services.AddSingleton<ILogTimelineAnalysisEngine, LogTimelineAnalysisEngine>();
             services.AddSingleton<ILogSearchPresetService, LogSearchPresetService>();
+            services.AddSingleton<IUpdateService, GitHubUpdateService>();
 
             blazorWebView.Services = services.BuildServiceProvider();
+            blazorWebView.Services.GetRequiredService<IUpdateService>().InstallerLaunched +=
+                () => Dispatcher.BeginInvoke(() => Application.Current.Shutdown());
             AppLogger.Info("MainWindow", "blazorWebView.Services successfully configured and assigned");
         }
         catch (Exception ex)

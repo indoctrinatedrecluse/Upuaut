@@ -1,0 +1,15 @@
+.update-modal { max-width: 660px; }
+.update-status { color: #c7c8ce; line-height: 1.65; margin: 20px 0; }
+.update-release-card { border: 1px solid #776337; background: linear-gradient(135deg, #19170f, #101116); border-radius: 8px; padding: 18px; max-height: 270px; overflow: auto; }
+.update-release-card h3 { color: #f0d997; margin: 9px 0; }
+.update-release-card p { color: #aeb0b8; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
+.update-progress-track { height: 4px; border-radius: 5px; background: #272830; overflow: hidden; margin: 23px 0 8px; }
+.update-progress-track div { height: 100%; background: linear-gradient(90deg, #94753b, #f4d984); transition: width 160ms linear; }
+.update-progress-label { color: #cbb778; font: 10px Consolas, monospace; letter-spacing: .12em; }
+.update-install-button { border: 1px solid #ae914e; color: #f7e5ac; background: linear-gradient(135deg, #4b3b1c, #292112); border-radius: 4px; padding: 10px 16px; font: 700 10px Consolas, monospace; letter-spacing: .08em; cursor: pointer; }
+.update-install-button:hover { background: #5b4820; }
+.app-error-boundary { min-height: 100vh; display: grid; place-content: center; padding: 40px; background: radial-gradient(ellipse at 50% 35%, #211d13, #090a0d 68%); color: #d5d5db; text-align: center; }
+.app-error-boundary > span { color: #c3a65c; font: 11px Consolas, monospace; letter-spacing: .18em; }
+.app-error-boundary h2 { color: #f0d997; margin: 15px 0 8px; }
+.app-error-boundary p { max-width: 520px; color: #aeb0b8; line-height: 1.6; }
+.app-error-boundary a { justify-self: center; margin-top: 12px; border: 1px solid #806b3e; padding: 11px 16px; color: #f0d997; text-decoration: none; font: 700 10px Consolas, monospace; letter-spacing: .1em; }

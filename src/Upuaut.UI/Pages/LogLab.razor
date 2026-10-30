@@ -4,6 +4,7 @@
 @using Upuaut.LogLab
 @using Upuaut.LogLab.Models
 @using System.Globalization
+@using Microsoft.Extensions.Logging
 @inject ILogParsingEngine ParsingEngine
 @inject ILogAnalysisEngine AnalysisEngine
 @inject ILogSequenceAnalysisEngine SequenceAnalysisEngine
@@ -11,6 +12,7 @@
 @inject ILogParserProfileService ProfileService
 @inject ILogTimelineAnalysisEngine TimelineAnalysisEngine
 @inject ILogSearchPresetService SearchPresetService
+@inject Microsoft.Extensions.Logging.ILogger<LogLab> Logger
 
 <PageTitle>Upuaut — General-purpose Log Lab</PageTitle>
 
@@ -382,16 +384,33 @@
             _statusMessage = "Reading source and extracting entry fields…"; _isError = false;
             _document = await ParsingEngine.ImportFileAsync(dialog.FileName);
             _sourceDocument = _document;
+            if (_document.Warnings.Count > 0)
+            {
+                foreach (var warning in _document.Warnings.Take(3))
+                    Logger.LogWarning("Log Lab import note for {FileName}: {Warning}", _document.FileName, warning);
+                if (_document.Warnings.Count > 3)
+                    Logger.LogWarning("Log Lab import generated {AdditionalWarningCount} additional parser notes; details remain available in the Log Lab warning panel.", _document.Warnings.Count - 3);
+            }
             _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _filteredDocument = null; _activeTimelineBucket = null;
             _statusMessage = "Grouping scenario signals and preparing evidence...";
             await InvokeAsync(StateHasChanged);
             await AnalyzeCurrentDocumentAsync();
-            _selectedEntry = _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
+            _selectedEntry = _analysis is null ? null : _document.Entries.FirstOrDefault(); _searchQuery = string.Empty; _severityFilter = string.Empty; _entryLimit = 500;
             _categoryFilter = string.Empty;
-            _showWholeDocument = false; ResetEditor();
-            _statusMessage = $"Imported {_document.Entries.Count:N0} entries from {_document.FileName}. Original source is preserved.";
+            _showWholeDocument = _analysis is null || _document.Warnings.Any(warning => warning.Contains("raw-text mode", StringComparison.OrdinalIgnoreCase) || warning.Contains("decoded raw text", StringComparison.OrdinalIgnoreCase));
+            if (_showWholeDocument) _editorText = _document.OriginalText; else ResetEditor();
+            if (_analysis is null)
+            {
+                _statusMessage = $"Imported {_document.FileName}; structured analysis failed, so the complete source is open in raw editor mode.";
+                _isError = true;
+            }
+            else _statusMessage = $"Imported {_document.Entries.Count:N0} entries from {_document.FileName}. Original source is preserved.";
         }
-        catch (Exception ex) { _statusMessage = $"Could not import this log: {ex.Message}"; _isError = true; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Log Lab could not import {FilePath}", dialog.FileName);
+            _statusMessage = $"Could not import this log: {ex.Message}"; _isError = true;
+        }
     }
 
     private void SelectEntry(ParsedLogEntry entry)
@@ -412,7 +431,7 @@
     private void TryFormat(Func<string, string> formatter, string format)
     {
         try { _editorText = formatter(_editorText); _statusMessage = $"Editor formatted as {format}. Imported source remains unchanged."; _isError = false; }
-        catch (Exception ex) { _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
+        catch (Exception ex) { Logger.LogWarning(ex, "Log Lab could not format the working editor as {Format}", format); _statusMessage = $"Could not format editor as {format}: {ex.Message}"; _isError = true; }
     }
     private void CloseDocument() { _document = null; _sourceDocument = null; _analysis = null; _sequenceFindings = []; _timeline = null; _selectedSequence = null; _selectedEntry = null; _editorText = string.Empty; _statusMessage = string.Empty; _categoryFilter = string.Empty; _filteredDocument = null; _activeTimelineBucket = null; }
     private void ShowMore() => _entryLimit = Math.Min(_entryLimit + 500, FilteredEntries.Count);
@@ -433,13 +452,24 @@
     {
         if (_document is null) return;
         var doc = _document;
-        (_analysis, _sequenceFindings, _timeline) = await Task.Run(() =>
+        try
         {
-            var analysis = AnalysisEngine.Analyze(doc);
-            var sequences = SequenceAnalysisEngine.Analyze(doc, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly));
-            var timeline = TimelineAnalysisEngine.Analyze(doc, _timelineIntervalMinutes);
-            return (analysis, sequences, timeline);
-        });
+            (_analysis, _sequenceFindings, _timeline) = await Task.Run(() =>
+            {
+                var analysis = AnalysisEngine.Analyze(doc);
+                var sequences = SequenceAnalysisEngine.Analyze(doc, new LogSequenceAnalysisOptions(_sequenceWindowMinutes, _sameComponentOnly));
+                var timeline = TimelineAnalysisEngine.Analyze(doc, _timelineIntervalMinutes);
+                return (analysis, sequences, timeline);
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Log Lab analysis failed for {FileName}; preserving source in raw editor mode", doc.FileName);
+            _analysis = null; _sequenceFindings = []; _timeline = null;
+            _showWholeDocument = true; _selectedEntry = null; _editorText = doc.OriginalText;
+            _statusMessage = "Structured analysis could not complete. The original source remains available in raw editor mode.";
+            _isError = true;
+        }
         _filteredDocument = null;
     }
 

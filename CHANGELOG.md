@@ -4,6 +4,8 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
 ### Added
 
 - **Log Lab Phase 1 preview:** new log import and investigation workspace with format detection for plain text, JSON, JSON Lines, XML, and CSV; normalized entry fields and source-line provenance; severity filtering and search; raw-source inspection; and non-destructive JSON/XML pretty formatting. Imports are bounded to 32 MiB and 200,000 entries.
@@ -11,6 +13,10 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 - **Log Lab Phase 3 investigation tools:** source-order sequence review for repeated error signatures, nearby warning→error transitions, and error→success signals; saveable Markdown and JSON reports with summaries and bounded notable-entry details; and user-authored JSON regex parser profiles stored per Windows account. Profile pattern length, per-match timeout, total processing time, field count, and profile count are bounded. Applying a profile creates a derived entry view while preserving the original source.
 - **Log Lab Phase 4 workflows:** built-in parser profiles for .NET console, Apache error, Nginx 4xx/5xx access, and RFC 3164 syslog logs; side-by-side comparison of linked sequence entries; and report-section controls for summaries, categories, sequences, notable entries, parser notes, and recommendations.
 - **Log Lab Phase 5 timeline and saved filters:** UTC timeline buckets with warning/error volume and click-to-filter navigation; combined component and local-time range filters; up to 50 reusable filter presets per Windows account; configurable sequence windows and same-component pivots; and optional timeline trend sections in Markdown/JSON reports.
+- **Log Lab raw-source recovery:** unknown and malformed structured formats fall back to source-preserving text entries; binary-like and empty inputs can be inspected in the raw editor, and parser or analysis failures are recorded in application diagnostics.
+- **Release nomenclature:** standardize release tags as `vMAJOR.MINOR.PATCH`, with matching version metadata in the app, setup UI, registry entry, archive name, and release title.
+- **In-app updates:** check the latest stable GitHub release on startup or from Help → Check for Updates; review release notes, confirm download and installation, then launch the familiar themed setup experience.
+- **Installer loop packaging:** require and include the complete six-second installer canvas video in every release setup archive.
 
 ## [0.2.0] - 2026-10-30
 

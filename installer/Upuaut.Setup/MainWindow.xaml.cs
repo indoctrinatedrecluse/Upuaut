@@ -16,9 +16,10 @@ public partial class MainWindow : Window
     public MainWindow(bool uninstallMode = false)
     {
         InitializeComponent();
+        Closed += (_, _) => ScheduleUpdateStagingCleanup();
         _uninstallMode = uninstallMode;
         InstallPathBox.Text = uninstallMode ? AppContext.BaseDirectory : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Upuaut");
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.2.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.3.0";
         VersionLabel.Text = $"VERSION {version}";
         if (uninstallMode)
         {
@@ -268,7 +269,7 @@ public partial class MainWindow : Window
     {
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\Upuaut");
         key.SetValue("DisplayName", "Upuaut — Opener of the Ways");
-        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.2.0");
+        key.SetValue("DisplayVersion", Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.3.0");
         key.SetValue("Publisher", "Upuaut Project");
         key.SetValue("InstallLocation", target);
         key.SetValue("DisplayIcon", Path.Combine(target, "Upuaut.App.exe"));
@@ -412,6 +413,47 @@ public partial class MainWindow : Window
     }
 
     private void CancelUninstall_Click(object sender, RoutedEventArgs e) => Close();
+
+    private static void ScheduleUpdateStagingCleanup()
+    {
+        try
+        {
+            var updatesRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "Upuaut", "Updates")).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var currentDirectory = Path.GetFullPath(AppContext.BaseDirectory);
+            if (!currentDirectory.StartsWith(updatesRoot, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(new DirectoryInfo(currentDirectory).Name, "package", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var stagingDirectory = Directory.GetParent(currentDirectory)?.FullName;
+            if (stagingDirectory is null ||
+                !string.Equals(Directory.GetParent(stagingDirectory)?.FullName?.TrimEnd(Path.DirectorySeparatorChar), updatesRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ||
+                !Guid.TryParse(Path.GetFileName(stagingDirectory), out _))
+                return;
+
+            var scriptPath = Path.Combine(Path.GetTempPath(), $"Upuaut-Update-Cleanup-{Guid.NewGuid():N}.ps1");
+            var safeDirectory = stagingDirectory.Replace("'", "''");
+            File.WriteAllText(scriptPath, $$"""
+                $setupPid = {{Environment.ProcessId}}
+                $stagingDirectory = '{{safeDirectory}}'
+                while (Get-Process -Id $setupPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 750 }
+                Remove-Item -LiteralPath $stagingDirectory -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+                """, System.Text.Encoding.UTF8);
+            var start = new ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            start.ArgumentList.Add("-NoProfile");
+            start.ArgumentList.Add("-ExecutionPolicy");
+            start.ArgumentList.Add("Bypass");
+            start.ArgumentList.Add("-File");
+            start.ArgumentList.Add(scriptPath);
+            Process.Start(start);
+        }
+        catch { /* Staging cleanup is best-effort; an update must not be held up by temp cleanup. */ }
+    }
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

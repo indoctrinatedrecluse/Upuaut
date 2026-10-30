@@ -27,9 +27,9 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           if ($env:GITHUB_REF -like 'refs/tags/*') {
-            if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') { throw "Tag '$env:GITHUB_REF_NAME' does not contain a valid semantic version." }
+            if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$env:GITHUB_REF_NAME' must use the vMAJOR.MINOR.PATCH release format." }
           } else {
-            $version = '0.2.0'
+            $version = '0.3.0'
           }
           "UPUAUT_VERSION=$version" >> $env:GITHUB_ENV
 
@@ -60,11 +60,7 @@ jobs:
           Copy-Item -Path 'artifacts/payload/*' -Destination (Join-Path $stage 'payload') -Recurse -Force
           Copy-Item -Path 'LICENSE' -Destination $stage -Force
           $installerVideo = 'installer/assets/upuaut-installer-loop.mp4'
-          if (Test-Path $installerVideo) {
-            Copy-Item $installerVideo (Join-Path $stage 'media/upuaut-installer-loop.mp4') -Force
-          } else {
-            Write-Warning "No installer video at $installerVideo; setup will use its dark and gold fallback canvas."
-          }
+          Copy-Item $installerVideo (Join-Path $stage 'media/upuaut-installer-loop.mp4') -Force
           $installerPoster = 'src/Upuaut.App/wwwroot/media/upuaut-splash-poster.jpg'
           if (Test-Path $installerPoster) {
             Copy-Item $installerPoster (Join-Path $stage 'media/upuaut-splash-poster.jpg') -Force

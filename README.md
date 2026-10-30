@@ -7,16 +7,17 @@ Upuaut is a Windows desktop toolkit for investigating Windows event logs, inspec
 - **Chronicles** queries local Windows event channels and offline `.evtx` files. It supports severity, provider, event ID, time, and text filters; live event streaming; event explanations; failure clusters; period comparisons; and JSON, CSV, Markdown, and investigation-case exports.
 - **Scout** captures IPv4 traffic through Windows raw sockets or Ethernet frames through Npcap. Ethernet mode dissects IPv4, IPv6, VLAN, ARP, TCP, UDP, ICMP, and ICMPv6. The inspector provides protocol details, bounded DNS question/answer data, selected HTTP metadata, TLS ClientHello SNI, and captured bytes. Scout also supports display and user-space capture filters, endpoint conversations, TCP Follow, and PCAPNG import/export.
 - **Scales** is an early correlation preview. It places recent System/Application warning and error events beside packets already in Scout's buffer when they fall within ±2.5 seconds. The score is time proximity only; it does not establish causation or threat probability. Notes and case data can be saved as JSON or CSV.
+- **Log Lab** imports operational, server, installer, diagnostic, and crash logs; extracts structured evidence when possible; provides scenario, sequence, and timeline analysis; and preserves an editable raw-source view when the format is unfamiliar or analysis fails.
 
 Event and packet explanations expose their category, readable headline, tags, evidence, and suggested checks. These are deterministic rules and investigative guidance, not automated root-cause diagnoses.
 
 ## Planned Features
 
-### General-purpose Log Lab — Phase 5 preview
+### General-purpose Log Lab
 
-The preview workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 5 adds timeline navigation, time/component sequence pivots, and saved multi-condition filters.
+The workspace imports and investigates logs from many sources: application crash reports, installer and uninstaller logs, server logs, maintenance records, diagnostics, and other text or structured log files. The engine recognizes plain text, JSON, JSON Lines, XML, and CSV, extracts common fields on a best-effort basis, and keeps the original source available so uncertain interpretations can be checked. Phase 5 adds timeline navigation, time/component sequence pivots, and saved multi-condition filters.
 
-The planned workspace includes:
+The workspace currently includes:
 
 - **Phase 1 delivered — parsing and evidence extraction:** detect plain text, JSON, JSON Lines, XML, and CSV; extract timestamps, severity, event/message text, components, processes, error codes, identifiers, and other fields when present; retain source lines and explain the extraction basis. Imports are currently limited to 32 MiB and 200,000 entries.
 - **Phase 1 delivered — investigation workbench:** search parsed entries, filter by severity, inspect normalized fields and raw entry text, view the complete original source, and pretty-format JSON/XML in an editable view without changing the imported source.
@@ -27,6 +28,7 @@ The planned workspace includes:
 - **Phase 4 delivered — report and sequence workbench:** choose which summary, sequence, notable-entry, parser-note, and suggested-check sections appear in exports; compare two linked events side by side and open either event in the inspector.
 - **Phase 5 delivered — timeline and query presets:** browse timestamped events in bounded UTC buckets, click a bucket to filter the entry list, combine text/severity/scenario/component/time criteria, and save or reuse up to 50 named filters per Windows account.
 - **Phase 5 delivered — sequence pivots:** choose the time window and optionally constrain warning/error/recovery comparisons to the same parsed component. Reports record the sequence settings and can include the timeline trend table.
+- **Raw fallback and recovery:** unfamiliar, malformed, mixed, or binary-like imports remain available in the raw editor when structured parsing cannot confidently proceed. Analysis failures are recorded in Upuaut diagnostics and preserve the original decoded source.
 - **Future extensions:** expand the built-in dialect library and add further time-series metrics and parser-specific pivots.
 
 Parsing, classification, and sequence grouping remain best-effort: unfamiliar or incomplete logs may only support partial extraction, and heuristic labels do not confirm root cause. Profile regexes run with time limits and can stop early on large or expensive inputs; parser profiles remain user-authored rules rather than automatic format discovery.
@@ -58,7 +60,7 @@ See the searchable in-app Documentation page for workspace workflows and `instal
 
 ## Release
 
-Push a semantic version tag such as `v0.2.0`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program, and attaches a ZIP package to the GitHub Release. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
+Push a semantic version tag in the `vMAJOR.MINOR.PATCH` format, such as `v0.3.0`. The `Windows Release` GitHub Actions workflow publishes the self-contained Windows x64 app, bundles it with the themed setup program and required six-second installer loop, and attaches `Upuaut-Setup-win-x64-vVERSION.zip` to the GitHub Release. The app checks the latest stable release at startup and offers download/install after user confirmation; users can also check from Help → Check for Updates. Extract the full ZIP before running `Upuaut.Setup.exe`; the setup program uses its sibling payload folder.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history and [LICENSE](LICENSE) for the MIT license.
 
