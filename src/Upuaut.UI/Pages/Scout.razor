@@ -286,6 +286,19 @@
                         <h3 class="ins-summary">@_selectedFrame.Summary</h3>
                     </div>
 
+                    @if (_selectedFrame.Interpretation is { } reading)
+                    {
+                        <section class="section-block" style="border: 1px solid var(--upuaut-gold); border-radius: 10px; padding: 1rem; margin: 1rem;">
+                            <div class="tech-key">@reading.Category · RULE MATCH @reading.RuleMatchStrength%</div>
+                            <h3>@reading.Headline</h3>
+                            <p>@reading.Summary</p>
+                            <small style="color: var(--upuaut-text-muted);">@reading.MatchBasis</small>
+                            <div style="display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0;">@foreach (var tag in reading.Tags) { <span class="proto-badge">@tag</span> }</div>
+                            @if (reading.Evidence.Count > 0) { <details><summary>Evidence</summary><ul>@foreach (var item in reading.Evidence) { <li><strong>@item.Label:</strong> @item.Value — @item.Interpretation</li> }</ul></details> }
+                            @if (reading.Recommendations.Count > 0) { <h4>Suggested checks</h4><ul>@foreach (var item in reading.Recommendations) { <li>@item</li> }</ul> }
+                        </section>
+                    }
+
                     <div class="inspector-body">
                         <!-- Process Attribution Card -->
                         <div class="section-block">

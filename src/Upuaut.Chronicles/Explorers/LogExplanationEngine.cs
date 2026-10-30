@@ -79,7 +79,8 @@ public class LogExplanationEngine
         }
 
         // 4. Enrich with deep forensic field decoding (especially for Critical and Error events)
-        return ForensicLogDecoder.EnrichForensics(log, baseResult);
+        var enriched = ForensicLogDecoder.EnrichForensics(log, baseResult);
+        return LogScenarioClassifier.Enrich(log, enriched);
     }
 
     private LogExplanation? GetCuratedExplanation(LogRecord log)

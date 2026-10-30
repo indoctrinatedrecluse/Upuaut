@@ -316,7 +316,7 @@
                                             {
                                                 <span class="oracle-tag">✦ ORACLE</span>
                                             }
-                                            @(log.Explanation?.Summary ?? log.Message)
+                                            @(log.Explanation?.Headline ?? log.Explanation?.Summary ?? log.Message)
                                         </div>
                                     </td>
                                 </tr>
@@ -351,9 +351,16 @@
                         </div>
 
                         <h2 class="oracle-headline">
-                            @(_selectedLog.Explanation?.Summary ?? "Windows Event Record")
+                                            @(_selectedLog.Explanation?.Headline ?? _selectedLog.Explanation?.Summary ?? "Windows Event Record")
                         </h2>
                         <button class="pill-btn" @onclick="OpenSelectedInScales">Send selected event to Scales</button>
+
+                        @if (_selectedLog.Explanation is { } logReading)
+                        {
+                            <div class="status-code-chip"><strong>@logReading.Category</strong><span>Rule match @logReading.RuleMatchStrength% — not cause probability.</span></div>
+                            @if (logReading.Tags.Count > 0) { <div style="display:flex; flex-wrap:wrap; gap:.4rem; margin:.6rem 0;">@foreach (var tag in logReading.Tags) { <span class="triage-badge">@tag</span> }</div> }
+                            <small style="color:var(--upuaut-text-muted)">@logReading.MatchBasis</small>
+                        }
 
                         @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.DecodedStatusCode))
                         {
@@ -384,6 +391,18 @@
                     <div class="oracle-body">
                         @if (_activeTab == OracleTab.Overview)
                         {
+                            @if (_selectedLog.Explanation?.Evidence.Count > 0)
+                            {
+                                <div class="section-block">
+                                    <h4 class="section-title">Evidence used for this explanation</h4>
+                                    <div class="forensic-badges-grid">
+                                        @foreach (var item in _selectedLog.Explanation.Evidence)
+                                        {
+                                            <div class="forensic-badge-item"><span class="f-badge-key">@item.Label</span><span class="f-badge-val">@item.Value</span><small>@item.Interpretation</small></div>
+                                        }
+                                    </div>
+                                </div>
+                            }
                             <!-- Forensic Subsystem & Impact Hero Banner -->
                             @if (!string.IsNullOrEmpty(_selectedLog.Explanation?.Subsystem) || !string.IsNullOrEmpty(_selectedLog.Explanation?.ImpactAssessment))
                             {

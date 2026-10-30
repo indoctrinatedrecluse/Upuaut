@@ -265,7 +265,23 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             // Ignore XML error
         }
 
-        var properties = EventXmlParser.ExtractProperties(rawXml);
+        var properties = new Dictionary<string, string>(EventXmlParser.ExtractProperties(rawXml), StringComparer.OrdinalIgnoreCase);
+        // XML usually carries provider names; positional fallback values preserve
+        // the parameters when providers omit or vary those names.
+        if (record.Properties is not null)
+        {
+            for (var i = 0; i < record.Properties.Count; i++)
+            {
+                var key = $"Param{i + 1}";
+                if (properties.ContainsKey(key)) continue;
+                try
+                {
+                    var value = record.Properties[i]?.Value?.ToString();
+                    if (!string.IsNullOrWhiteSpace(value)) properties[key] = value;
+                }
+                catch { /* Keep the remaining event fields even if one property cannot be read. */ }
+            }
+        }
         var severity = MapLevel(record.Level);
 
         var log = new LogRecord
@@ -284,6 +300,7 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             Keywords = string.Join(", ", record.KeywordsDisplayNames ?? Enumerable.Empty<string>()),
             RawXml = rawXml,
             EventData = properties,
+            NormalizedEventData = EventXmlParser.NormalizeProperties(properties),
             SourceFile = sourceFile
         };
 

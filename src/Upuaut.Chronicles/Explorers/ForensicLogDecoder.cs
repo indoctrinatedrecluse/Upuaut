@@ -253,7 +253,9 @@ public static class ForensicLogDecoder
         {
             subsystem = "Storage Controller & NTFS Filesystem";
             impact = "Data Integrity Risk: Physical sector defect or filesystem metadata inconsistency";
-            fixCmd = "chkdsk C: /f /r";
+            // The event may refer to a non-system volume. Do not prescribe an
+            // offline, modifying repair against C: without identifying its target.
+            fixCmd = null;
 
             foreach (var kv in log.EventData)
             {
@@ -261,7 +263,7 @@ public static class ForensicLogDecoder
             }
 
             causes.Insert(0, "Storage driver detected bad physical sectors or corrupted filesystem indices.");
-            actions.Insert(0, "IMMEDIATE: Verify drive backup and schedule an offline chkdsk scan.");
+            actions.Insert(0, "Identify the affected disk or volume from the event and its neighboring records, secure a current backup, then choose a targeted read-only or repair scan appropriate to that volume.");
         }
 
         // 7. General Error / Critical Fallback

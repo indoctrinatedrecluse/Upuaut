@@ -11,6 +11,13 @@ public enum TriageSeverity
 
 public record LogExplanation
 {
+    public string Headline { get; init; } = string.Empty;
+    public string Category { get; init; } = "Unclassified";
+    public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<EvidenceObservation> Evidence { get; init; } = Array.Empty<EvidenceObservation>();
+    /// <summary>Strength of the matching deterministic rule, not probability that a cause is true.</summary>
+    public int RuleMatchStrength { get; init; }
+    public string MatchBasis { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public TriageSeverity TriageRating { get; init; } = TriageSeverity.Medium;
     public string? Subsystem { get; init; }
@@ -24,3 +31,5 @@ public record LogExplanation
     public string? DecodedStatusCode { get; init; }
     public string? StatusMeaning { get; init; }
 }
+
+public sealed record EvidenceObservation(string Label, string Value, string Interpretation);

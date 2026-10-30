@@ -114,21 +114,21 @@ public static class PacketParser
             {
                 protocol = NetworkProtocol.DNS;
                 dnsName = TryExtractDnsQuery(buffer, payloadOffset + 2, Math.Max(0, payloadLength - 2));
-                summary = $"DNS (TCP) [{flagStr}] {srcPort} ? {dstPort}";
+                summary = $"DNS (TCP) [{flagStr}] {srcPort} → {dstPort}";
             }
             else if (LooksLikeTls(buffer, payloadOffset, payloadLength))
             {
                 protocol = NetworkProtocol.TLS;
-                summary = $"TLS [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum}";
+                summary = $"TLS [{flagStr}] {srcPort} → {dstPort} Seq={seqNum} Ack={ackNum}";
             }
             else if (LooksLikeHttp(buffer, payloadOffset, payloadLength))
             {
                 protocol = NetworkProtocol.HTTP;
-                summary = $"HTTP [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum}";
+                summary = $"HTTP [{flagStr}] {srcPort} → {dstPort} Seq={seqNum} Ack={ackNum}";
             }
             else
             {
-                summary = $"TCP [{flagStr}] {srcPort} ? {dstPort} Seq={seqNum} Ack={ackNum} Win={window}";
+                summary = $"TCP [{flagStr}] {srcPort} → {dstPort} Seq={seqNum} Ack={ackNum} Win={window}";
             }
 
             if (rst)
@@ -165,12 +165,12 @@ public static class PacketParser
                 var dnsQuery = TryExtractDnsQuery(buffer, payloadOffset, payloadLen);
                 dnsName = dnsQuery;
                 summary = !string.IsNullOrEmpty(dnsQuery)
-                    ? $"DNS Query: {dnsQuery} ({srcPort} ? {dstPort})"
-                    : $"DNS Datagram ({srcPort} ? {dstPort})";
+                    ? $"DNS Query: {dnsQuery} ({srcPort} → {dstPort})"
+                    : $"DNS Datagram ({srcPort} → {dstPort})";
             }
             else
             {
-                summary = $"UDP {srcPort} ? {dstPort} Len={udpLen}";
+                summary = $"UDP {srcPort} → {dstPort} Len={udpLen}";
             }
 
             if (payloadLen > 0 && payloadOffset < buffer.Length)
@@ -216,7 +216,7 @@ public static class PacketParser
             processName = proc.ProcessName;
         }
 
-        return new PacketFrame
+        return WithInterpretation(new PacketFrame
         {
             FrameNumber = frameIndex,
             Timestamp = DateTime.UtcNow,
@@ -240,7 +240,7 @@ public static class PacketParser
             TransportHeaderLength = transportHeaderLength, TransportPayloadOffset = payloadOffsetForRaw,
             TcpSequenceNumber = tcpSequence, TcpAcknowledgmentNumber = tcpAck, TcpFlags = tcpFlags, TcpWindow = tcpWindow,
             DnsQueryName = dnsName, Details = details
-        };
+        });
     }
 
     public static PacketFrame? ParseIPv6Packet(byte[] buffer, int length, long frameIndex, string? interfaceName = null)
@@ -305,12 +305,12 @@ public static class PacketParser
             details.Add(new PacketDetail("ICMPv6", "Type / code", $"{type} / {code}"));
         }
         if (fragmented) summary += " [Fragmented]";
-        return new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, SourceIp = source, DestinationIp = destination, SourcePort = sourcePort,
+        return WithInterpretation(new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, SourceIp = source, DestinationIp = destination, SourcePort = sourcePort,
             DestinationPort = destinationPort, Protocol = protocol == NetworkProtocol.Unknown ? NetworkProtocol.IPv6 : protocol, TransportProtocol = transport,
             TotalLength = totalLength, Summary = summary, Payload = payload, InterfaceName = interfaceName, CaptureLayer = "IPv6", RawData = buffer.AsSpan(0, totalLength).ToArray(),
             IpTtl = hopLimit, IpProtocolNumber = baseNextHeader, IpFragmentOffset = fragmentOffset, IpHeaderLength = offset, TransportHeaderLength = transportHeaderLength,
             TransportPayloadOffset = payloadOffset, TcpSequenceNumber = sequence, TcpAcknowledgmentNumber = ack, TcpFlags = flags, TcpWindow = window,
-            DnsQueryName = dns, HasErrorOrRetransmit = flags.HasValue && (flags.Value & 0x04) != 0, Details = details };
+            DnsQueryName = dns, HasErrorOrRetransmit = flags.HasValue && (flags.Value & 0x04) != 0, Details = details });
     }
 
     private static uint ReadUInt32(byte[] buffer, int offset) => (uint)((buffer[offset] << 24) | (buffer[offset + 1] << 16) | (buffer[offset + 2] << 8) | buffer[offset + 3]);
@@ -332,14 +332,9 @@ public static class PacketParser
         PacketFrame? frame = etherType == 0x0800
             ? ParseIPv4Packet(buffer.AsSpan(offset, length - offset).ToArray(), length - offset, frameIndex, interfaceName)
             : etherType == 0x86DD ? ParseIPv6Packet(buffer.AsSpan(offset, length - offset).ToArray(), length - offset, frameIndex, interfaceName)
-            : etherType == 0x0806 && length >= 18 ? new PacketFrame
-            {
-                FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, Protocol = NetworkProtocol.ARP,
-                TotalLength = length, Summary = "ARP frame", InterfaceName = interfaceName,
-                CaptureLayer = "Ethernet", RawData = buffer.AsSpan(0, length).ToArray(),
-                Details = new[] { new PacketDetail("ARP", "Hardware type", $"0x{(buffer[14] << 8) | buffer[15]:X4}"), new PacketDetail("ARP", "Protocol type", $"0x{(buffer[16] << 8) | buffer[17]:X4}") }
-            } : null;
-        return frame is null ? null : frame with
+            : etherType == 0x0806 && length >= offset + 8 ? ParseArpFrame(buffer, length, frameIndex, interfaceName, offset)
+            : null;
+        return frame is null ? null : WithInterpretation(frame with
         {
             TotalLength = length,
             CaptureLayer = "Ethernet",
@@ -350,7 +345,38 @@ public static class PacketParser
             EthernetHeaderLength = offset,
             TransportPayloadOffset = frame.TransportPayloadOffset is { } payloadOffset ? payloadOffset + offset : null,
             Details = new[] { new PacketDetail("Ethernet", "Destination", destinationMac), new PacketDetail("Ethernet", "Source", sourceMac), new PacketDetail("Ethernet", "EtherType", $"0x{etherType:X4}") }.Concat(frame.Details).ToArray()
+        });
+    }
+
+    private static PacketFrame ParseArpFrame(byte[] buffer, int length, long frameIndex, string? interfaceName, int offset)
+    {
+        var hardwareLength = buffer[offset + 4]; var protocolLength = buffer[offset + 5];
+        var required = offset + 8 + 2 * hardwareLength + 2 * protocolLength;
+        var operation = (buffer[offset + 6] << 8) | buffer[offset + 7];
+        var details = new List<PacketDetail>
+        {
+            new("ARP", "Hardware type", $"0x{(buffer[offset] << 8) | buffer[offset + 1]:X4}"),
+            new("ARP", "Protocol type", $"0x{(buffer[offset + 2] << 8) | buffer[offset + 3]:X4}"),
+            new("ARP", "Hardware / protocol address length", $"{hardwareLength} / {protocolLength}"),
+            new("ARP", "Operation", operation switch { 1 => "Request (1)", 2 => "Reply (2)", _ => $"{operation}" })
         };
+        string? sourceIp = null; string? destinationIp = null; string? senderMacValue = null;
+        if (required <= length && hardwareLength == 6 && protocolLength == 4 && (buffer[offset + 2] << 8 | buffer[offset + 3]) == 0x0800)
+        {
+            senderMacValue = FormatMac(buffer.AsSpan(offset + 8, 6)); sourceIp = new IPAddress(buffer.AsSpan(offset + 14, 4)).ToString();
+            var targetMac = FormatMac(buffer.AsSpan(offset + 18, 6)); destinationIp = new IPAddress(buffer.AsSpan(offset + 24, 4)).ToString();
+            details.Add(new("ARP", "Sender", $"{sourceIp} ({senderMacValue})")); details.Add(new("ARP", "Target", $"{destinationIp} ({targetMac})"));
+        }
+        return new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, Protocol = NetworkProtocol.ARP, SourceIp = sourceIp ?? string.Empty,
+            DestinationIp = destinationIp ?? string.Empty, TotalLength = length, Summary = operation == 1 ? $"ARP request: who has {destinationIp ?? "address"}?" : operation == 2 ? $"ARP reply: {sourceIp ?? "address"} is at {(senderMacValue ?? "unknown")}" : "ARP frame",
+            InterfaceName = interfaceName, CaptureLayer = "Ethernet", RawData = buffer.AsSpan(0, length).ToArray(), Details = details };
+    }
+
+    private static PacketFrame WithInterpretation(PacketFrame frame)
+    {
+        var interpretation = PacketInterpretationEngine.Analyze(frame);
+        var decoded = interpretation.Evidence.Select(item => new PacketDetail("Interpretation", item.Label, item.Value));
+        return frame with { Interpretation = interpretation, Details = frame.Details.Where(detail => detail.Layer != "Interpretation").Concat(decoded).ToArray() };
     }
 
     private static string FormatMac(ReadOnlySpan<byte> address) => string.Join(":", address.ToArray().Select(b => b.ToString("X2")));

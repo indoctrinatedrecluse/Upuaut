@@ -36,6 +36,7 @@ public record PacketFrame
     public ushort? TcpWindow { get; init; }
     public string? DnsQueryName { get; init; }
     public IReadOnlyList<PacketDetail> Details { get; init; } = Array.Empty<PacketDetail>();
+    public PacketInterpretation? Interpretation { get; init; }
 }
 
 public sealed record PacketDetail(string Layer, string Name, string Value);

@@ -18,5 +18,7 @@ public record LogRecord
     public bool IsRealTimeEtw { get; init; }
     public LogExplanation? Explanation { get; init; }
     public IReadOnlyDictionary<string, string> EventData { get; init; } = new Dictionary<string, string>();
+    /// <summary>Normalized aliases for common Windows event fields; EventData retains original provider names.</summary>
+    public IReadOnlyDictionary<string, string> NormalizedEventData { get; init; } = new Dictionary<string, string>();
     public string? SourceFile { get; init; }
 }
