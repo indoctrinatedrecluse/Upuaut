@@ -4,6 +4,31 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-31
+
+### Fixed
+
+- **AI review now appears in every analysis workspace:** Chronicles, Scout, Weigher, Crash Forensics, and Log Lab all render the same AI review panel. Previously the panel was only drawn inside a selected-unit block — and in Log Lab only when a scenario rule matched — so entries without a rule match, an empty packet grid, or a workspace with no selection showed no AI button at all.
+- **The panel stays visible before a selection:** each workspace shows the panel with a disabled review button and a short instruction, instead of hiding AI entirely until something is selected.
+- **Missing credentials are explained in place:** when no API key is saved, the panel lists the three setup steps, states that the key is DPAPI-protected and manual-only, and opens the shared AI Services modal. The same shared profile strip on every workspace and on the Overview page reports provider/model readiness.
+
+### Added
+
+- **Chronicles AI review:** the Windows Event Log viewer gained a manual **AI EVENT REVIEW** panel that submits one selected event (channel, provider, event ID, level, decoded status code, EventData fields, matched rule evidence, and message) through the existing Chronicles prompt builder.
+- **One shared AI review surface:** new `AiReviewPanel` and `AiProfileBanner` components own credential state, busy/result/error rendering, prompt-budget display, and the Configure AI Services entry point, replacing five hand-written copies. Workspaces now only supply a bounded request builder, so guardrails and error handling cannot drift between tabs.
+- **Test coverage for the Windows-event and correlation builders:** oversized EventData/evidence and message bodies stay under the 12,000-character ceiling, and the correlation request continues to label time proximity as a lead rather than causation.
+
+### Changed
+
+- Log Lab's AI panel moved out of the scenario-finding card to the Field Inspector, so any parsed entry can be reviewed.
+- Help → AI Services and `docs/LOG-KNOWLEDGE-BASE.md` now describe the shared panel, the in-panel setup guidance, and the five supported analysis workspaces.
+- Advance app, setup, and workflow fallback metadata to `0.6.1`.
+
+### Verification
+
+- `dotnet build Upuaut.sln` completed with 0 warnings and 0 errors.
+- Automated suite passed: 85 tests, including two new prompt-budget builder tests and three headless render tests proving the AI panel and its setup guidance appear with and without a configured key.
+
 ## [0.6.0] - 2026-10-31
 
 ### Added

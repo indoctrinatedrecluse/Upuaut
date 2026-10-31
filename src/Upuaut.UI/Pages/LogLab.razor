@@ -1,5 +1,4 @@
 @page "/log-lab"
-@implements IDisposable
 @namespace Upuaut.UI.Pages
 @using Microsoft.Win32
 @using Upuaut.LogLab
@@ -17,9 +16,6 @@
 @inject ILogParserProfileService ProfileService
 @inject ILogTimelineAnalysisEngine TimelineAnalysisEngine
 @inject ILogSearchPresetService SearchPresetService
-@inject ILlmAssistantService LlmAssistant
-@inject IAiConfigurationService AiConfiguration
-@inject AiSettingsDialogCoordinator AiSettings
 @inject CrashForensicsHandoff CrashHandoff
 @inject NavigationManager Navigation
 @inject Microsoft.Extensions.Logging.ILogger<LogLab> Logger
@@ -42,7 +38,7 @@
         <div class="log-lab-status @(_isError ? "is-error" : "")" role="status">@_statusMessage</div>
     }
 
-    <div class="llm-global-settings-note"><span>✧ SHARED AI PROFILE</span><strong>@(_llmConfiguration.HasApiKey ? $"{_llmConfiguration.Provider} · READY ON REQUEST" : "NOT CONFIGURED · AI REVIEWS DISABLED")</strong><button @onclick="AiSettings.Open">CONFIGURE AI SERVICES</button></div>
+    <AiProfileBanner />
 
     @if (_document is null)
     {
@@ -256,6 +252,16 @@
 
             <section class="log-lab-detail-panel">
                 <div class="log-lab-panel-head"><div><span>FIELD INSPECTOR</span><small>@(_selectedEntry is null ? "No entry selected" : $"Parser basis · line {_selectedEntry.SourceLine}")</small></div><span class="log-lab-orbit">✦</span></div>
+                <!-- Shared guarded AI review: always visible, enabled once an entry is selected -->
+                <AiReviewPanel Title="AI SECOND OPINION"
+                               BusyLabel="ANALYZING SELECTED ENTRY..."
+                               ResultFooter="AI RESPONSE · MARKDOWN · VERIFY AGAINST ORIGINAL LOG"
+                               ScopeNote="Only this selected entry and its parsed fields are submitted. The local rule-based findings remain available without an API key."
+                               EmptyHint="Select a parsed entry to enable AI review of that one line."
+                               SelectionKey="@(_selectedEntry?.Index.ToString(System.Globalization.CultureInfo.InvariantCulture))"
+                               RequestFactory="BuildAiLogEntryRequest"
+                               CssClass="log-lab-ai-review" />
+
                 @if (_selectedEntry is { } selected)
                 {
                     <div class="log-lab-detail-scroll">
@@ -280,15 +286,6 @@
                                     <button class="cf-log-handoff-button" @onclick="() => OpenCrashForensics(selected, finding)"><span>𓃣</span> OPEN THIS FINDING IN CRASH FORENSICS <b>↗</b></button>
                                 }
                             </div>
-                            <section class="llm-review-card">
-                                <div class="llm-review-heading"><span>AI SECOND OPINION</span><small>@(_llmConfiguration.HasApiKey ? _llmConfiguration.Provider.ToString().ToUpperInvariant() + " Â· ON REQUEST" : "DISABLED Â· CONFIGURE AI SERVICES")</small></div>
-                                <button class="log-lab-tool-btn llm-review-button" @onclick="RequestLlmReview" disabled="@(_llmBusy || !_llmConfiguration.HasApiKey)">@(_llmBusy ? "ANALYZING SELECTED ENTRY..." : "REQUEST AI REVIEW")</button>
-                                <p>Only this selected entry is submitted. The local rule-based findings above remain available without an API key.</p>
-                                @if (_llmResultEntryIndex == selected.Index && _llmBudget is { } logBudget) { <p class="llm-review-budget" title="@logBudget.Explain()">PROMPT @logBudget.Describe().ToUpperInvariant()</p> }
-                                @if (_llmBusy) { <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER Â· WAITING FOR ANALYSIS</div> }
-                                @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmResult)) { <article class="llm-review-result"><div>AI RESPONSE · MARKDOWN · VERIFY AGAINST ORIGINAL LOG</div><section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_llmResult))</section></article> }
-                                @if (_llmResultEntryIndex == selected.Index && !string.IsNullOrWhiteSpace(_llmError)) { <div class="llm-review-error" role="alert">@_llmError</div> }
-                            </section>
                         }
                         <div class="log-lab-evidence-callout"><strong>HOW THIS WAS READ</strong><p>@selected.InterpretationBasis</p></div>
                         <div class="log-lab-field-grid">
@@ -359,12 +356,6 @@
     }
     private string _statusMessage = string.Empty;
     private bool _isError;
-    private AiConfiguration _llmConfiguration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
-    private bool _llmBusy;
-    private string _llmResult = string.Empty;
-    private string _llmError = string.Empty;
-    private int? _llmResultEntryIndex;
-    private AiPromptBudget? _llmBudget;
     private bool _showWholeDocument;
     private int _entryLimit = 500;
     private string _categoryFilter = string.Empty;
@@ -442,20 +433,19 @@
 
     protected override void OnInitialized()
     {
-        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
-        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); _searchPresets = SearchPresetService.Load(); _llmConfiguration = AiConfiguration.LoadConfiguration(); }
+        try { _builtInProfiles = ProfileService.GetBuiltInProfiles(); _savedProfiles = ProfileService.LoadProfiles(); _searchPresets = SearchPresetService.Load(); }
         catch (Exception ex) { _statusMessage = ex.Message; _isError = true; }
     }
 
-    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() => { _llmConfiguration = AiConfiguration.LoadConfiguration(); StateHasChanged(); });
-
-    public void Dispose() => AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
-
-    private async Task RequestLlmReview()
+    /// <summary>
+    /// Builds the bounded request for the one selected entry. The shared
+    /// <c>AiReviewPanel</c> owns transmission, busy state, and result rendering.
+    /// </summary>
+    private AiInvestigationRequest? BuildAiLogEntryRequest()
     {
-        if (_selectedEntry is null || !_llmConfiguration.HasApiKey || _llmBusy) return;
-        var selected = _selectedEntry;
-        var request = AiPromptEngine.BuildLogEntryRequest(
+        if (_selectedEntry is not { } selected) return null;
+
+        return AiPromptEngine.BuildLogEntryRequest(
             selected.RawText,
             _document?.FileTypeLabel,
             _document?.Format.ToString(),
@@ -465,21 +455,6 @@
             selected.Timestamp?.UtcDateTime,
             selected.Fields,
             selected.InterpretationBasis);
-        _llmBusy = true; _llmResult = string.Empty; _llmError = string.Empty; _llmBudget = null; _llmResultEntryIndex = selected.Index;
-        try { _llmResult = await LlmAssistant.AnalyzeInvestigationAsync(request); _llmBudget = request.Budget; }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Manual AI review failed ({ErrorType}); provider response details and log contents are omitted from application logs.", ex.GetType().Name);
-            _llmError = ex switch
-            {
-                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
-                HttpRequestException => $"AI provider request failed: {ex.Message}",
-                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
-                InvalidOperationException => ex.Message,
-                _ => "AI review failed unexpectedly. The local analysis and original log are still available. Check the application log for the error type."
-            };
-        }
-        finally { _llmBusy = false; }
     }
 
     private List<ParsedLogEntry> FilteredEntries

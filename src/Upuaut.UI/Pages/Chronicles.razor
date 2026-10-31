@@ -1,6 +1,7 @@
 @page "/chronicles"
 @namespace Upuaut.UI.Pages
 @using Microsoft.Win32
+@using Upuaut.Core.AI
 @inject IChroniclesService ChroniclesService
 @inject IJSRuntime JSRuntime
 @inject Upuaut.UI.Shared.InvestigationContext Investigation
@@ -122,6 +123,8 @@
             <span>🔄</span> Reset Filters
         </button>
     </div>
+
+    <AiProfileBanner />
 
     <!-- Secondary Filter & Search Ribbon -->
     <div class="filter-ribbon">
@@ -329,6 +332,16 @@
 
         <!-- Right: The Oracle / Inspection Drawer -->
         <div class="oracle-pane">
+            <!-- Shared guarded AI review: always visible, enabled once an event is selected -->
+            <AiReviewPanel Title="AI EVENT REVIEW"
+                           BusyLabel="ANALYZING SELECTED EVENT..."
+                           ResultFooter="AI RESPONSE · MARKDOWN · VERIFY AGAINST WINDOWS EVIDENCE"
+                           ScopeNote="Only this selected event is submitted: channel, provider, event ID, decoded code, EventData fields, matched rule evidence, and the event message. Other rows and live-stream buffers stay local."
+                           EmptyHint="Select an event row to enable AI review of that single Windows record."
+                           SelectionKey="@AiSelectionKey"
+                           RequestFactory="BuildAiEventRequest"
+                           CssClass="chronicles-ai-review" />
+
             @if (_selectedLog != null)
             {
                 <div class="oracle-card">
@@ -864,6 +877,37 @@
         if (_selectedLog is null) return;
         Investigation.Select(_selectedLog);
         Navigation.NavigateTo("/weigher");
+    }
+
+    /// <summary>Identity of the selected event for the shared AI review panel's result binding.</summary>
+    private string? AiSelectionKey => _selectedLog is { } log ? $"{log.Channel}:{log.RecordId}:{log.EventId}" : null;
+
+    /// <summary>
+    /// Builds a bounded review request for the one selected Windows event. Field limits,
+    /// message compaction, and the character ceiling live in <see cref="AiPromptEngine"/>,
+    /// and the shared <c>AiReviewPanel</c> transmits only after the operator presses the button.
+    /// </summary>
+    private AiInvestigationRequest? BuildAiEventRequest()
+    {
+        if (_selectedLog is not { } log) return null;
+
+        var evidence = log.Explanation?.Evidence
+            .Select(item => $"{item.Label}: {item.Value} — {item.Interpretation}")
+            .ToArray();
+
+        return AiPromptEngine.BuildWindowsEventRequest(
+            log.Channel,
+            log.EventId,
+            log.ProviderName,
+            log.Level.ToString(),
+            log.Timestamp,
+            log.ComputerName,
+            log.Message,
+            log.Explanation?.DecodedStatusCode,
+            log.Explanation?.StatusMeaning,
+            log.EventData,
+            evidence,
+            log.Explanation?.Headline);
     }
 
     private void OnClusterSelected(EventCluster cluster)

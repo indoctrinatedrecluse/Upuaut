@@ -1,0 +1,154 @@
+@using Upuaut.Core.AI
+@using Microsoft.Extensions.Logging
+@implements IDisposable
+@inject ILlmAssistantService LlmAssistant
+@inject IAiConfigurationService AiConfigurationService
+@inject AiSettingsDialogCoordinator AiSettings
+@inject ILogger<AiReviewPanel> Logger
+
+@*
+    Single AI review surface shared by every workspace (Chronicles, Scout, Weigher,
+    Crash Forensics, Log Lab). Credentials, provider selection, prompt assembly, and the
+    prompt budget all come from the shared AI services, so this component only decides
+    which one selected unit is submitted after the operator presses the button.
+*@
+<section class="llm-review-card @CssClass" aria-label="@Title">
+    <div class="llm-review-heading">
+        <span>@Title</span>
+        <small>@(_configuration.HasApiKey ? $"{_configuration.Provider.ToString().ToUpperInvariant()} · ON REQUEST" : "DISABLED · CONFIGURE AI SERVICES")</small>
+    </div>
+    <button class="pill-btn llm-review-button" @onclick="RequestReviewAsync" disabled="@(!CanRequest)">
+        @(_busy ? BusyLabel : RequestLabel)
+    </button>
+    @if (!string.IsNullOrWhiteSpace(ScopeNote))
+    {
+        <p>@ScopeNote</p>
+    }
+    @if (!_configuration.HasApiKey)
+    {
+        <div class="llm-review-guide" role="note">
+            <strong>HOW TO ENABLE AI REVIEWS HERE</strong>
+            <ol>
+                <li>Press <b>AI SERVICES</b> in the top bar, choose Help → Configure AI Settings, or use the button below.</li>
+                <li>Pick DeepSeek, Google Gemini, or an OpenAI-compatible endpoint.</li>
+                <li>Enter the model ID, endpoint URL, and API key, then press <b>SAVE SETTINGS</b>.</li>
+            </ol>
+            <span>The key is encrypted with Windows DPAPI for this account and is never shown again. Nothing leaves this machine until you press @RequestLabel.</span>
+        </div>
+        <button class="pill-btn" style="margin-top: .45rem;" @onclick="AiSettings.Open">CONFIGURE AI SERVICES</button>
+    }
+    else if (!HasSelection)
+    {
+        <p class="llm-review-hint">@EmptyHint</p>
+    }
+    @if (_busy)
+    {
+        <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER · WAITING FOR ANALYSIS</div>
+    }
+    @if (!_busy && IsCurrentResult && _budget is { } budget)
+    {
+        <p class="llm-review-budget" title="@budget.Explain()">PROMPT @budget.Describe().ToUpperInvariant()</p>
+    }
+    @if (!_busy && IsCurrentResult && !string.IsNullOrWhiteSpace(_result))
+    {
+        <article class="llm-review-result">
+            <div>@ResultFooter</div>
+            <section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_result))</section>
+        </article>
+    }
+    @if (!_busy && IsCurrentResult && !string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="llm-review-error" role="alert">@_error</div>
+    }
+</section>
+
+@code {
+    /// <summary>Panel heading, for example "AI FRAME REVIEW".</summary>
+    [Parameter] public string Title { get; set; } = "AI REVIEW";
+
+    [Parameter] public string RequestLabel { get; set; } = "REQUEST AI REVIEW";
+
+    [Parameter] public string BusyLabel { get; set; } = "ANALYZING SELECTED UNIT...";
+
+    /// <summary>Explains exactly which one unit is submitted and which data stays local.</summary>
+    [Parameter] public string ScopeNote { get; set; } = string.Empty;
+
+    [Parameter] public string ResultFooter { get; set; } = "AI RESPONSE · MARKDOWN · VERIFY AGAINST ORIGINAL EVIDENCE";
+
+    /// <summary>Shown when a provider is configured but nothing is selected in this workspace.</summary>
+    [Parameter] public string EmptyHint { get; set; } = "Select an item in this workspace to enable AI review.";
+
+    [Parameter] public string CssClass { get; set; } = string.Empty;
+
+    /// <summary>Opaque identity of the current selection; results disappear once it changes.</summary>
+    [Parameter] public string? SelectionKey { get; set; }
+
+    /// <summary>
+    /// Builds the bounded request for the current selection. Returning <c>null</c> keeps the
+    /// review button disabled, so a workspace can never submit a stale unit.
+    /// </summary>
+    [Parameter] public Func<AiInvestigationRequest?>? RequestFactory { get; set; }
+
+    private AiConfiguration _configuration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
+    private bool _busy;
+    private string _result = string.Empty;
+    private string _error = string.Empty;
+    private AiPromptBudget? _budget;
+    private string? _requestKey;
+
+    private bool HasSelection => !string.IsNullOrWhiteSpace(SelectionKey);
+
+    private bool CanRequest => !_busy && HasSelection && _configuration.HasApiKey && RequestFactory is not null;
+
+    private bool IsCurrentResult => _requestKey is not null && string.Equals(_requestKey, SelectionKey, StringComparison.Ordinal);
+
+    protected override void OnInitialized()
+    {
+        _configuration = AiConfigurationService.LoadConfiguration();
+        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
+    }
+
+    public void Dispose() => AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
+
+    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() =>
+    {
+        _configuration = AiConfigurationService.LoadConfiguration();
+        StateHasChanged();
+    });
+
+    private async Task RequestReviewAsync()
+    {
+        if (!CanRequest) return;
+
+        var request = RequestFactory?.Invoke();
+        if (request is null) return;
+
+        _busy = true;
+        _result = string.Empty;
+        _error = string.Empty;
+        _budget = null;
+        _requestKey = SelectionKey;
+
+        try
+        {
+            _result = await LlmAssistant.AnalyzeInvestigationAsync(request);
+            _budget = request.Budget;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("Manual AI review failed for {Domain} ({ErrorType}); provider response details and workspace contents are omitted from application logs.", request.Domain, ex.GetType().Name);
+            _error = ex switch
+            {
+                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
+                HttpRequestException => $"AI provider request failed: {ex.Message}",
+                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
+                InvalidOperationException => ex.Message,
+                _ => "AI review failed unexpectedly. The local analysis and original evidence are still available. Check the application log for the error type."
+            };
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -12,11 +12,7 @@
 @inject NavigationManager Navigation
 @inject Upuaut.UI.Shared.InvestigationContext Investigation
 @inject ILogParsingEngine LogParsingEngine
-@inject ILlmAssistantService LlmAssistant
-@inject IAiConfigurationService AiConfiguration
-@inject AiSettingsDialogCoordinator AiSettings
 @inject Microsoft.Extensions.Logging.ILogger<Weigher> Logger
-@implements IDisposable
 
 <PageTitle>Upuaut — The Scales of Ma’at</PageTitle>
 
@@ -67,6 +63,8 @@
         <span class="triage-window-chip">± 2.5 SEC</span>
     </div>
     <div class="triage-shared-window">Shared investigation window: @_timeWindowLabel. Change it in Chronicles or here to carry the same time range between tabs.</div>
+
+    <AiProfileBanner />
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
@@ -160,41 +158,21 @@
             @if (!string.IsNullOrWhiteSpace(selected.Log.Message)) { <details class="triage-source-evidence"><summary>Inspect source entry</summary><pre>@selected.Log.Message</pre></details> }
             @if (selected.NearestRelatedLog is { } relatedLog) { <p><strong>Nearby log entry:</strong> @relatedLog.ProviderName | @SourceLabelFor(relatedLog) | @Math.Abs(selected.RelatedLogDelta?.TotalMilliseconds ?? 0).ToString("N0") ms away, among @selected.RelatedLogCount nearby entries.</p><button class="pill-btn" @onclick="() => SelectRelatedLog(relatedLog)">Inspect nearby log entry</button> }
             @if (selected.PacketMatchBasis.Count > 0) { <p class="triage-caveat"><strong>Shared identifiers:</strong> @string.Join("; ", selected.PacketMatchBasis). These values help connect records but do not establish causation.</p> }
-            <!-- Guarded AI review: button-triggered, single correlation scope -->
-            <section class="llm-review-card">
-                <div class="llm-review-heading">
-                    <span>AI CORRELATION REVIEW</span>
-                    <small>@(_aiConfiguration.HasApiKey ? $"{_aiConfiguration.Provider.ToString().ToUpperInvariant()} · ON REQUEST" : "DISABLED · CONFIGURE AI SERVICES")</small>
-                </div>
-                <button class="pill-btn llm-review-button" @onclick="RequestAiCorrelationReview" disabled="@(_aiBusy || !_aiConfiguration.HasApiKey)">@(_aiBusy ? "ANALYZING SELECTED CORRELATION..." : "REQUEST AI REVIEW")</button>
-                <p>Only this event, its nearest log entry, and the single nearest frame are submitted. The rest of the case, notes, other rows, and the Scout buffer stay local.</p>
-                @if (!_aiConfiguration.HasApiKey)
-                {
-                    <button class="pill-btn" style="margin-top: .45rem;" @onclick="AiSettings.Open">CONFIGURE AI SERVICES</button>
-                }
-                @if (_aiBusy)
-                {
-                    <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER · WAITING FOR ANALYSIS</div>
-                }
-                @if (IsAiReviewForSelectedItem && _aiBudget is { } budget)
-                {
-                    <p class="llm-review-budget" title="@budget.Explain()">PROMPT @budget.Describe().ToUpperInvariant()</p>
-                }
-                @if (IsAiReviewForSelectedItem && !string.IsNullOrWhiteSpace(_aiResult))
-                {
-                    <article class="llm-review-result"><div>AI RESPONSE · MARKDOWN · TIME PROXIMITY IS NOT CAUSATION</div><section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_aiResult))</section></article>
-                }
-                @if (IsAiReviewForSelectedItem && !string.IsNullOrWhiteSpace(_aiError))
-                {
-                    <div class="llm-review-error" role="alert">@_aiError</div>
-                }
-            </section>
-
 
             <label class="triage-note-field">Investigation note<textarea @bind="_currentNote" @bind:event="oninput" placeholder="Record observations, competing explanations, or follow-up actions…"></textarea></label>
             <button class="pill-btn" @onclick="SaveNote">Save note to this case</button>
         </section>
     }
+
+    <!-- Shared guarded AI review: always visible, enabled once a correlation row is selected -->
+    <AiReviewPanel Title="AI CORRELATION REVIEW"
+                   BusyLabel="ANALYZING SELECTED CORRELATION..."
+                   ResultFooter="AI RESPONSE · MARKDOWN · TIME PROXIMITY IS NOT CAUSATION"
+                   ScopeNote="Only this event, its nearest log entry, and the single nearest frame are submitted. The rest of the case, notes, other rows, and the Scout buffer stay local."
+                   EmptyHint="Select a timeline row to enable AI review of that event and its nearest packet."
+                   SelectionKey="@(_selectedItem is { } aiItem ? $"{aiItem.Log.Channel}:{aiItem.Log.RecordId}:{aiItem.Log.EventId}" : null)"
+                   RequestFactory="BuildAiCorrelationRequest"
+                   CssClass="weigher-ai-review" />
 </div>
 
 @code {
@@ -215,14 +193,6 @@
     private List<TriageItem> _items = new();
     private TriageItem? _selectedItem;
 
-    private AiConfiguration _aiConfiguration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
-    private bool _aiBusy;
-    private string _aiResult = string.Empty;
-    private string _aiError = string.Empty;
-    private AiPromptBudget? _aiBudget;
-    private (string Channel, long RecordId)? _aiReviewKey;
-
-    private bool IsAiReviewForSelectedItem => _selectedItem is { } item && _aiReviewKey == (item.Log.Channel, item.Log.RecordId);
     private int _packetCount;
     private bool _includeInformational;
     private bool _isLoading;
@@ -243,8 +213,6 @@
         _customStartTime = Investigation.Start?.ToLocalTime();
         _customEndTime = Investigation.End?.ToLocalTime();
         if (Investigation.SelectedLog is { } selected) _channel = selected.Channel is "System" or "Application" ? selected.Channel : "Both";
-        _aiConfiguration = AiConfiguration.LoadConfiguration();
-        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
     }
 
     private string _timeWindowLabel => _timeWindow switch
@@ -509,26 +477,18 @@
     private void OpenPacketInScout() { if (_selectedItem?.NearestPacket is { } packet) { Investigation.Select(packet); Navigation.NavigateTo("/scout"); } }
     private void OpenEventInChronicles() { if (_selectedItem is { } item) { Investigation.Select(item.Log); Navigation.NavigateTo("/chronicles"); } }
 
-    public void Dispose() => AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
-
-    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() =>
-    {
-        _aiConfiguration = AiConfiguration.LoadConfiguration();
-        StateHasChanged();
-    });
-
     /// <summary>
-    /// Submits one correlated evidence unit: the selected event, its nearest log neighbour, and the
+    /// Builds one correlated evidence unit: the selected event, its nearest log neighbour, and the
     /// single nearest Scout frame. Prompt assembly and guardrails live in <see cref="AiPromptEngine"/>;
     /// time proximity is presented to the model as a lead, never as causation.
     /// </summary>
-    private async Task RequestAiCorrelationReview()
+    private AiInvestigationRequest? BuildAiCorrelationRequest()
     {
-        if (_selectedItem is not { } item || !_aiConfiguration.HasApiKey || _aiBusy) return;
+        if (_selectedItem is not { } item) return null;
 
         var log = item.Log;
         var packet = item.NearestPacket;
-        var request = AiPromptEngine.BuildCorrelationRequest(
+        return AiPromptEngine.BuildCorrelationRequest(
             _caseTitle,
             log.Channel,
             log.EventId,
@@ -544,34 +504,6 @@
             item.NearestRelatedLog is { } related
                 ? $"{related.ProviderName} · {related.Channel} · {SourceLabelFor(related)} · {Math.Abs(item.RelatedLogDelta?.TotalMilliseconds ?? 0):N0} ms away — {related.Message}"
                 : null);
-
-        _aiBusy = true;
-        _aiResult = string.Empty;
-        _aiError = string.Empty;
-        _aiBudget = null;
-        _aiReviewKey = (log.Channel, log.RecordId);
-
-        try
-        {
-            _aiResult = await LlmAssistant.AnalyzeInvestigationAsync(request);
-            _aiBudget = request.Budget;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Manual AI correlation review failed ({ErrorType}); case data and event text are omitted from application logs.", ex.GetType().Name);
-            _aiError = ex switch
-            {
-                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
-                HttpRequestException => $"AI provider request failed: {ex.Message}",
-                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
-                InvalidOperationException => ex.Message,
-                _ => "AI review failed unexpectedly. The local correlation evidence is still available. Check the application log for the error type."
-            };
-        }
-        finally
-        {
-            _aiBusy = false;
-        }
     }
 
     private void ExportJson()

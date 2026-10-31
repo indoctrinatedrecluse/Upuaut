@@ -201,4 +201,64 @@ public sealed class AiPromptEngineTests
         Assert.True(request.UserPrompt.Length <= AiPromptEngine.MaxUserPromptCharacters);
         Assert.True(request.Budget!.WasCompacted);
     }
+
+    [Fact]
+    public void Windows_event_request_bounds_fields_evidence_and_message()
+    {
+        var eventData = Enumerable.Range(0, 150)
+            .ToDictionary(index => $"Field{index}", index => new string('v', 4_000));
+        var evidence = Enumerable.Range(0, 80)
+            .Select(index => $"Evidence{index}: {new string('e', 600)} — test observation")
+            .ToArray();
+
+        var request = AiPromptEngine.BuildWindowsEventRequest(
+            "System",
+            41,
+            "Microsoft-Windows-Kernel-Power",
+            "Critical",
+            new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc),
+            "WORKSTATION-01",
+            new string('m', 80_000),
+            "0xC0000005",
+            "STATUS_ACCESS_VIOLATION",
+            eventData,
+            evidence,
+            "Unexpected shutdown without a clean power-off");
+
+        Assert.Equal(AiAnalysisDomain.Chronicles, request.Domain);
+        Assert.Contains("Event ID: 41", request.UserPrompt);
+        Assert.Contains("Microsoft-Windows-Kernel-Power", request.UserPrompt);
+        Assert.Contains("Decoded Status Code: 0xC0000005", request.UserPrompt);
+        Assert.Contains("Unexpected shutdown without a clean power-off", request.UserPrompt);
+        Assert.Contains("further values omitted", request.UserPrompt);
+        Assert.True(request.UserPrompt.Length <= AiPromptEngine.MaxUserPromptCharacters);
+        Assert.NotNull(request.Budget);
+        Assert.True(request.Budget!.WasCompacted);
+    }
+
+    [Fact]
+    public void Correlation_request_labels_proximity_as_a_lead_not_causation()
+    {
+        var request = AiPromptEngine.BuildCorrelationRequest(
+            "Case: browser stall",
+            "System",
+            41,
+            "Microsoft-Windows-Kernel-Power",
+            new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc),
+            "The system rebooted unexpectedly.",
+            "TLS Application Data",
+            "10.0.0.5:51234 → 93.184.216.34:443 (TLSv1.3)",
+            "chrome.exe",
+            -420,
+            96,
+            new[] { "chrome.exe", "443" },
+            "DNS Client 1014: name resolution timed out");
+
+        Assert.Equal(AiAnalysisDomain.Weigher, request.Domain);
+        Assert.Contains("NOT proof of causation", request.SystemInstruction);
+        Assert.Contains("-420 ms", request.UserPrompt);
+        Assert.Contains("chrome.exe", request.UserPrompt);
+        Assert.Contains("DNS Client 1014", request.UserPrompt);
+        Assert.NotNull(request.Budget);
+    }
 }

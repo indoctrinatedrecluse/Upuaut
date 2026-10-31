@@ -1,0 +1,42 @@
+@using Upuaut.Core.AI
+@implements IDisposable
+@inject IAiConfigurationService AiConfigurationService
+@inject AiSettingsDialogCoordinator AiSettings
+
+@*
+    One shared AI profile strip for every workspace. It shows whether a provider is
+    configured, opens the single AI Services modal, and explains the setup steps inline
+    so an unconfigured key never leaves the AI features hidden or unexplained.
+*@
+<div class="llm-global-settings-note @CssClass">
+    <span>✧ SHARED AI PROFILE</span>
+    <strong>@(_configuration.HasApiKey ? $"{_configuration.Provider.ToString().ToUpperInvariant()} · {_configuration.Model} · READY ON REQUEST" : "NOT CONFIGURED · AI REVIEWS DISABLED")</strong>
+    <button @onclick="AiSettings.Open">@(_configuration.HasApiKey ? "MANAGE AI SERVICES" : "CONFIGURE AI SERVICES")</button>
+</div>
+@if (!_configuration.HasApiKey)
+{
+    <p class="llm-profile-guide" role="note">
+        <b>AI review is off until a key is saved.</b>
+        Press <b>CONFIGURE AI SERVICES</b> (also in the top bar and Help menu), choose DeepSeek, Google Gemini, or an OpenAI-compatible endpoint, then enter the model ID, endpoint, and API key before saving. The key is encrypted with Windows DPAPI for this account; no request is sent until you press a review button in a workspace.
+    </p>
+}
+
+@code {
+    [Parameter] public string CssClass { get; set; } = string.Empty;
+
+    private AiConfiguration _configuration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
+
+    protected override void OnInitialized()
+    {
+        _configuration = AiConfigurationService.LoadConfiguration();
+        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
+    }
+
+    public void Dispose() => AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
+
+    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() =>
+    {
+        _configuration = AiConfigurationService.LoadConfiguration();
+        StateHasChanged();
+    });
+}

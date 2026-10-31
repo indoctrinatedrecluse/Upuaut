@@ -1,6 +1,5 @@
 @page "/crash-forensics"
 @namespace Upuaut.UI.Pages
-@implements IDisposable
 @using Microsoft.Win32
 @using Upuaut.Core.AI
 @using Upuaut.CrashForensics
@@ -9,9 +8,6 @@
 @using System.Text
 @inject ICrashArtifactAnalyzer Analyzer
 @inject CrashForensicsHandoff Handoff
-@inject ILlmAssistantService LlmAssistant
-@inject IAiConfigurationService AiConfiguration
-@inject AiSettingsDialogCoordinator AiSettings
 @inject ILogger<CrashForensics> Logger
 @inject IJSRuntime JS
 
@@ -66,6 +62,8 @@
 
     <div class="cf-privacy-note"><strong>LOCAL ANALYSIS</strong><span>Crash dumps can contain credentials, personal data, and private memory. Upuaut does not upload the dump. Symbol lookup is an explicit opt-in and sends symbol requests only; no dump contents are sent.</span></div>
 
+    <AiProfileBanner />
+
     @if (_result is null)
     {
         <section class="cf-empty-state">
@@ -96,37 +94,6 @@
                 <div class="cf-exception-row"><span>EXCEPTION RECORD</span><code>@exception.CodeText</code><strong>@CrashArtifactAnalyzer.ExceptionName(exception.Code)</strong><small>thread @exception.ThreadId · instruction 0x@exception.Address.ToString("X")</small></div>
             }
         </section>
-
-        <!-- Guarded AI review: button-triggered, artifact scope only -->
-        <section class="cf-summary-panel llm-review-card">
-            <div class="llm-review-heading">
-                <span>AI ARTIFACT REVIEW</span>
-                <small>@(_aiConfiguration.HasApiKey ? $"{_aiConfiguration.Provider.ToString().ToUpperInvariant()} · ON REQUEST" : "DISABLED · CONFIGURE AI SERVICES")</small>
-            </div>
-            <button class="cf-quiet-button llm-review-button" @onclick="RequestAiArtifactReview" disabled="@(_aiBusy || !_aiConfiguration.HasApiKey)">@(_aiBusy ? "ANALYZING SELECTED ARTIFACT..." : "REQUEST AI REVIEW")</button>
-            <p>Only the parsed readout is submitted: exception, metadata, reader warnings, managed stack frames, and any linked Log Lab entry. The dump file itself is never uploaded.</p>
-            @if (!_aiConfiguration.HasApiKey)
-            {
-                <button class="cf-quiet-button" style="margin-top: .45rem;" @onclick="AiSettings.Open">CONFIGURE AI SERVICES</button>
-            }
-            @if (_aiBusy)
-            {
-                <div class="llm-review-progress" role="status">CONTACTING CONFIGURED PROVIDER · WAITING FOR ANALYSIS</div>
-            }
-            @if (IsAiReviewForSelectedArtifact && _aiBudget is { } budget)
-            {
-                <p class="llm-review-budget" title="@budget.Explain()">PROMPT @budget.Describe().ToUpperInvariant()</p>
-            }
-            @if (IsAiReviewForSelectedArtifact && !string.IsNullOrWhiteSpace(_aiResult))
-            {
-                <article class="llm-review-result"><div>AI RESPONSE · MARKDOWN · VERIFY AGAINST RECORDED EVIDENCE</div><section class="ai-markdown-content">@((MarkupString)SafeMarkdownRenderer.Render(_aiResult))</section></article>
-            }
-            @if (IsAiReviewForSelectedArtifact && !string.IsNullOrWhiteSpace(_aiError))
-            {
-                <div class="llm-review-error" role="alert">@_aiError</div>
-            }
-        </section>
-
 
         @if (_result.IsKernelDump)
         {
@@ -195,6 +162,16 @@
 
         <div class="cf-report-actions"><span>Analysis is reproducible from the artifact and the displayed evidence.</span><button class="cf-quiet-button" @onclick="SaveReport">EXPORT INVESTIGATION REPORT · MD</button><button class="cf-quiet-button" @onclick="ClearArtifact">CLOSE ARTIFACT</button></div>
     }
+
+    <!-- Shared guarded AI review: always visible, enabled once an artifact is parsed -->
+    <AiReviewPanel Title="AI ARTIFACT REVIEW"
+                   BusyLabel="ANALYZING SELECTED ARTIFACT..."
+                   ResultFooter="AI RESPONSE · MARKDOWN · VERIFY AGAINST RECORDED EVIDENCE"
+                   ScopeNote="Only the parsed readout is submitted: exception, metadata, reader warnings, managed stack frames, and any linked Log Lab entry. The dump file itself is never uploaded."
+                   EmptyHint="Choose and analyze a crash dump or WER report to enable AI review of its parsed readout."
+                   SelectionKey="@(_result?.SourcePath)"
+                   RequestFactory="BuildAiArtifactRequest"
+                   CssClass="cf-ai-review" />
 </div>
 
 @code {
@@ -206,37 +183,18 @@
     private bool _busy;
     private bool _resolveSymbols;
 
-    private AiConfiguration _aiConfiguration = new(AiProvider.DeepSeek, "https://api.deepseek.com/chat/completions", "deepseek-flash", false);
-    private bool _aiBusy;
-    private string _aiResult = string.Empty;
-    private string _aiError = string.Empty;
-    private AiPromptBudget? _aiBudget;
-    private string? _aiArtifactPath;
-
-    private bool IsAiReviewForSelectedArtifact => _result is not null && string.Equals(_aiArtifactPath, _result.SourcePath, StringComparison.OrdinalIgnoreCase);
-
     protected override void OnInitialized()
     {
         _linkedLog = Handoff.Take();
-        _aiConfiguration = AiConfiguration.LoadConfiguration();
-        AiSettings.ConfigurationChanged += HandleAiConfigurationChanged;
     }
 
-    public void Dispose() => AiSettings.ConfigurationChanged -= HandleAiConfigurationChanged;
-
-    private void HandleAiConfigurationChanged() => _ = InvokeAsync(() =>
-    {
-        _aiConfiguration = AiConfiguration.LoadConfiguration();
-        StateHasChanged();
-    });
-
     /// <summary>
-    /// Sends the parsed readout of the selected artifact — never the dump bytes — to the configured
-    /// provider. Prompt construction and compaction guardrails live in <see cref="AiPromptEngine"/>.
+    /// Builds the readout request for the selected artifact — never the dump bytes. Prompt
+    /// construction and compaction guardrails live in <see cref="AiPromptEngine"/>.
     /// </summary>
-    private async Task RequestAiArtifactReview()
+    private AiInvestigationRequest? BuildAiArtifactRequest()
     {
-        if (_result is not { } result || !_aiConfiguration.HasApiKey || _aiBusy) return;
+        if (_result is not { } result) return null;
 
         var managedFrames = result.ManagedRuntimes
             .SelectMany(runtime => runtime.Threads.Where(thread => thread.Frames.Count > 0))
@@ -247,7 +205,7 @@
             ? $"Line {linked.SourceLine} · {linked.Severity} · {linked.Headline}{Environment.NewLine}{linked.Message}{Environment.NewLine}{linked.Explanation}"
             : null;
 
-        var request = AiPromptEngine.BuildCrashArtifactRequest(
+        return AiPromptEngine.BuildCrashArtifactRequest(
             KindLabel(result.Kind),
             result.Summary,
             result.Architecture,
@@ -261,34 +219,6 @@
             managedFrames,
             result.Warnings,
             linkedLogContext);
-
-        _aiBusy = true;
-        _aiResult = string.Empty;
-        _aiError = string.Empty;
-        _aiBudget = null;
-        _aiArtifactPath = result.SourcePath;
-
-        try
-        {
-            _aiResult = await LlmAssistant.AnalyzeInvestigationAsync(request);
-            _aiBudget = request.Budget;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Manual AI artifact review failed ({ErrorType}); artifact paths and dump contents are omitted from application logs.", ex.GetType().Name);
-            _aiError = ex switch
-            {
-                TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
-                HttpRequestException => $"AI provider request failed: {ex.Message}",
-                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
-                InvalidOperationException => ex.Message,
-                _ => "AI review failed unexpectedly. The local artifact readout is still available. Check the application log for the error type."
-            };
-        }
-        finally
-        {
-            _aiBusy = false;
-        }
     }
 
     private void SelectArtifact()
