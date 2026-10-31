@@ -261,4 +261,70 @@ public sealed class AiPromptEngineTests
         Assert.Contains("DNS Client 1014", request.UserPrompt);
         Assert.NotNull(request.Budget);
     }
+
+    [Fact]
+    public void EnforceBudget_adds_a_markdown_instruction_to_prompts_that_do_not_request_markdown()
+    {
+        var request = new AiInvestigationRequest(
+            AiAnalysisDomain.Chronicles,
+            "Custom review",
+            "Review this event.",
+            "You are a defensive Windows event analyst.",
+            "One event");
+
+        var enforced = AiPromptEngine.EnforceBudget(request);
+
+        Assert.Contains("Markdown", enforced.SystemInstruction, StringComparison.Ordinal);
+        Assert.Contains("You are a defensive Windows event analyst.", enforced.SystemInstruction, StringComparison.Ordinal);
+        Assert.Equal("Review this event.", enforced.UserPrompt);
+        Assert.NotNull(enforced.Budget);
+        Assert.False(enforced.Budget!.WasCompacted);
+    }
+
+    [Fact]
+    public void Markdown_instruction_is_added_once_and_builder_prompts_keep_their_wording()
+    {
+        var unfenced = new AiInvestigationRequest(
+            AiAnalysisDomain.LogLab,
+            "Custom review",
+            "Review this entry.",
+            "You explain log entries.");
+        var alreadyMarkdown = unfenced with { SystemInstruction = "You explain log entries in Markdown." };
+
+        var enforcedOnce = AiPromptEngine.EnforceBudget(unfenced);
+        var enforcedTwice = AiPromptEngine.EnforceBudget(enforcedOnce);
+        var untouched = AiPromptEngine.EnsureMarkdownResponse(alreadyMarkdown);
+        var builderRequest = AiPromptEngine.BuildWindowsEventRequest(
+            "System",
+            41,
+            "Microsoft-Windows-Kernel-Power",
+            "Critical",
+            new DateTime(2024, 5, 1, 10, 0, 0, DateTimeKind.Utc),
+            "WORKSTATION-01",
+            "The system rebooted unexpectedly.",
+            null,
+            null,
+            new Dictionary<string, string>(),
+            Array.Empty<string>(),
+            null);
+
+        Assert.Equal(enforcedOnce.SystemInstruction, enforcedTwice.SystemInstruction);
+        Assert.Equal("You explain log entries in Markdown.", untouched.SystemInstruction);
+        Assert.Contains("Markdown", builderRequest.SystemInstruction, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(enforcedOnce.SystemInstruction, "GitHub-flavored Markdown"));
+        Assert.Equal(1, CountOccurrences(builderRequest.SystemInstruction, "Markdown"));
+    }
+
+    private static int CountOccurrences(string value, string needle)
+    {
+        var count = 0;
+        var index = value.IndexOf(needle, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            count++;
+            index = value.IndexOf(needle, index + needle.Length, StringComparison.Ordinal);
+        }
+
+        return count;
+    }
 }

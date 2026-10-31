@@ -4,6 +4,31 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-31
+
+### Fixed
+
+- **AI reviews no longer fail with "no readable assistant text":** a shared `AiResponseParser` replaces the two provider-specific readers and accepts every response shape the app can meet — `choices[].message.content` as a string or as an array of content parts, reasoning-only answers (`reasoning_content`, `reasoning`, `thinking`), Gemini `candidates[].content.parts[].text`, legacy `choices[].text`, OpenAI Responses `output[].content[].text`, local and Ollama-style `message.content` and `response`, gateway envelopes under `data`/`result`/`payload`, and Server-Sent Events or JSON Lines chunks streamed even though `stream` was disabled. The Windows Event Log review that reported this failure now reads its answer instead of discarding it.
+- **Empty parts and whitespace-only answers are skipped** instead of being treated as the answer, and Gemini `thought` parts are kept as a fallback rather than competing with the model's final text. BOMs, zero-width characters, CRLF noise, and runs of blank lines are normalized before display, and a whole-response Markdown fence is unwrapped while inner code fences survive.
+- **Failures now say what to fix:** a 200 response that truly contains no text reports the provider's `finish_reason`, output-token truncation, safety blocks, refusals, tool-call-only answers, unparsable JSON, or an empty body, and an HTML landing page is called out as a wrong endpoint. Provider error objects returned with a 200 status are surfaced as request failures. The panel prefix changed from "AI provider returned an unreadable response" to "AI review could not be displayed".
+- **Larger output ceiling:** chat and Gemini requests now ask for 3,000 output tokens instead of 2,200 and 2,500, so a reasoning-capable model can finish its reasoning and still write the review.
+
+### Added
+
+- **Every prompt asks for Markdown:** `AiPromptEngine.EnsureMarkdownResponse` appends the shared Markdown instruction to any request whose system instruction does not already name Markdown, and both `Finalize` and `EnforceBudget` apply it. Requests from any workspace — or from a future caller that builds its own request — reach the parser with the same formatting contract.
+- **Parser test coverage:** 18 response-parsing tests cover chat completions, content parts, reasoning-only answers, legacy text completions, OpenAI Responses output, gateway envelopes, local servers, Ollama, Gemini candidates and blocks, Server-Sent Events, plain Markdown, HTML rejection, fence unwrapping, provider errors, empty and malformed bodies, tool calls, and display clipping. Two prompt-engine tests prove the Markdown instruction is added once and never rewrites existing wording.
+
+### Changed
+
+- The response parser bounds its work before display: 2,000,000 response characters are inspected and 200,000 assistant characters are shown, with an explicit truncation marker.
+- `docs/LOG-KNOWLEDGE-BASE.md` now states that every AI prompt requests a Markdown answer and that responses are read through the tolerant parser.
+- Advance app, setup, and workflow fallback metadata to `0.6.2`.
+
+### Verification
+
+- `dotnet build Upuaut.sln` completed with 0 warnings and 0 errors.
+- Automated suite passed: 105 tests, including the 18 new response-parsing tests and the Markdown prompt-contract tests.
+
 ## [0.6.1] - 2026-10-31
 
 ### Fixed

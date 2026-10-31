@@ -216,13 +216,40 @@ public static class AiPromptEngine
     }
 
     /// <summary>
+    /// Suffix appended to any system instruction that does not already ask for Markdown, so every
+    /// prompt — whichever workspace or caller assembled it — requests a response the shared
+    /// Markdown renderer can display.
+    /// </summary>
+    public const string MarkdownResponseInstruction =
+        " Respond in GitHub-flavored Markdown using short headings and bullet lists, with fenced code blocks only where they improve clarity. " +
+        "Return the Markdown directly; never wrap the whole answer in a single code fence and never answer with JSON or raw HTML.";
+
+    /// <summary>
+    /// Guarantees that the request explicitly asks for a Markdown response. Requests whose system
+    /// instruction already names Markdown are returned unchanged.
+    /// </summary>
+    public static AiInvestigationRequest EnsureMarkdownResponse(AiInvestigationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var instruction = request.SystemInstruction ?? string.Empty;
+        if (instruction.Contains("markdown", StringComparison.OrdinalIgnoreCase)) return request;
+
+        var updated = instruction.TrimEnd().Length == 0
+            ? MarkdownResponseInstruction.Trim()
+            : instruction.TrimEnd() + MarkdownResponseInstruction;
+        return request with { SystemInstruction = updated };
+    }
+
+    /// <summary>
     /// Applies the hard character ceiling to an externally constructed request and records the
     /// resulting budget. Requests already inside the ceiling keep their content unchanged and only
-    /// gain a budget report.
+    /// gain a budget report. Every request leaves this method asking for a Markdown response.
     /// </summary>
     public static AiInvestigationRequest EnforceBudget(AiInvestigationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = EnsureMarkdownResponse(request);
 
         var prompt = request.UserPrompt ?? string.Empty;
         if (prompt.Length <= MaxUserPromptCharacters)
@@ -355,7 +382,7 @@ public static class AiPromptEngine
             }
 
             var budget = new AiPromptBudget(MaxUserPromptCharacters, prompt.Length, _guardrails.Count > 0, _guardrails.ToArray());
-            return new AiInvestigationRequest(domain, title, prompt, systemInstruction, unitSummary, budget);
+            return EnsureMarkdownResponse(new AiInvestigationRequest(domain, title, prompt, systemInstruction, unitSummary, budget));
         }
     }
 

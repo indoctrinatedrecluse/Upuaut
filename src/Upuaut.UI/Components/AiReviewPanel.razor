@@ -141,7 +141,7 @@
             {
                 TaskCanceledException => "The provider request timed out or was cancelled. Check connectivity, endpoint, and provider status, then retry manually.",
                 HttpRequestException => $"AI provider request failed: {ex.Message}",
-                InvalidDataException => $"AI provider returned an unreadable response: {ex.Message}",
+                InvalidDataException => $"AI review could not be displayed: {ex.Message}",
                 InvalidOperationException => ex.Message,
                 _ => "AI review failed unexpectedly. The local analysis and original evidence are still available. Check the application log for the error type."
             };

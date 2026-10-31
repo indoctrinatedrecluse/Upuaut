@@ -17,6 +17,12 @@ namespace Upuaut.UI.Services;
 public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigurationService, IDisposable
 {
     private const int MaximumResponseBytes = 512_000;
+
+    /// <summary>
+    /// Output ceiling requested from the provider. Reasoning-capable models spend part of this
+    /// budget on internal reasoning, so the ceiling leaves room for a complete Markdown review.
+    /// </summary>
+    private const int MaximumOutputTokens = 3_000;
     private const string DefaultDeepSeekEndpoint = "https://api.deepseek.com/chat/completions";
     private const string DefaultGeminiEndpoint = "https://generativelanguage.googleapis.com/v1beta";
     private const string DefaultGeminiModel = "gemini-3.8-flash";
@@ -105,14 +111,13 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
         if (!response.IsSuccessStatusCode)
         {
             var detail = await ReadBoundedBodyAsync(response.Content, 32_000, cancellationToken).ConfigureAwait(false);
-            var providerMessage = ExtractProviderErrorMessage(detail);
+            var providerMessage = AiResponseParser.ExtractProviderErrorMessage(detail);
             if (!string.IsNullOrWhiteSpace(key)) providerMessage = providerMessage.Replace(key, "[redacted]", StringComparison.Ordinal);
             throw new HttpRequestException(FormatProviderError(response.StatusCode, providerMessage));
         }
 
         var body = await ReadBoundedBodyAsync(response.Content, MaximumResponseBytes, cancellationToken).ConfigureAwait(false);
-        var text = configuration.Provider == AiProvider.Gemini ? ExtractGeminiText(body) : ExtractChatText(body);
-        return UnwrapMarkdownFence(text);
+        return AiResponseParser.ExtractAssistantText(body, configuration.Provider);
     }
 
     public void Dispose() => _http.Dispose();
@@ -128,7 +133,7 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
         {
             model = configuration.Model,
             temperature = 0.2,
-            max_tokens = 2200,
+            max_tokens = MaximumOutputTokens,
             stream = false,
             messages = new object[]
             {
@@ -164,7 +169,7 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
             generationConfig = new
             {
                 temperature = 0.2,
-                maxOutputTokens = 2500
+                maxOutputTokens = MaximumOutputTokens
             }
         };
         request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
@@ -203,105 +208,6 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
         var normalized = value?.Trim() ?? string.Empty;
         if (normalized.Length is 0 || normalized.Length > maximum || normalized.Any(char.IsControl)) throw new InvalidOperationException($"Enter a valid {label.ToLowerInvariant()} (up to {maximum} characters).");
         return normalized;
-    }
-
-    private static string ExtractChatText(string body)
-    {
-        using var json = ParseJson(body);
-        var root = json.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("The provider returned JSON in an unexpected shape.");
-        if (root.TryGetProperty("error", out var error)) throw new InvalidDataException(FormatEmbeddedProviderError(error));
-        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var choice in choices.EnumerateArray())
-            {
-                if (choice.ValueKind != JsonValueKind.Object || !choice.TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.Object) continue;
-                if (message.TryGetProperty("refusal", out var refusal) && refusal.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(refusal.GetString()))
-                    throw new InvalidDataException($"The provider declined the request: {ClipProviderText(refusal.GetString()!)}");
-                if (!message.TryGetProperty("content", out var content)) continue;
-                var result = ReadChatContent(content);
-                if (!string.IsNullOrWhiteSpace(result)) return result;
-            }
-        }
-        if (root.TryGetProperty("output_text", out var outputText) && outputText.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(outputText.GetString())) return outputText.GetString()!.Trim();
-        throw new InvalidDataException("The provider returned a valid response but no readable assistant text. Check the selected model and endpoint format.");
-    }
-
-    private static string ExtractGeminiText(string body)
-    {
-        using var json = ParseJson(body);
-        var root = json.RootElement;
-        if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Gemini returned JSON in an unexpected shape.");
-        if (root.TryGetProperty("error", out var error)) throw new InvalidDataException(FormatEmbeddedProviderError(error));
-        if (root.TryGetProperty("candidates", out var candidates) && candidates.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var candidate in candidates.EnumerateArray())
-            {
-                if (candidate.ValueKind != JsonValueKind.Object) continue;
-                var finishReason = candidate.TryGetProperty("finishReason", out var finish) && finish.ValueKind == JsonValueKind.String ? finish.GetString() : null;
-                if (candidate.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object && content.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Array)
-                {
-                    var result = string.Join("\n", parts.EnumerateArray().Where(part => part.ValueKind == JsonValueKind.Object && part.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String).Select(part => part.GetProperty("text").GetString()).Where(text => !string.IsNullOrWhiteSpace(text))).Trim();
-                    if (!string.IsNullOrWhiteSpace(result)) return result;
-                }
-                if (!string.IsNullOrWhiteSpace(finishReason) && finishReason != "STOP")
-                    throw new InvalidDataException($"Gemini returned no text (finish reason: {ClipProviderText(finishReason)}). The request may have been blocked or stopped at an output limit.");
-            }
-        }
-        if (root.TryGetProperty("promptFeedback", out var feedback) && feedback.ValueKind == JsonValueKind.Object && feedback.TryGetProperty("blockReason", out var block) && block.ValueKind == JsonValueKind.String)
-            throw new InvalidDataException($"Gemini blocked the prompt ({ClipProviderText(block.GetString()!)}). Review the selected entry and retry only if appropriate.");
-        throw new InvalidDataException("Gemini returned a valid response but no readable generated text. Check the model, safety response, and endpoint format.");
-    }
-
-    private static JsonDocument ParseJson(string body)
-    {
-        var json = (body ?? string.Empty).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
-        if (json.Length == 0) throw new InvalidDataException("The provider returned an empty response.");
-        try { return JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 64, CommentHandling = JsonCommentHandling.Disallow, AllowTrailingCommas = false }); }
-        catch (JsonException) { throw new InvalidDataException("The provider returned malformed JSON. Check the endpoint URL and provider response format."); }
-    }
-
-    private static string ReadChatContent(JsonElement content)
-    {
-        if (content.ValueKind == JsonValueKind.String) return content.GetString()?.Trim() ?? string.Empty;
-        if (content.ValueKind != JsonValueKind.Array) return string.Empty;
-        var blocks = new List<string>();
-        foreach (var part in content.EnumerateArray())
-            if (part.ValueKind == JsonValueKind.Object && part.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(text.GetString())) blocks.Add(text.GetString()!.Trim());
-        return string.Join("\n", blocks);
-    }
-
-    private static string UnwrapMarkdownFence(string text)
-    {
-        var trimmed = text.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal) || !trimmed.EndsWith("```", StringComparison.Ordinal) || trimmed.Length < 7) return trimmed;
-        var firstLineEnd = trimmed.IndexOf('\n');
-        if (firstLineEnd < 0 || firstLineEnd > 24) return trimmed;
-        var language = trimmed[3..firstLineEnd].Trim();
-        if (language.Length > 0 && !language.Equals("markdown", StringComparison.OrdinalIgnoreCase) && !language.Equals("md", StringComparison.OrdinalIgnoreCase)) return trimmed;
-        return trimmed[(firstLineEnd + 1)..^3].Trim();
-    }
-
-    private static string ExtractProviderErrorMessage(string body)
-    {
-        try
-        {
-            using var json = ParseJson(body);
-            if (json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("error", out var error)) return FormatEmbeddedProviderError(error);
-            if (json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
-                return ClipProviderText(message.GetString()!);
-        }
-        catch (InvalidDataException) { /* Non-JSON provider/proxy responses are reported by status only. */ }
-        return string.Empty;
-    }
-
-    private static string FormatEmbeddedProviderError(JsonElement error)
-    {
-        if (error.ValueKind == JsonValueKind.String) return ClipProviderText(error.GetString() ?? string.Empty);
-        if (error.ValueKind != JsonValueKind.Object) return string.Empty;
-        var message = error.TryGetProperty("message", out var messageElement) && messageElement.ValueKind == JsonValueKind.String ? ClipProviderText(messageElement.GetString()!) : string.Empty;
-        var code = error.TryGetProperty("code", out var codeElement) && (codeElement.ValueKind == JsonValueKind.String || codeElement.ValueKind == JsonValueKind.Number) ? ClipProviderText(codeElement.ToString()) : string.Empty;
-        return string.Join(" Â· ", new[] { code, message }.Where(value => !string.IsNullOrWhiteSpace(value)));
     }
 
     private static string FormatProviderError(HttpStatusCode statusCode, string providerMessage)
