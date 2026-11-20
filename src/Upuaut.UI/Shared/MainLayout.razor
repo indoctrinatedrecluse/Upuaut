@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @namespace Upuaut.UI.Shared
+@using Upuaut.Core.Diagnostics
 @using Upuaut.UI.Components
 @inject NavigationManager NavManager
 @inject IJSRuntime JSRuntime
@@ -97,7 +98,7 @@
                             <div class="acc-pantheon-section">
                                 <div class="acc-section-title-row">
                                     <span class="acc-section-title">THE CELESTIAL PANTHEON</span>
-                                    <span class="acc-subsystem-count">7 GUARDIANS</span>
+                                    <span class="acc-subsystem-count">8 GUARDIANS</span>
                                 </div>
                                 <p class="acc-pantheon-intro">
                                     Every diagnostic subsystem in Upuaut is named in reverence of an Egyptian deity guarding the Duat:
@@ -124,7 +125,23 @@
                                         <span class="acc-deity-icon">⚖️</span>
                                         <div class="acc-deity-text">
                                             <strong class="acc-deity-name">Ma'at</strong>
-                                    <span class="acc-deity-desc">The Feather of Truth → The Scales (Correlation Preview)</span>
+                                            <span class="acc-deity-desc">The Feather of Truth → The Scales (Triage)</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("log-lab"))'>
+                                        <span class="acc-deity-icon">📐</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Seshat</strong>
+                                            <span class="acc-deity-desc">Mistress of Books → Log Lab (Parser)</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("crash-forensics"))'>
+                                        <span class="acc-deity-icon">☥</span>
+                                        <div class="acc-deity-text">
+                                            <strong class="acc-deity-name">Osiris (Asar)</strong>
+                                            <span class="acc-deity-desc">Lord of the Fallen Vessel → Crash Forensics</span>
                                         </div>
                                     </div>
 
@@ -132,15 +149,7 @@
                                         <span class="acc-deity-icon">🛡️</span>
                                         <div class="acc-deity-text">
                                             <strong class="acc-deity-name">Anpu (Anubis)</strong>
-                                            <span class="acc-deity-desc">Guardian of the Vessel → Crash Forensics</span>
-                                        </div>
-                                    </div>
-
-                                    <div class="acc-deity-item" @onclick='@(() => NavigateAndClose("docs"))'>
-                                        <span class="acc-deity-icon">📖</span>
-                                        <div class="acc-deity-text">
-                                            <strong class="acc-deity-name">Seshat</strong>
-                                            <span class="acc-deity-desc">Mistress of Books → Documentation Engine</span>
+                                            <span class="acc-deity-desc">Guardian of the Threshold → Crash Reporter</span>
                                         </div>
                                     </div>
 
@@ -205,6 +214,10 @@
         </div>
         <div class="splash-progress"><span></span></div>
         <button class="splash-enter" @onclick="EnterApp">ENTER THE APP <span aria-hidden="true">→</span></button>
+        <label class="splash-skip-label">
+            <input type="checkbox" @bind="_skipSplashNextTime" />
+            <span>Don't show this gateway on startup</span>
+        </label>
         <small class="splash-footnote">Your workspaces are prepared. Enter when you are ready.</small>
     </div>
 }
@@ -218,6 +231,7 @@
     private bool _showAccountMenu;
     private bool _motionEnabled;
     private bool _showSplash = true;
+    private bool _skipSplashNextTime;
     private bool _initialized;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -227,12 +241,23 @@
         try
         {
             _motionEnabled = await JSRuntime.InvokeAsync<bool>("upuautMotion.getEnabled");
-            await InvokeAsync(StateHasChanged);
         }
         catch
         {
             _motionEnabled = false;
         }
+
+        try
+        {
+            var skip = await JSRuntime.InvokeAsync<bool>("upuautSplash.getSkipSplash");
+            if (skip)
+            {
+                _showSplash = false;
+            }
+        }
+        catch { }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ToggleMotionAsync()
@@ -242,7 +267,18 @@
         catch { }
     }
 
-    private void EnterApp() => _showSplash = false;
+    private async Task EnterApp()
+    {
+        _showSplash = false;
+        if (_skipSplashNextTime)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("upuautSplash.setSkipSplash", true);
+            }
+            catch { }
+        }
+    }
 
     private const string HieroglyphicAlphabetStream =
         "𓄿 𓇋 𓇌 𓂝 𓅱 𓃀 𓊪 𓆑 𓅓 𓈖 𓂋 𓉔 𓎛 𓐍 𓄡 𓊃 𓋴 𓈙 𓈎 𓎡 𓎼 𓏏 𓍿 𓂧 𓆓 " +
@@ -279,20 +315,6 @@
 
     private void OpenExternalUrl(string url)
     {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-            }
-        }
-        catch
-        {
-            // Suppress fallback
-        }
+        AppUrlLauncher.TryLaunchWebUrl(url);
     }
 }

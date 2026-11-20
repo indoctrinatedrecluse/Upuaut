@@ -4,12 +4,13 @@ using Upuaut.Chronicles.Analytics;
 using Upuaut.Chronicles.Explorers;
 using Upuaut.Chronicles.Export;
 using Upuaut.Chronicles.Parsers;
+using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Interfaces;
 using Upuaut.Core.Models;
 
 namespace Upuaut.Chronicles.Services;
 
-public class WindowsEventLogService : IChroniclesService, IDisposable
+public class WindowsEventLogService : IChroniclesService, IDisposable, IAsyncDisposable
 {
     private readonly LogExplanationEngine _explanationEngine = new();
     private readonly EventClusterer _clusterer = new();
@@ -203,18 +204,33 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         return Task.CompletedTask;
     }
 
-    public Task StopLiveStreamAsync()
+    public void StopLiveStream()
     {
         if (_activeWatcher != null)
         {
-            _activeWatcher.Enabled = false;
-            _activeWatcher.EventRecordWritten -= OnEventRecordWritten;
-            _activeWatcher.Dispose();
-            _activeWatcher = null;
+            try
+            {
+                _activeWatcher.Enabled = false;
+                _activeWatcher.EventRecordWritten -= OnEventRecordWritten;
+                _activeWatcher.Dispose();
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Debug("EventLog", $"Watcher cleanup error: {ex.Message}");
+            }
+            finally
+            {
+                _activeWatcher = null;
+            }
         }
 
         _isLiveTracing = false;
         StatusChanged?.Invoke(this, "Live stream paused.");
+    }
+
+    public Task StopLiveStreamAsync()
+    {
+        StopLiveStream();
         return Task.CompletedTask;
     }
 
@@ -326,7 +342,7 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
         return sb.Length > 0 ? sb.ToString() : $"Event ID {record.Id} logged by {record.ProviderName}.";
     }
 
-    private static string BuildXPathQuery(LogFilterOptions filter)
+    internal static string BuildXPathQuery(LogFilterOptions filter)
     {
         var conditions = new List<string>();
 
@@ -374,8 +390,21 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
             conditions.Add($"EventID={filter.EventId.Value}");
         }
 
-        // Provider Name
-        if (!string.IsNullOrWhiteSpace(filter.ProviderName))
+        // Provider Name & Multi-Provider Selection
+        if (filter.SelectedProviders is { Count: > 0 } providers)
+        {
+            var validProviders = providers.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+            if (validProviders.Count == 1)
+            {
+                conditions.Add($"Provider[@Name={ToXPathLiteral(validProviders[0])}]");
+            }
+            else if (validProviders.Count > 1)
+            {
+                var orClauses = validProviders.Select(p => $"Provider[@Name={ToXPathLiteral(p)}]");
+                conditions.Add($"({string.Join(" or ", orClauses)})");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(filter.ProviderName))
         {
             conditions.Add($"Provider[@Name={ToXPathLiteral(filter.ProviderName)}]");
         }
@@ -414,6 +443,14 @@ public class WindowsEventLogService : IChroniclesService, IDisposable
 
     public void Dispose()
     {
-        StopLiveStreamAsync().GetAwaiter().GetResult();
+        StopLiveStream();
+        GC.SuppressFinalize(this);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        StopLiveStream();
+        GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
     }
 }

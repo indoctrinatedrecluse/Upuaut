@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Upuaut.Core.Diagnostics;
 using Upuaut.Core.Models;
 
 namespace Upuaut.Chronicles.Explorers;
@@ -68,10 +69,18 @@ public class LogExplanationEngine
             string? statusMeaning = null;
 
             var match = StatusCodeRegex.Match(log.Message);
-            if (match.Success && KnownStatusCodes.TryGetValue(match.Value, out var statusInfo))
+            if (match.Success)
             {
-                statusCode = $"{match.Value} ({statusInfo.Name})";
-                statusMeaning = statusInfo.Meaning;
+                if (WindowsStatusLookup.TryGetStatus(match.Value, out var statusInfo))
+                {
+                    statusCode = $"{match.Value} ({statusInfo.SymbolicName})";
+                    statusMeaning = statusInfo.Meaning;
+                }
+                else if (KnownStatusCodes.TryGetValue(match.Value, out var legacyInfo))
+                {
+                    statusCode = $"{match.Value} ({legacyInfo.Name})";
+                    statusMeaning = legacyInfo.Meaning;
+                }
             }
 
             // 3. Fallback to smart heuristic synthesis

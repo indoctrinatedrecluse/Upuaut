@@ -1,6 +1,7 @@
 @page "/about"
 @namespace Upuaut.UI.Pages
 @using System.Runtime.InteropServices
+@using Upuaut.Core.Diagnostics
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Upuaut — About the Architect &amp; Instrument</PageTitle>
@@ -78,15 +79,27 @@
                 </div>
                 <div class="spec-row">
                     <span class="spec-k">Packet Capture</span>
-                    <span class="spec-v">Native IPv4 Raw Sockets + Optional Npcap Ethernet</span>
+                    <span class="spec-v">Dual-Stack IPv4/IPv6 Raw Sockets + Optional Npcap Ethernet</span>
                 </div>
                 <div class="spec-row">
                     <span class="spec-k">Process Attribution</span>
-                    <span class="spec-v">Native Windows IP Helper (iphlpapi.dll)</span>
+                    <span class="spec-v">Native Windows IP Helper (iphlpapi.dll) — Dual-Stack</span>
                 </div>
                 <div class="spec-row">
                     <span class="spec-k">Log Engine</span>
                     <span class="spec-v">System.Diagnostics.Eventing.Reader + The Oracle</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Log Lab</span>
+                    <span class="spec-v">Multi-format Parsing (JSON, XML, Syslog, Grok/Regex)</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Crash Forensics</span>
+                    <span class="spec-v">Offline Minidump (.dmp) &amp; WER + NTSTATUS/HRESULT Decoder</span>
+                </div>
+                <div class="spec-row">
+                    <span class="spec-k">Cross-Source Correlation</span>
+                    <span class="spec-v">The Scales of Ma'at (Sliding Window &amp; Incident Case Export)</span>
                 </div>
                 <div class="spec-row">
                     <span class="spec-k">Crash Reporting</span>
@@ -108,29 +121,18 @@
 @code {
     private async Task OpenUrl(string url)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            if (AppUrlLauncher.TryLaunchWebUrl(url)) return;
+        }
+
         try
         {
-            if (OperatingSystem.IsWindows())
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-                return;
-            }
             await JSRuntime.InvokeVoidAsync("open", url, "_blank");
         }
         catch
         {
-            try
-            {
-                await JSRuntime.InvokeVoidAsync("open", url, "_blank");
-            }
-            catch
-            {
-                // Fallback suppressed
-            }
+            // Fallback suppressed
         }
     }
 }

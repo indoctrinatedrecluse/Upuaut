@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Diagnostics.Runtime;
+using Upuaut.Core.Diagnostics;
 using Upuaut.CrashForensics.Models;
 using Upuaut.LogLab;
 using Upuaut.LogLab.Models;
@@ -189,6 +190,13 @@ public sealed class CrashArtifactAnalyzer(ILogParsingEngine logParser, ILogAnaly
             0x80000003 => "A breakpoint exception was recorded. Debugger breakpoints can be intentional; establish whether the process had a debugger or explicitly raised a breakpoint before treating it as a crash cause.",
             _ => null
         };
+
+        if (explanation is null && WindowsStatusLookup.TryGetStatus(code, out var statusInfo))
+        {
+            explanation = $"{statusInfo.Meaning} ({statusInfo.Category}).";
+            checks.Add($"Native status symbolic name: {statusInfo.SymbolicName}.");
+        }
+
         if (explanation is null) return null;
         if (code == 0xC0000005 && parameters.Count >= 2)
         {
@@ -210,6 +218,7 @@ public sealed class CrashArtifactAnalyzer(ILogParsingEngine logParser, ILogAnaly
         0xC0000409 => "Fail-fast termination",
         0xE0434352 => "CLR exception",
         0x80000003 => "Breakpoint",
+        _ when WindowsStatusLookup.TryGetStatus(code, out var info) => info.SymbolicName,
         _ => "Unhandled exception"
     };
 

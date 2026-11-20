@@ -139,7 +139,14 @@ public static class CrashReporter
 
         sb.AppendLine("## 🚨 Exception Details");
         sb.AppendLine($"- **Type:** `{report.ExceptionType}`");
-        sb.AppendLine($"- **HRESULT:** `{report.HexHResult}`");
+        if (WindowsStatusLookup.TryGetStatus(report.HexHResult, out var statusInfo))
+        {
+            sb.AppendLine($"- **HRESULT:** `{report.HexHResult}` (`{statusInfo.SymbolicName}`: {statusInfo.Meaning})");
+        }
+        else
+        {
+            sb.AppendLine($"- **HRESULT:** `{report.HexHResult}`");
+        }
         sb.AppendLine($"- **Message:** {report.ExceptionMessage}");
         sb.AppendLine();
 
@@ -156,7 +163,14 @@ public static class CrashReporter
             {
                 var inner = report.InnerExceptions[i];
                 sb.AppendLine($"### Inner Exception #{i + 1}: `{inner.Type}`");
-                sb.AppendLine($"- **HRESULT:** `{inner.HexHResult}`");
+                if (WindowsStatusLookup.TryGetStatus(inner.HexHResult, out var innerStatusInfo))
+                {
+                    sb.AppendLine($"- **HRESULT:** `{inner.HexHResult}` (`{innerStatusInfo.SymbolicName}`: {innerStatusInfo.Meaning})");
+                }
+                else
+                {
+                    sb.AppendLine($"- **HRESULT:** `{inner.HexHResult}`");
+                }
                 sb.AppendLine($"- **Message:** {inner.Message}");
                 sb.AppendLine("```text");
                 sb.AppendLine(inner.StackTrace ?? "(No inner stack trace)");

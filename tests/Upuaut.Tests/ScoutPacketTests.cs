@@ -335,4 +335,90 @@ public class ScoutPacketTests
         packet[24] = (byte)(udpLength >> 8); packet[25] = (byte)udpLength;
         return packet;
     }
+
+    [Fact]
+    public void ClassicPcap_ReadsFramesCorrectly()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            using (var stream = File.Create(tempFile))
+            using (var writer = new BinaryWriter(stream))
+            {
+                // Libpcap global header (24 bytes)
+                writer.Write(0xA1B2C3D4u); // Magic
+                writer.Write((ushort)2);   // Version major
+                writer.Write((ushort)4);   // Version minor
+                writer.Write(0);           // Thiszone
+                writer.Write(0u);          // Sigfigs
+                writer.Write(65535u);      // Snaplen
+                writer.Write(1u);          // LinkType: 1 (Ethernet)
+
+                // Packet 1: 14 bytes ethernet + 28 bytes UDP = 42 bytes
+                var udp = BuildUdpPacket(53, 1024, 4);
+                var eth = new byte[14 + udp.Length];
+                eth[12] = 0x08; eth[13] = 0x00; // EtherType IPv4
+                udp.CopyTo(eth, 14);
+
+                // Packet header (16 bytes)
+                writer.Write(1732000000u); // ts_sec
+                writer.Write(250000u);     // ts_usec (250ms)
+                writer.Write((uint)eth.Length); // incl_len
+                writer.Write((uint)eth.Length); // orig_len
+                writer.Write(eth);
+            }
+
+            var frames = Upuaut.Scout.Services.PcapNgFile.Read(tempFile);
+            Assert.Single(frames);
+            var frame = frames[0];
+            Assert.Equal(NetworkProtocol.DNS, frame.Protocol);
+            Assert.Equal(NetworkProtocol.UDP, frame.TransportProtocol);
+            Assert.Equal("Classic PCAP", frame.InterfaceName);
+            Assert.Equal(53, frame.SourcePort);
+            Assert.Equal(1024, frame.DestinationPort);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ParsesIPv6_TCP_Packet()
+    {
+        // 40 bytes IPv6 header + 20 bytes TCP header = 60 bytes
+        byte[] packet = new byte[60];
+        // Version 6
+        packet[0] = 0x60;
+        // Payload length = 20 (0x0014)
+        packet[4] = 0x00; packet[5] = 20;
+        // Next header = 6 (TCP)
+        packet[6] = 6;
+        // Hop limit = 64
+        packet[7] = 64;
+        // Source IP: fe80::1
+        packet[8] = 0xFE; packet[9] = 0x80; packet[23] = 0x01;
+        // Dest IP: fe80::2
+        packet[24] = 0xFE; packet[25] = 0x80; packet[39] = 0x02;
+
+        // TCP Header (at offset 40)
+        // Source Port: 8080 (0x1F90)
+        packet[40] = 0x1F; packet[41] = 0x90;
+        // Dest Port: 443 (0x01BB)
+        packet[42] = 0x01; packet[43] = 0xBB;
+        // Data offset: 5 (20 bytes)
+        packet[52] = 0x50;
+        // Flags: SYN (0x02)
+        packet[53] = 0x02;
+
+        var frame = PacketParser.ParseIPv6Packet(packet, packet.Length, 1, "Ethernet");
+
+        Assert.NotNull(frame);
+        Assert.Equal("fe80::1", frame.SourceIp);
+        Assert.Equal("fe80::2", frame.DestinationIp);
+        Assert.Equal(8080, frame.SourcePort);
+        Assert.Equal(443, frame.DestinationPort);
+        Assert.Equal(NetworkProtocol.TCP, frame.Protocol);
+        Assert.Equal(NetworkProtocol.TCP, frame.TransportProtocol);
+    }
 }

@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Upuaut.Core\Upuaut.Core.csproj" />
     <ProjectReference Include="..\Upuaut.LogLab\Upuaut.LogLab.csproj" />
     <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="4.2.751201" />
   </ItemGroup>

@@ -135,14 +135,15 @@ Upuaut organizes its diagnostic and forensic capabilities into specialized, dedi
 - **Guarded AI Crash Review:** On-demand AI review of the extracted crash summary and faulting stack frame.
 
 ### 6. 𓋹 The Celestial Pantheon & Lore Portal (`Upuaut.UI/Pages/Pantheon.razor`)
-- **Sacred Mythological Mappings:** Explores the 7 ancient Egyptian guardian deities dedicated to Upuaut's subsystems:
+- **Sacred Mythological Mappings:** Explores the 8 ancient Egyptian guardian deities dedicated to Upuaut's subsystems:
   - 🐺 **Upuaut (Wepwawet):** *Opener of the Ways* → The Scout (Wire Sniffer & Network Vanguard).
-  - 📜 **Thoth (Djehuty):** *Lord of the Sacred Scribes* → The Duat Chronicles (Event Log Ingestion).
-  - ⚖️ **Ma'at:** *The Feather of Truth* → The Scales (System Anomaly Triage & Correlation).
-  - 🛡️ **Anpu (Anubis):** *Guardian of the Vessel* → Crash Forensics & Minidump Dumper.
-  - 📖 **Seshat:** *Mistress of Books* → In-App Documentation & Architecture Archives.
+  - 📜 **Thoth (Djehuty):** *Lord of the Sacred Scribes* → The Duat Chronicles (Event Log Ingestion & Querying).
+  - ⚖️ **Ma'at:** *The Feather of Truth* → The Scales (System Anomaly Triage & Cross-Source Correlation).
+  - ☥ **Osiris (Asar):** *Lord of the Fallen Vessel* → Crash Forensics (Minidump & WER Artifact Triage).
+  - 🛡️ **Anpu (Anubis):** *Guardian of the Threshold* → Crash Reporter & Persistent Telemetry Vault.
+  - 📐 **Seshat:** *Mistress of Builders & Archives* → Log Lab & Custom Parser Workbench.
   - 💧 **Kebechet (Qebhet):** *The Celestial Purifier* → Noise Suppression & DCOM Filtering.
-  - ⚡ **Seker (Sokar):** *Restorer of the Broken* → 1-Click Forensic Remediation Engine.
+  - ⚡ **Seker (Sokar):** *Restorer of the Broken* → Forensic Remediation & Recommended Investigation Checks.
 - **Animated Hieroglyphic Title Bar:** Continuous hardware-accelerated stream of the 25 Gardiner uniliteral signs, guardian names, and sacred symbols running across both the in-app header and the native Windows window title.
 
 ### 7. 🤖 Shared Guarded AI Review & Services Subsystem
@@ -224,7 +225,7 @@ dotnet test Upuaut.sln
 ## 📦 Packaging & Release
 
 Releases follow [Semantic Versioning](https://semver.org/) and match the `Version` declared in `Directory.Build.props`:
-1. Push a tag in the format `vMAJOR.MINOR.PATCH` (e.g. `v0.6.2`).
+1. Push a tag in the format `vMAJOR.MINOR.PATCH` (e.g. `v0.7.0`).
 2. The `Windows Release` GitHub Actions workflow compiles the self-contained Windows x64 desktop host and packages it with the themed setup installer (`Upuaut.Setup.exe`).
 3. The release workflow publishes `Upuaut-Setup-win-x64-vVERSION.zip` containing the installer and required setup media.
 4. See [installer/README.md](installer/README.md) for installer configuration and silent deployment flags.

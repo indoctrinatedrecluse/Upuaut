@@ -7,7 +7,7 @@ using Upuaut.Scout.Parsers;
 namespace Upuaut.Scout.Capture;
 
 /// <summary>Link-layer capture through SharpPcap. Requires a compatible capture provider such as Npcap.</summary>
-public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
+public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable, IAsyncDisposable
 {
     private ICaptureDevice? _device;
     private CancellationTokenRegistration _cancellationRegistration;
@@ -92,11 +92,11 @@ public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
         catch (Exception ex) { AppLogger.Debug("EthernetCapture", $"Packet subscriber failed: {ex.Message}"); }
     }
 
-    public Task StopCaptureAsync()
+    public void StopCapture()
     {
         lock (_sync)
         {
-            if (!IsCapturing) return Task.CompletedTask;
+            if (!IsCapturing) return;
             IsCapturing = false;
             _cancellationRegistration.Dispose();
             if (_device is { } device)
@@ -107,8 +107,24 @@ public sealed class EthernetCaptureEngine : ICaptureEngine, IDisposable
                 _device = null;
             }
         }
+    }
+
+    public Task StopCaptureAsync()
+    {
+        StopCapture();
         return Task.CompletedTask;
     }
 
-    public void Dispose() => StopCaptureAsync().GetAwaiter().GetResult();
+    public void Dispose()
+    {
+        StopCapture();
+        GC.SuppressFinalize(this);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        StopCapture();
+        GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
+    }
 }

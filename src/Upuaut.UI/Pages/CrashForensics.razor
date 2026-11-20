@@ -97,7 +97,7 @@
 
         @if (_result.IsKernelDump)
         {
-            <section class="cf-kernel-handoff"><span>EXTERNAL DEBUGGER REQUIRED</span><h2>Kernel dump recognized; deep analysis stays with WinDbg</h2><p>Kernel dumps can contain multi-gigabyte virtual memory layouts, missing pages, and architecture-specific structures. Upuaut identifies this format without making unsupported driver or bugcheck claims.</p><div><button class="cf-quiet-button" @onclick="CopyPath">COPY DUMP PATH</button><a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/analyzing-a-kernel-mode-dump-file-with-windbg" target="_blank" rel="noopener noreferrer">WINDBG ANALYSIS GUIDE ↗</a></div></section>
+            <section class="cf-kernel-handoff"><span>EXTERNAL DEBUGGER REQUIRED</span><h2>Kernel dump recognized; deep analysis stays with WinDbg</h2><p>Kernel dumps can contain multi-gigabyte virtual memory layouts, missing pages, and architecture-specific structures. Upuaut identifies this format without making unsupported driver or bugcheck claims.</p><div><button class="cf-quiet-button" @onclick="CopyPath">COPY DUMP PATH</button><a href="https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/analyzing-a-kernel-mode-dump-file-with-windbg" target="_blank" rel="noopener noreferrer" @onclick='() => OpenExternal("https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/analyzing-a-kernel-mode-dump-file-with-windbg")' @onclick:preventDefault="true">WINDBG ANALYSIS GUIDE ↗</a></div></section>
         }
 
         @if (_result.Findings.Count > 0)
@@ -335,6 +335,7 @@
         return output.ToString();
     }
 
+    private static void OpenExternal(string url) => Upuaut.Core.Diagnostics.AppUrlLauncher.TryLaunchWebUrl(url);
     private static string Markdown(string value) => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("|", "\\|", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
     private static string FormatBytes(long bytes) => bytes >= 1024L * 1024 * 1024 ? $"{bytes / (1024d * 1024 * 1024):0.##} GiB" : bytes >= 1024L * 1024 ? $"{bytes / (1024d * 1024):0.##} MiB" : $"{bytes / 1024d:0.##} KiB";
     private static string KindLabel(CrashArtifactKind kind) => kind switch { CrashArtifactKind.WindowsMinidump => "Windows user-mode minidump", CrashArtifactKind.WindowsKernelDump => "Windows kernel dump", CrashArtifactKind.WindowsErrorReport => "Windows Error Reporting report", _ => "Unknown artifact" };

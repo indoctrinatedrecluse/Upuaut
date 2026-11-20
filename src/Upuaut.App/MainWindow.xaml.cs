@@ -15,7 +15,7 @@ using Upuaut.LogLab.Models;
 using Upuaut.Scout.Services;
 using Upuaut.Core.Updates;
 using Upuaut.UI.Components;
-using Upuaut.UI.Services;
+using Upuaut.Weigher.Services;
 
 namespace Upuaut.App;
 
@@ -72,6 +72,11 @@ public partial class MainWindow : Window
             {
                 _titleTimer.Stop();
                 AppLogger.Info("MainWindow", "MainWindow.Closed fired");
+                if (blazorWebView.Services is IDisposable disp)
+                {
+                    try { disp.Dispose(); }
+                    catch (Exception ex) { AppLogger.Warning("MainWindow", "Exception during service provider disposal", ex); }
+                }
             };
 
             // Attach to BlazorWebView lifecycle
@@ -80,10 +85,40 @@ public partial class MainWindow : Window
                 AppLogger.Info("WebView", "BlazorWebViewInitialized fired");
                 e.WebView.CoreWebView2InitializationCompleted += (w, ev) =>
                 {
-                    if (ev.IsSuccess)
+                    if (ev.IsSuccess && e.WebView.CoreWebView2 != null)
                     {
-                        var browserVer = e.WebView.CoreWebView2?.Environment?.BrowserVersionString ?? "Unknown";
+                        var core = e.WebView.CoreWebView2;
+                        var browserVer = core.Environment?.BrowserVersionString ?? "Unknown";
                         AppLogger.Info("WebView", $"CoreWebView2 initialized successfully (Runtime: {browserVer})");
+
+                        // Intercept external navigations to protect desktop canvas
+                        core.NavigationStarting += (sender, args) =>
+                        {
+                            if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var navUri))
+                            {
+                                // Allow local host assets, 0.0.0.0, and blank initialization
+                                var isLocal = navUri.IsLoopback ||
+                                              navUri.Host.Equals("0.0.0.0", StringComparison.OrdinalIgnoreCase) ||
+                                              navUri.Scheme.Equals("about", StringComparison.OrdinalIgnoreCase);
+
+                                if (!isLocal && (navUri.Scheme == Uri.UriSchemeHttp || navUri.Scheme == Uri.UriSchemeHttps))
+                                {
+                                    args.Cancel = true;
+                                    AppUrlLauncher.TryLaunchWebUrl(args.Uri);
+                                }
+                            }
+                            else
+                            {
+                                args.Cancel = true;
+                            }
+                        };
+
+                        // Intercept window.open / target="_blank"
+                        core.NewWindowRequested += (sender, args) =>
+                        {
+                            args.Handled = true;
+                            AppUrlLauncher.TryLaunchWebUrl(args.Uri);
+                        };
                     }
                     else
                     {
@@ -111,6 +146,7 @@ public partial class MainWindow : Window
             services.AddSingleton<IChroniclesService, WindowsEventLogService>();
             services.AddSingleton<ICaptureEngine, ScoutManager>();
             services.AddSingleton<ScoutManager>(sp => (ScoutManager)sp.GetRequiredService<ICaptureEngine>());
+            services.AddSingleton<IWeigherEngine, WeigherEngine>();
             services.AddSingleton<Upuaut.UI.Shared.InvestigationContext>();
             services.AddSingleton<ILogParsingEngine, LogParsingEngine>();
             services.AddSingleton<ILogAnalysisEngine, LogAnalysisEngine>();

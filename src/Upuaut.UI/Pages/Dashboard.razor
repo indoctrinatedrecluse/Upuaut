@@ -52,6 +52,23 @@
             <div class="diag-card-sub">Compare nearby event and packet signals</div>
         </div>
 
+        <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("log-lab"))' title="Open Seshat Log Lab">
+            <div class="diag-card-header">
+                <span class="diag-card-title">Seshat · Log Lab</span>
+                <FluentIcon Value="@(new Icons.Regular.Size20.DocumentSearch())" />
+            </div>
+            <div class="diag-card-value">Log Lab</div>
+            <div class="diag-card-sub">Multi-format parser &amp; regex analyzer</div>
+        </div>
+
+        <div class="diag-card" style="cursor: pointer;" @onclick='@(() => NavigateTo("crash-forensics"))' title="Open Osiris Crash Forensics">
+            <div class="diag-card-header">
+                <span class="diag-card-title">Osiris · Forensics</span>
+                <FluentIcon Value="@(new Icons.Regular.Size20.Bug())" />
+            </div>
+            <div class="diag-card-value">Crash Forensics</div>
+            <div class="diag-card-sub">Minidump &amp; WER artifact triage</div>
+        </div>
     </div>
 
     <div class="dashboard-sections" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
@@ -76,6 +93,30 @@
             </p>
             <FluentButton Appearance="ButtonAppearance.Outline" OnClick='@(() => NavigateTo("scout"))'>
                 Deploy Scout
+            </FluentButton>
+        </FluentCard>
+
+        <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
+            <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📐</span> Seshat — Log Lab &amp; Profile Workbench
+            </h3>
+            <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
+                Ingest arbitrary text, JSON, XML, or syslog feeds with regex-tokenized syntax highlighting, sequence anomaly detection, and custom parser profiles.
+            </p>
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick='@(() => NavigateTo("log-lab"))'>
+                Launch Log Lab
+            </FluentButton>
+        </FluentCard>
+
+        <FluentCard Style="background-color: var(--upuaut-surface); border: 1px solid var(--upuaut-border); padding: 1.5rem;">
+            <h3 style="color: var(--upuaut-sand); margin-top: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>☥</span> Osiris — Crash Forensics &amp; Artifact Analyzer
+            </h3>
+            <p style="color: var(--upuaut-text-muted); font-size: 0.9rem;">
+                Inspect native user-mode memory dumps (.dmp) and Windows Error Reporting (.wer) crash manifests with bounded local analysis, call stacks, and exception root-cause decoding.
+            </p>
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick='@(() => NavigateTo("crash-forensics"))'>
+                Analyze Crash Artifacts
             </FluentButton>
         </FluentCard>
     </div>

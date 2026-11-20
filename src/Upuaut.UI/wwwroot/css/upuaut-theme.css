@@ -2308,6 +2308,8 @@ body, html {
 .splash-enter:hover, .splash-enter:focus-visible { transform: translateY(-1px); box-shadow: 0 0 34px rgba(212,175,55,.42); outline: 2px solid rgba(241,217,148,.65); outline-offset: 3px; }
 .splash-enter span { font-size: 1rem; }
 .splash-footnote { z-index: 1; margin-top: .85rem; color: rgba(229,231,235,.56); font: .58rem 'Consolas', monospace; letter-spacing: .07em; }
+.splash-skip-label { z-index: 1; display: inline-flex; align-items: center; gap: .5rem; margin-top: .65rem; color: rgba(229,231,235,.75); font: .68rem 'Consolas', monospace; cursor: pointer; user-select: none; }
+.splash-skip-label input[type="checkbox"] { accent-color: var(--upuaut-gold); cursor: pointer; }
 
 @keyframes splashScan { from { transform: scaleX(.26); } to { transform: scaleX(1); } }
 @keyframes splashFadeIn { from { opacity: 0; } to { opacity: 1; } }

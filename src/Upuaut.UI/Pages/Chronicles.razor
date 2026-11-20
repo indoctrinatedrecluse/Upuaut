@@ -89,9 +89,12 @@
             <span class="gold-accent">📂 Offline EVTX:</span>
             <input type="text"
                    class="upuaut-search-input"
-                   placeholder="Enter full path to .evtx file (e.g. C:\Diagnostics\System.evtx)"
+                   placeholder="Enter full path or browse for a .evtx file"
                    style="flex: 1;"
                    @bind="_evtxFilePath" />
+            <FluentButton Appearance="ButtonAppearance.Outline" IconStart="@(new Icons.Regular.Size16.FolderOpen())" OnClick="BrowseEvtxFileAsync">
+                Browse…
+            </FluentButton>
             <FluentButton Appearance="ButtonAppearance.Primary" OnClick="LoadCustomEvtxAsync">
                 Load File
             </FluentButton>
@@ -300,9 +303,10 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var log in FilteredLogs)
-                            {
-                                var isSelected = _selectedLog?.RecordId == log.RecordId;
+                            <Virtualize Items="FilteredLogs" Context="log" SpacerElement="tr" ItemSize="34" OverscanCount="10">
+                                @{
+                                    var isSelected = _selectedLog?.RecordId == log.RecordId;
+                                }
                                 <tr class="log-row @(isSelected ? "row-selected" : "")"
                                     @onclick="@(() => SelectLog(log))">
                                     <td>
@@ -323,7 +327,7 @@
                                         </div>
                                     </td>
                                 </tr>
-                            }
+                            </Virtualize>
                         </tbody>
                     </table>
                 </div>
@@ -645,6 +649,22 @@
     private void ToggleEvtxPrompt()
     {
         _showEvtxPrompt = !_showEvtxPrompt;
+    }
+
+    private async Task BrowseEvtxFileAsync()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Select Windows Event Log File (.evtx)",
+            Filter = "Windows Event Log (*.evtx)|*.evtx|All Files (*.*)|*.*",
+            CheckFileExists = true
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            _evtxFilePath = dialog.FileName;
+            await LoadCustomEvtxAsync();
+        }
     }
 
     private async Task LoadCustomEvtxAsync()

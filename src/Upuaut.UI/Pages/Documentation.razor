@@ -368,11 +368,13 @@ socket.IOControl(IOControlCode.ReceiveAll, new byte[] { 1, 0, 0, 0 }, new byte[]
                 <ul>
                     <li><code>src/Upuaut.App</code>: WPF Desktop Host entrypoint, BlazorWebView configuration, and native lifecycle hooks.</li>
                     <li><code>src/Upuaut.UI</code>: Blazor components, Fluent UI v5 controls, CSS stylesheets, and interactive pages.</li>
-                    <li><code>src/Upuaut.Core</code>: Shared models, diagnostic logging (AppLogger), and crash reporter (CrashReporter).</li>
+                    <li><code>src/Upuaut.Core</code>: Shared models, diagnostic logging (AppLogger), crash reporter (CrashReporter), AI integrations, and URL launchers.</li>
                     <li><code>src/Upuaut.Chronicles</code>: Windows Event Log ingestion engine, XPath query compiler, and The Oracle forensic decoder.</li>
-                    <li><code>src/Upuaut.Scout</code>: Driverless raw socket capture engine, IP Helper P/Invoke, and protocol dissectors.</li>
-                    <li><code>src/Upuaut.Weigher</code>: early time-proximity preview joining recent Windows warnings/errors with packets already buffered by Scout.</li>
-                    <li><code>tests/Upuaut.Tests</code>: Unit test suite for dissectors, log decoders, and forensic heuristics.</li>
+                    <li><code>src/Upuaut.Scout</code>: Driverless raw socket capture engine, IP Helper dual-stack P/Invoke, and protocol dissectors.</li>
+                    <li><code>src/Upuaut.Weigher</code>: Cross-source correlation engine (The Scales of Ma'at), sliding-window candidate ranking, and forensic case export.</li>
+                    <li><code>src/Upuaut.LogLab</code>: Multi-format log analysis engine (JSON/JSONL, XML, CSV, Syslog, regex profiles, timeline analysis).</li>
+                    <li><code>src/Upuaut.CrashForensics</code>: Windows user-mode minidump and WER report forensic analyzer, bounded PE header parser, and exception decoder.</li>
+                    <li><code>tests/Upuaut.Tests</code>: Automated unit and regression test suite across all engines and security boundaries.</li>
                 </ul>
 
                 <h4>2. Launch Profiles &amp; Elevated Debugging</h4>

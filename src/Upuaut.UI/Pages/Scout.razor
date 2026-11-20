@@ -235,8 +235,7 @@
                         }
                         else
                         {
-                            @foreach (var frame in _filteredFrames)
-                            {
+                            <Virtualize Items="_filteredFrames" Context="frame" SpacerElement="tr" ItemSize="34" OverscanCount="10">
                                 <tr class="table-row @(_selectedFrame?.FrameNumber == frame.FrameNumber ? "row-selected" : "") @(frame.HasErrorOrRetransmit ? "row-error" : "")"
                                     @onclick="@(() => SelectFrame(frame))">
                                     <td class="mono-text">@frame.FrameNumber</td>
@@ -267,7 +266,7 @@
                                         @frame.Summary
                                     </td>
                                 </tr>
-                            }
+                            </Virtualize>
                         }
                     </tbody>
                 </table>
@@ -555,7 +554,7 @@
         {
             _filterError = string.Empty;
             var allMatches = QueryFilteredFrames();
-            _filteredFrames = allMatches.OrderByDescending(f => f.Timestamp).Take(400).ToList();
+            _filteredFrames = allMatches.OrderByDescending(f => f.Timestamp).Take(2500).ToList();
             _conversations = PacketConversations.Group(allMatches).ToList();
         }
         catch (FormatException ex) { _filterError = ex.Message; }

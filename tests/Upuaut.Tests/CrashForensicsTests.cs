@@ -98,6 +98,20 @@ public sealed class CrashForensicsTests
         Assert.Throws<InvalidDataException>(() => WindowsMinidumpReader.Read(stream));
     }
 
+    [Fact]
+    public void ExplainException_ResolvesRichNtstatusAndHresultCodes()
+    {
+        var invalidHandleFinding = CrashArtifactAnalyzer.ExplainException(0xC0000008, 12, 0x7FFF1234, Array.Empty<ulong>());
+        Assert.NotNull(invalidHandleFinding);
+        Assert.Equal("STATUS_INVALID_HANDLE", CrashArtifactAnalyzer.ExceptionName(0xC0000008));
+        Assert.Contains("invalid, closed, or uninitialized handle", invalidHandleFinding.Explanation);
+
+        var accessDeniedFinding = CrashArtifactAnalyzer.ExplainException(0xC0000022, 14, 0x7FFF5678, Array.Empty<ulong>());
+        Assert.NotNull(accessDeniedFinding);
+        Assert.Equal("STATUS_ACCESS_DENIED", CrashArtifactAnalyzer.ExceptionName(0xC0000022));
+        Assert.Contains("required security privileges", accessDeniedFinding.Explanation);
+    }
+
     private static byte[] CreateMinidump()
     {
         var bytes = new byte[280];
@@ -115,6 +129,39 @@ public sealed class CrashForensicsTests
         Write32(bytes, 152, 2);
         Write64(bytes, 160, 1); Write64(bytes, 168, 0xDEADBEEF);
         return bytes;
+    }
+
+    [Fact]
+    public void CrashReporter_BuildMarkdownSummary_DecodesKnownStatusMeaning()
+    {
+        var report = new Upuaut.Core.Diagnostics.CrashReport(
+            ReportId: "CRASH-TEST-001",
+            TimestampUtc: DateTime.UtcNow,
+            AppVersion: "0.7.0",
+            FrameworkDescription: ".NET 10.0",
+            OsDescription: "Windows 11",
+            OsArchitecture: "X64",
+            ProcessArchitecture: "X64",
+            IsElevated: false,
+            WorkingSetBytes: 100_000_000,
+            PeakWorkingSetBytes: 150_000_000,
+            GcTotalMemoryBytes: 50_000_000,
+            ThreadCount: 12,
+            ExceptionType: "System.AccessViolationException",
+            ExceptionMessage: "Attempted to read or write protected memory.",
+            HexHResult: "0xC0000005",
+            StackTrace: "at Test.Run()",
+            InnerExceptions: new List<Upuaut.Core.Diagnostics.CrashExceptionDetail>
+            {
+                new("System.UnauthorizedAccessException", "Access denied", "0x80070005", "at Inner.Run()")
+            },
+            Breadcrumbs: new List<Upuaut.Core.Diagnostics.InternalLogEntry>());
+
+        var md = Upuaut.Core.Diagnostics.CrashReporter.BuildMarkdownSummary(report, "Unit Test Context");
+
+        Assert.Contains("STATUS_ACCESS_VIOLATION", md);
+        Assert.Contains("The software attempted to read or write to an invalid memory address.", md);
+        Assert.Contains("E_ACCESSDENIED", md);
     }
 
     private static void Write16(byte[] bytes, int offset, ushort value) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset), value);

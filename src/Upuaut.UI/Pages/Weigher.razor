@@ -1,6 +1,7 @@
 @page "/weigher"
 @namespace Upuaut.UI.Pages
 @using Upuaut.Core.AI
+@using Upuaut.Core.Interfaces
 @using Upuaut.Core.Models
 @using Upuaut.Scout.Services
 @using Upuaut.LogLab
@@ -9,6 +10,7 @@
 @using Microsoft.Win32
 @inject IChroniclesService ChroniclesService
 @inject ScoutManager ScoutService
+@inject IWeigherEngine WeigherEngine
 @inject NavigationManager Navigation
 @inject Upuaut.UI.Shared.InvestigationContext Investigation
 @inject ILogParsingEngine LogParsingEngine
@@ -106,8 +108,7 @@
                 <table class="triage-table">
                     <thead><tr><th>TIME</th><th>LEVEL</th><th>LOG EVIDENCE</th><th>NEARBY LOG</th><th>NEARBY PACKET</th><th>DELTA</th></tr></thead>
                     <tbody>
-                        @foreach (var item in VisibleItems)
-                        {
+                        <Virtualize TItem="TriageItem" Items="VisibleItems" Context="item" SpacerElement="tr" ItemSize="40" OverscanCount="8">
                             <tr class="@(_selectedItem?.Log.RecordId == item.Log.RecordId && _selectedItem?.Log.Channel == item.Log.Channel ? "selected" : "")" @onclick="() => SelectItem(item)">
                                 <td class="triage-time">@item.Log.Timestamp.ToLocalTime().ToString("MMM dd HH:mm:ss")</td>
                                 <td><span class="triage-severity @SeverityClass(item.Log.Level)">@item.Log.Level.ToString().ToUpperInvariant()</span></td>
@@ -127,7 +128,7 @@
                                 </td>
                                 <td class="triage-time-delta">@(item.TimeDelta is { } delta ? $"{delta.TotalMilliseconds:+0;-0;0} ms" : "—")</td>
                             </tr>
-                        }
+                        </Virtualize>
                     </tbody>
                 </table>
             </div>
@@ -200,12 +201,12 @@
     private string _caseTitle = "Untitled investigation";
     private string _statusMessage = "";
     private int ImportedSourceCount => Math.Max(_importedFileNames.Count, _items.Select(item => item.Log.Channel).Where(channel => channel.StartsWith("Imported log:", StringComparison.Ordinal)).Distinct().Count());
-    private IEnumerable<TriageItem> VisibleItems => _items.Where(item => _groupFilter switch
+    private List<TriageItem> VisibleItems => _items.Where(item => _groupFilter switch
     {
         "Matched" => item.NearestPacket is not null || item.NearestRelatedLog is not null,
         "Unmatched" => item.NearestPacket is null && item.NearestRelatedLog is null,
         _ => true
-    });
+    }).ToList();
 
     protected override void OnInitialized()
     {
@@ -262,10 +263,9 @@
             logs.AddRange(_importedLogs.Where(log => IsWithinWindow(log.Timestamp)));
             logs = logs.GroupBy(log => (log.Channel, log.RecordId)).Select(group => group.First()).OrderByDescending(log => log.Timestamp).Take(5000).ToList();
 
-            var packets = ScoutService.GetRecentFrames(maxFrames: ScoutService.BufferCapacity).OrderBy(packet => AsUtc(packet.Timestamp)).ToList();
+            var packets = ScoutService.GetRecentFrames(maxFrames: ScoutService.BufferCapacity);
             _packetCount = packets.Count;
-            var orderedLogs = logs.OrderBy(log => AsUtc(log.Timestamp)).ToList();
-            _items = logs.Select(log => Correlate(log, orderedLogs, packets)).ToList();
+            _items = WeigherEngine.Correlate(logs, packets, TimeSpan.FromMilliseconds(CorrelationWindowMilliseconds)).ToList();
             _selectedItem = Investigation.SelectedLog is { } pinned
                 ? _items.FirstOrDefault(item => item.Log.Channel == pinned.Channel && item.Log.RecordId == pinned.RecordId)
                 : null;
@@ -358,100 +358,6 @@
     private static LogSeverityLevel ToSeverity(LogEntrySeverity severity) => severity switch
     { LogEntrySeverity.Critical => LogSeverityLevel.Critical, LogEntrySeverity.Error => LogSeverityLevel.Error, LogEntrySeverity.Warning => LogSeverityLevel.Warning, LogEntrySeverity.Information or LogEntrySeverity.Success => LogSeverityLevel.Information, LogEntrySeverity.Debug or LogEntrySeverity.Trace => LogSeverityLevel.Verbose, _ => LogSeverityLevel.Information };
 
-    private static TriageItem Correlate(LogRecord log, IReadOnlyList<LogRecord> logs, IReadOnlyList<PacketFrame> packets)
-    {
-        var eventTime = AsUtc(log.Timestamp);
-        var from = LowerBound(packets, eventTime.AddMilliseconds(-CorrelationWindowMilliseconds));
-        var to = UpperBound(packets, eventTime.AddMilliseconds(CorrelationWindowMilliseconds));
-        var insertion = LowerBound(packets, eventTime);
-        var searchable = BuildSearchableLog(log);
-        var candidates = new List<(PacketFrame Packet, TimeSpan Delta, IReadOnlyList<string> Basis)>(Math.Min(MaximumPacketCandidatesPerEntry, to - from));
-        var left = Math.Min(insertion - 1, to - 1);
-        var right = Math.Max(insertion, from);
-        while (candidates.Count < MaximumPacketCandidatesPerEntry && (left >= from || right < to))
-        {
-            var takeLeft = left >= from && (right >= to || Math.Abs((AsUtc(packets[left].Timestamp) - eventTime).Ticks) <= Math.Abs((AsUtc(packets[right].Timestamp) - eventTime).Ticks));
-            var packet = takeLeft ? packets[left--] : packets[right++];
-            var delta = AsUtc(packet.Timestamp) - eventTime;
-            candidates.Add((packet, delta, PacketMatchBasis(log.ProcessId, searchable, packet)));
-        }
-        var nearest = candidates.OrderByDescending(candidate => candidate.Basis.Count)
-            .ThenBy(candidate => Math.Abs(candidate.Delta.TotalMilliseconds)).FirstOrDefault();
-
-        var logFrom = LowerBoundLog(logs, eventTime.AddMilliseconds(-CorrelationWindowMilliseconds));
-        var logTo = UpperBoundLog(logs, eventTime.AddMilliseconds(CorrelationWindowMilliseconds));
-        var relatedCount = Math.Max(0, logTo - logFrom - 1);
-        var related = FindNearestRelatedLog(log, logs, logFrom, logTo, eventTime);
-        return new TriageItem(log, nearest.Packet, nearest.Packet is null ? null : nearest.Delta, to - from,
-            nearest.Packet is null ? 0 : Math.Max(0, (int)Math.Round(100 * (1 - Math.Abs(nearest.Delta.TotalMilliseconds) / CorrelationWindowMilliseconds))),
-            SourceLabelFor(log), related.Log, related.Delta, nearest.Basis, relatedCount, candidates.Count);
-    }
-
-    private static (LogRecord? Log, TimeSpan? Delta) FindNearestRelatedLog(LogRecord log, IReadOnlyList<LogRecord> logs, int from, int to, DateTime eventTime)
-    {
-        var right = from;
-        while (right < to && ReferenceEquals(logs[right], log)) right++;
-        var left = from - 1;
-        var before = left >= from ? logs[left] : null;
-        var after = right < to ? logs[right] : null;
-        if (before is null && after is null) return (null, null);
-        var beforeDelta = before is null ? (TimeSpan?)null : AsUtc(before.Timestamp) - eventTime;
-        var afterDelta = after is null ? (TimeSpan?)null : AsUtc(after.Timestamp) - eventTime;
-        if (beforeDelta is null) return (after, afterDelta);
-        if (afterDelta is null || Math.Abs(beforeDelta.Value.Ticks) <= Math.Abs(afterDelta.Value.Ticks)) return (before, beforeDelta);
-        return (after, afterDelta);
-    }
-
-    private static string BuildSearchableLog(LogRecord log)
-    {
-        const int maximumSearchCharacters = 32_768;
-        var relevantFields = log.EventData.Concat(log.NormalizedEventData)
-            .Where(pair => new[] { "ip", "host", "dns", "domain", "endpoint", "address", "process", "computer" }
-                .Any(term => pair.Key.Contains(term, StringComparison.OrdinalIgnoreCase)))
-            .Take(64).Select(pair => pair.Value);
-        var text = string.Join(" ", new[] { log.Message, log.ProviderName }.Concat(relevantFields));
-        return text.Length <= maximumSearchCharacters ? text : text[..maximumSearchCharacters];
-    }
-
-    private static IReadOnlyList<string> PacketMatchBasis(int? processId, string searchable, PacketFrame packet)
-    {
-        var matches = new List<string>();
-        if (processId is { } pid && packet.ProcessId == pid) matches.Add($"Process ID {pid}");
-        foreach (var endpoint in new[] { packet.SourceIp, packet.DestinationIp }.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase))
-            if (searchable.Contains(endpoint, StringComparison.OrdinalIgnoreCase)) matches.Add($"Endpoint {endpoint}");
-        if (!string.IsNullOrWhiteSpace(packet.DnsQueryName) && searchable.Contains(packet.DnsQueryName, StringComparison.OrdinalIgnoreCase)) matches.Add($"DNS {packet.DnsQueryName}");
-        if (!string.IsNullOrWhiteSpace(packet.ProcessName) && searchable.Contains(packet.ProcessName, StringComparison.OrdinalIgnoreCase)) matches.Add($"Process {packet.ProcessName}");
-        return matches;
-    }
-
-    private static int LowerBoundLog(IReadOnlyList<LogRecord> logs, DateTime timestamp)
-    {
-        var low = 0; var high = logs.Count;
-        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(logs[mid].Timestamp) < timestamp) low = mid + 1; else high = mid; }
-        return low;
-    }
-
-    private static int UpperBoundLog(IReadOnlyList<LogRecord> logs, DateTime timestamp)
-    {
-        var low = 0; var high = logs.Count;
-        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(logs[mid].Timestamp) <= timestamp) low = mid + 1; else high = mid; }
-        return low;
-    }
-
-    private static int LowerBound(IReadOnlyList<PacketFrame> packets, DateTime timestamp)
-    {
-        var low = 0; var high = packets.Count;
-        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(packets[mid].Timestamp) < timestamp) low = mid + 1; else high = mid; }
-        return low;
-    }
-
-    private static int UpperBound(IReadOnlyList<PacketFrame> packets, DateTime timestamp)
-    {
-        var low = 0; var high = packets.Count;
-        while (low < high) { var mid = low + (high - low) / 2; if (AsUtc(packets[mid].Timestamp) <= timestamp) low = mid + 1; else high = mid; }
-        return low;
-    }
-
     private static DateTime AsUtc(DateTime value) => value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
     private static string Port(int? port) => port is null ? "" : $":{port}";
 
@@ -508,12 +414,13 @@
 
     private void ExportJson()
     {
-        SaveNote(); var dialog = new SaveFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", DefaultExt = ".upuaut-case.json", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.upuaut-case.json" };
+        SaveNote();
+        var dialog = new SaveFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", DefaultExt = ".upuaut-case.json", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.upuaut-case.json" };
         if (dialog.ShowDialog() != true) return;
         try
         {
-            var caseItems = _items.Select(item => item with { NearestPacket = item.NearestPacket is { } packet ? packet with { RawData = null, Payload = null } : null }).ToList();
-            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(new TriageCase(DateTimeOffset.Now, _caseTitle, _timeWindow, _channel, _customStartTime, _customEndTime, _packetCount, caseItems, _notes, _includeInformational), new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            var caseObj = new TriageCase(DateTimeOffset.Now, _caseTitle, _timeWindow, _channel, _customStartTime, _customEndTime, _packetCount, _items, _notes, _includeInformational);
+            File.WriteAllText(dialog.FileName, WeigherEngine.ExportCaseJson(caseObj));
             _statusMessage = $"Saved {_items.Count:N0} reviewed entries, related-log and packet metadata, and case notes.";
         }
         catch (Exception ex) { _statusMessage = $"Case export failed: {ex.Message}"; }
@@ -523,42 +430,37 @@
     {
         var dialog = new SaveFileDialog { Filter = "CSV file (*.csv)|*.csv", DefaultExt = ".csv", FileName = $"upuaut-investigation-{DateTime.Now:yyyyMMdd-HHmmss}.csv" };
         if (dialog.ShowDialog() != true) return;
-        static string Q(string? value)
+        try
         {
-            var text = value ?? string.Empty;
-            if (text.TrimStart(' ', '\t', '\r', '\n').FirstOrDefault() is '=' or '+' or '-' or '@') text = "'" + text;
-            return "\"" + text.Replace("\"", "\"\"") + "\"";
+            File.WriteAllText(dialog.FileName, WeigherEngine.ExportCaseCsv(VisibleItems, _notes));
+            _statusMessage = "Exported case CSV.";
         }
-        var rows = new List<string> { "Timestamp,Channel,Level,Provider,SourceLabel,SourceFile,EventId,RelatedProvider,RelatedLogCount,RelatedDeltaMs,PacketMatchBasis,PacketCandidatesReviewed,PacketProtocol,Source,Destination,DeltaMs,NearbyFrames,TemporalProximity,Note" };
-        var invariant = System.Globalization.CultureInfo.InvariantCulture;
-        rows.AddRange(VisibleItems.Select(item => string.Join(",", Q(item.Log.Timestamp.ToUniversalTime().ToString("O", invariant)), Q(item.Log.Channel), Q(item.Log.Level.ToString()), Q(item.Log.ProviderName), Q(item.SourceLabel), Q(item.Log.SourceFile), item.Log.EventId.ToString(invariant), Q(item.NearestRelatedLog?.ProviderName), item.RelatedLogCount.ToString(invariant), item.RelatedLogDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", Q(string.Join("; ", item.PacketMatchBasis)), item.PacketCandidatesReviewed.ToString(invariant), Q(item.NearestPacket?.TransportProtocol.ToString() ?? item.NearestPacket?.Protocol.ToString()), Q(item.NearestPacket?.SourceIp + Port(item.NearestPacket?.SourcePort)), Q(item.NearestPacket?.DestinationIp + Port(item.NearestPacket?.DestinationPort)), item.TimeDelta?.TotalMilliseconds.ToString("F1", invariant) ?? "", item.NearbyPacketCount.ToString(invariant), item.ProximityScore.ToString(invariant), Q(_notes.GetValueOrDefault(NoteKey(item.Log))))));
-        try { File.WriteAllLines(dialog.FileName, rows); _statusMessage = $"Exported {rows.Count - 1:N0} rows."; } catch (Exception ex) { _statusMessage = $"CSV export failed: {ex.Message}"; }
+        catch (Exception ex) { _statusMessage = $"CSV export failed: {ex.Message}"; }
     }
 
     private void LoadCase()
     {
         var dialog = new OpenFileDialog { Filter = "Upuaut case (*.upuaut-case.json)|*.upuaut-case.json", CheckFileExists = true };
         if (dialog.ShowDialog() != true) return;
-        try { var saved = System.Text.Json.JsonSerializer.Deserialize<TriageCase>(File.ReadAllText(dialog.FileName)) ?? throw new InvalidDataException("The case file is empty."); _caseTitle = saved.CaseTitle; _timeWindow = saved.TimeWindow; _channel = saved.Channel; _includeInformational = saved.IncludeInformational; _customStartTime = saved.CustomStartTime; _customEndTime = saved.CustomEndTime; _items = saved.Items.ToList(); _notes.Clear(); foreach (var pair in saved.Notes) _notes[pair.Key] = pair.Value; _hasAnalyzed = true; _packetCount = saved.ReviewedPackets; Investigation.SetRange(_timeWindow, _customStartTime, _customEndTime); _selectedItem = _items.FirstOrDefault(); if (_selectedItem is not null) SelectItem(_selectedItem); _statusMessage = $"Loaded {saved.Items.Count:N0} case entries: {saved.CaseTitle}."; }
+        try
+        {
+            var saved = WeigherEngine.DeserializeCaseJson(File.ReadAllText(dialog.FileName));
+            _caseTitle = saved.CaseTitle;
+            _timeWindow = saved.TimeWindow;
+            _channel = saved.Channel;
+            _includeInformational = saved.IncludeInformational;
+            _customStartTime = saved.CustomStartTime;
+            _customEndTime = saved.CustomEndTime;
+            _items = saved.Items.ToList();
+            _notes.Clear();
+            foreach (var pair in saved.Notes) _notes[pair.Key] = pair.Value;
+            _hasAnalyzed = true;
+            _packetCount = saved.ReviewedPackets;
+            Investigation.SetRange(_timeWindow, _customStartTime, _customEndTime);
+            _selectedItem = _items.FirstOrDefault();
+            if (_selectedItem is not null) SelectItem(_selectedItem);
+            _statusMessage = $"Loaded {saved.Items.Count:N0} case entries: {saved.CaseTitle}.";
+        }
         catch (Exception ex) { _statusMessage = $"Could not load case: {ex.Message}"; }
     }
-
-    private sealed class TriageCase
-    {
-        public TriageCase() { }
-        public TriageCase(DateTimeOffset savedAt, string caseTitle, LogTimeRange timeWindow, string channel, DateTime? customStartTime, DateTime? customEndTime, int reviewedPackets, IReadOnlyList<TriageItem> items, IReadOnlyDictionary<string, string> notes, bool includeInformational = false)
-        { SavedAt = savedAt; CaseTitle = caseTitle; TimeWindow = timeWindow; Channel = channel; CustomStartTime = customStartTime; CustomEndTime = customEndTime; ReviewedPackets = reviewedPackets; Items = items; Notes = notes; IncludeInformational = includeInformational; }
-        public DateTimeOffset SavedAt { get; init; }
-        public string CaseTitle { get; init; } = "Untitled investigation";
-        public LogTimeRange TimeWindow { get; init; }
-        public string Channel { get; init; } = "Both";
-        public bool IncludeInformational { get; init; }
-        public DateTime? CustomStartTime { get; init; }
-        public DateTime? CustomEndTime { get; init; }
-        public int ReviewedPackets { get; init; }
-        public IReadOnlyList<TriageItem> Items { get; init; } = Array.Empty<TriageItem>();
-        public IReadOnlyDictionary<string, string> Notes { get; init; } = new Dictionary<string, string>();
-    }
-
-    public sealed record TriageItem(LogRecord Log, PacketFrame? NearestPacket, TimeSpan? TimeDelta, int NearbyPacketCount, int ProximityScore, string SourceLabel = "Windows event", LogRecord? NearestRelatedLog = null, TimeSpan? RelatedLogDelta = null, IReadOnlyList<string> PacketMatchBasis = null!, int RelatedLogCount = 0, int PacketCandidatesReviewed = 0) { public IReadOnlyList<string> PacketMatchBasis { get; init; } = PacketMatchBasis ?? Array.Empty<string>(); }
 }

@@ -12,9 +12,10 @@ public static class TcpStreamReassembler
         var output = new StringBuilder();
         foreach (var direction in conversation.Frames.GroupBy(f => (f.SourceIp, f.SourcePort)))
         {
+            var firstInDir = direction.FirstOrDefault();
             var frames = direction.Where(f => f.RawData is { Length: > 0 } && f.TransportPayloadOffset is { } p && p < f.RawData.Length && f.TcpSequenceNumber.HasValue)
                 .OrderBy(f => f.Timestamp).ToList();
-            output.AppendLine($"{direction.Key.SourceIp}:{direction.Key.SourcePort} → {frames.FirstOrDefault()?.DestinationIp}:{frames.FirstOrDefault()?.DestinationPort}");
+            output.AppendLine($"{direction.Key.SourceIp}:{direction.Key.SourcePort} → {firstInDir?.DestinationIp}:{firstInDir?.DestinationPort}");
             if (frames.Count == 0) { output.AppendLine("No captured payload bytes in this direction."); continue; }
             var baseSequence = frames[0].TcpSequenceNumber!.Value + ((frames[0].TcpFlags & 0x02) != 0 ? 1u : 0u);
             var segments = frames.Select(f =>

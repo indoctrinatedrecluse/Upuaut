@@ -1,13 +1,13 @@
 @namespace Upuaut.UI.Components
+@using Upuaut.Core.Diagnostics
 
 <div class="about-content">
     <div class="about-brand-mark" aria-hidden="true">𓃥</div>
     <p class="about-overline">OPENER OF THE WAYS · WINDOWS SYSTEM TOOLKIT</p>
     <h2>Upuaut</h2>
     <p class="about-brief">
-        Upuaut brings Windows event-log review and network packet inspection into one desktop workspace.
-        Use Chronicles to investigate system events, Scout to inspect IPv4 or Ethernet traffic, and Scales
-        to compare recent events with packets already in the capture buffer.
+        Upuaut brings Windows event-log review, dual-stack packet inspection, multi-format log parsing, and crash forensics into one unified desktop workspace.
+        Use Chronicles to investigate system events, Scout to sniff IPv4, IPv6, or Ethernet traffic, Log Lab to parse custom logs, Crash Forensics to analyze minidumps, and The Scales to correlate cross-source evidence.
     </p>
     <div class="about-version">VERSION <strong>@AppMetadata.DisplayVersion</strong></div>
     <div class="about-author">
@@ -30,10 +30,6 @@
 @code {
     private static void OpenExternal(string url)
     {
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch { }
+        AppUrlLauncher.TryLaunchWebUrl(url);
     }
 }

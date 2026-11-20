@@ -225,17 +225,15 @@
                 else
                 {
                     <div class="log-lab-entry-list @(_wrapResults ? "wrap-results" : "no-wrap-results")">
-                        @foreach (var entry in FilteredEntries.Take(_entryLimit))
-                        {
+                        <Virtualize Items="FilteredEntries" Context="entry" OverscanCount="8">
                             <button class="log-lab-entry @(_selectedEntry?.Index == entry.Index ? "selected" : "")" @onclick="() => SelectEntry(entry)">
                                 <span class="log-lab-entry-top"><span class="severity-mark @SeverityClass(entry.Severity)"></span><strong>@(entry.Severity == LogEntrySeverity.Unknown ? "UNCLASSIFIED" : entry.Severity.ToString().ToUpperInvariant())</strong><span class="scenario-pill">@AnalysisFor(entry).Category</span><small>LINE @entry.SourceLine</small></span>
                                 <span class="log-lab-entry-message">@((MarkupString)HighlightMatches(entry.Message))</span>
                                 <span class="log-lab-entry-headline">@AnalysisFor(entry).Headline</span>
                                 <span class="log-lab-entry-meta">@(entry.Timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "No timestamp decoded")@(string.IsNullOrWhiteSpace(entry.Source) ? "" : $" · {entry.Source}")</span>
                             </button>
-                        }
+                        </Virtualize>
                     </div>
-                    @if (FilteredEntries.Count > _entryLimit) { <button class="log-lab-more" @onclick="ShowMore">SHOW NEXT @Math.Min(500, FilteredEntries.Count - _entryLimit) ENTRIES</button> }
                 }
             </section>
 
@@ -272,7 +270,7 @@
                                 <div class="scenario-analysis-title"><span>@finding.Category.ToString().ToUpperInvariant()</span><b class="match-strength @finding.MatchStrength.ToString().ToLowerInvariant()">@(finding.MatchStrength switch { RuleMatchStrength.NoRuleMatched => "NO RULE MATCHED", _ => $"{finding.MatchStrength.ToString().ToUpperInvariant()} SIGNAL MATCH" })</b></div>
                                 <h3>@finding.Headline</h3>
                                 <p>@finding.Explanation</p>
-                                @if (!string.IsNullOrWhiteSpace(finding.KnowledgeSource)) { <a class="knowledge-source-link" href="@finding.KnowledgeSource" target="_blank" rel="noopener noreferrer">SOURCE REFERENCE · @finding.KnowledgeId ↗</a> }
+                                @if (!string.IsNullOrWhiteSpace(finding.KnowledgeSource)) { <a class="knowledge-source-link" href="@finding.KnowledgeSource" target="_blank" rel="noopener noreferrer" @onclick='() => OpenExternal(finding.KnowledgeSource)' @onclick:preventDefault="true">SOURCE REFERENCE · @finding.KnowledgeId ↗</a> }
                                 <div class="analysis-tags">@foreach (var tag in finding.Tags) { <span>@tag</span> }</div>
                                 @if (finding.Evidence.Count > 0)
                                 {
@@ -836,6 +834,7 @@
         try { File.WriteAllText(dialog.FileName, contentFactory()); _statusMessage = $"Saved report to {dialog.FileName}. Review log content before sharing."; _isError = false; }
         catch (Exception ex) { _statusMessage = $"Could not save report: {ex.Message}"; _isError = true; }
     }
+    private static void OpenExternal(string url) => Upuaut.Core.Diagnostics.AppUrlLauncher.TryLaunchWebUrl(url);
     private static string FormatBytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / (1024d * 1024d):0.#} MB" : $"{bytes / 1024d:0.#} KB";
     private static string SeverityClass(LogEntrySeverity severity) => severity switch { LogEntrySeverity.Critical or LogEntrySeverity.Error => "is-error", LogEntrySeverity.Warning => "is-warning", LogEntrySeverity.Success => "is-success", LogEntrySeverity.Information => "is-info", _ => "is-unknown" };
     private IReadOnlyList<ParsedLogEntry> SelectedSequenceEntries => _document is null || _selectedSequence is null ? [] : _selectedSequence.EntryIndices.Take(2).Select(index => _document.Entries.FirstOrDefault(entry => entry.Index == index)).Where(entry => entry is not null).Cast<ParsedLogEntry>().ToArray();

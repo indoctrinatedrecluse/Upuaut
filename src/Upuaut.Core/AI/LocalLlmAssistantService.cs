@@ -1,19 +1,17 @@
-using System.Net;
-using System.Net.Http;
-using System.IO;
-using System.Net.Http.Headers;
 using System.ComponentModel;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Upuaut.LogLab;
-using Upuaut.LogLab.Models;
-using Upuaut.Core.AI;
 
-namespace Upuaut.UI.Services;
+namespace Upuaut.Core.AI;
 
-/// <summary>Opt-in remote review with current-user DPAPI storage. Never logs request or credential contents.</summary>
+/// <summary>
+/// Opt-in remote review with current-user DPAPI storage. Never logs request or credential contents.
+/// Implements provider calls for Gemini, DeepSeek, and OpenAI-compatible local/remote models.
+/// </summary>
 public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigurationService, IDisposable
 {
     private const int MaximumResponseBytes = 512_000;
@@ -232,6 +230,7 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
         clean = string.Join(' ', clean.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return clean.Length <= 500 ? clean : clean[..497] + "...";
     }
+
     private static async Task<string> ReadBoundedBodyAsync(HttpContent content, int maximumBytes, CancellationToken cancellationToken)
     {
         if (content.Headers.ContentLength is > 0 and var length && length > maximumBytes) throw new InvalidDataException("The provider response exceeded the configured size limit.");
@@ -273,6 +272,7 @@ public sealed class LocalLlmAssistantService : ILlmAssistantService, IAiConfigur
         try { return Convert.ToBase64String(protectedBytes); }
         finally { CryptographicOperations.ZeroMemory(protectedBytes); }
     }
+
     private static string Unprotect(string protectedValue)
     {
         byte[]? clearBytes = null;

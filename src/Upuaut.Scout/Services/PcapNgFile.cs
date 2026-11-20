@@ -47,7 +47,80 @@ public static class PcapNgFile
     public static IReadOnlyList<PacketFrame> Read(string path, int maxFrames = 250_000)
     {
         if (maxFrames < 1) throw new ArgumentOutOfRangeException(nameof(maxFrames));
-        using var stream = File.OpenRead(path); var result = new List<PacketFrame>(); var interfaces = new List<InterfaceInfo>(); var little = true; long index = 0;
+        using var stream = File.OpenRead(path);
+        if (stream.Length < 4) return Array.Empty<PacketFrame>();
+
+        var magicBytes = new byte[4];
+        if (stream.Read(magicBytes, 0, 4) != 4) return Array.Empty<PacketFrame>();
+        stream.Position = 0;
+
+        var magicLe = BinaryPrimitives.ReadUInt32LittleEndian(magicBytes);
+        var magicBe = BinaryPrimitives.ReadUInt32BigEndian(magicBytes);
+
+        // Classic Libpcap magic: 0xA1B2C3D4 (standard us) or 0xA1B23C4D (ns)
+        if (magicLe is 0xA1B2C3D4 or 0xA1B23C4D || magicBe is 0xA1B2C3D4 or 0xA1B23C4D)
+        {
+            return ReadClassicPcap(stream, magicLe, maxFrames);
+        }
+
+        return ReadPcapNg(stream, maxFrames);
+    }
+
+    private static IReadOnlyList<PacketFrame> ReadClassicPcap(Stream stream, uint rawMagic, int maxFrames)
+    {
+        var result = new List<PacketFrame>();
+        var header = new byte[24];
+        if (stream.Read(header, 0, 24) != 24) return result;
+
+        var little = rawMagic is 0xA1B2C3D4 or 0xA1B23C4D;
+        var isNano = rawMagic is 0xA1B23C4D or 0x4D3CB2A1;
+        var linkType = ReadU32(header, 20, little);
+
+        long index = 0;
+        var packetHeader = new byte[16];
+
+        while (result.Count < maxFrames && stream.Position + 16 <= stream.Length)
+        {
+            if (stream.Read(packetHeader, 0, 16) != 16) break;
+
+            var tsSec = ReadU32(packetHeader, 0, little);
+            var tsUsec = ReadU32(packetHeader, 4, little);
+            var inclLen = ReadU32(packetHeader, 8, little);
+            var origLen = ReadU32(packetHeader, 12, little);
+
+            if (inclLen > 16 * 1024 * 1024 || stream.Position + inclLen > stream.Length) break;
+
+            var data = new byte[inclLen];
+            if (stream.Read(data, 0, (int)inclLen) != (int)inclLen) break;
+
+            double seconds = isNano
+                ? tsSec + (tsUsec / 1_000_000_000.0)
+                : tsSec + (tsUsec / 1_000_000.0);
+
+            var timestamp = double.IsFinite(seconds) && seconds <= 253_402_300_799d
+                ? DateTime.UnixEpoch.AddSeconds(seconds)
+                : DateTime.UtcNow;
+
+            var frame = linkType switch
+            {
+                1 => PacketParser.ParseEthernetFrame(data, data.Length, ++index),
+                101 or 12 when data.Length > 0 && (data[0] >> 4) == 4 => PacketParser.ParseIPv4Packet(data, data.Length, ++index),
+                101 or 12 when data.Length > 0 && (data[0] >> 4) == 6 => PacketParser.ParseIPv6Packet(data, data.Length, ++index),
+                _ => null
+            };
+
+            if (frame is not null)
+            {
+                result.Add(frame with { Timestamp = timestamp, InterfaceName = "Classic PCAP", ProcessId = null, ProcessName = null });
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<PacketFrame> ReadPcapNg(Stream stream, int maxFrames)
+    {
+        var result = new List<PacketFrame>(); var interfaces = new List<InterfaceInfo>(); var little = true; long index = 0;
         while (stream.Position + 12 <= stream.Length)
         {
             using var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true);
@@ -83,6 +156,24 @@ public static class PcapNgFile
                     p += len + ((4 - len % 4) % 4);
                 }
                 interfaces.Add(new InterfaceInfo(link, resolution, interfaceName));
+            }
+            else if (type == 3 && body.Length >= 4)
+            {
+                if (result.Count >= maxFrames) break;
+                var info = interfaces.Count > 0 ? interfaces[0] : new InterfaceInfo(1, 6, null);
+                var original = ReadU32(body, 0, little);
+                var cap = Math.Min((uint)(body.Length - 4), original);
+                if (cap > 16 * 1024 * 1024) continue;
+                var data = body.AsSpan(4, (int)cap).ToArray();
+                var timestamp = result.Count > 0 ? result[^1].Timestamp : DateTime.UtcNow;
+                var frame = info.LinkType switch
+                {
+                    1 => PacketParser.ParseEthernetFrame(data, data.Length, ++index),
+                    101 when data.Length > 0 && (data[0] >> 4) == 4 => PacketParser.ParseIPv4Packet(data, data.Length, ++index),
+                    101 when data.Length > 0 && (data[0] >> 4) == 6 => PacketParser.ParseIPv6Packet(data, data.Length, ++index),
+                    _ => null
+                };
+                if (frame is not null) result.Add(frame with { Timestamp = timestamp, InterfaceName = info.Name, ProcessId = null, ProcessName = null });
             }
             else if (type == 6 && body.Length >= 20)
             {

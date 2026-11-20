@@ -196,6 +196,22 @@
         ),
 
         new(
+            Name: "Osiris (Asar)",
+            AlternateNames: "Wennefer · Lord of Abydos",
+            Hieroglyphs: "𓁹 𓊨 𓀭",
+            Icon: "☥",
+            Domain: "Preservation & Forensics",
+            Category: "preservation",
+            Epithet: "Lord of the Fallen Vessel · Master of the Duat",
+            Mythology: "King and judge of the dead who suffered death and dismemberment only to be reconstituted and resurrected across eternity. Osiris presides over the fallen vessel, gathering its fragmented parts and restoring truth to what seemed broken beyond repair.",
+            SubsystemName: "Osiris // Crash Forensics & Minidump Vault",
+            SubsystemShortName: "Crash Forensics",
+            SubsystemRole: "Inspects Windows user-mode minidumps and Windows Error Reporting (WER) reports with safe, bounded PE/minidump headers and managed stack evidence.",
+            TechTags: new[] { "Minidumps", "WER Reports", "Status Code Lookup", "PE Headers", "Stack Traces" },
+            ActionRoute: "crash-forensics"
+        ),
+
+        new(
             Name: "Anpu (Anubis)",
             AlternateNames: "Anpu · Lord of the Sacred Land",
             Hieroglyphs: "𓇋 𓈖 𓊪 𓅱 𓃣",
@@ -204,10 +220,10 @@
             Category: "preservation",
             Epithet: "Guardian of the Threshold · He Who Embalms",
             Mythology: "The black jackal guardian of souls, tombs, and sacred mummification. Anubis carefully embalmed, preserved, and sealed the physical vessel so that decay and oblivion could never destroy its essence, allowing the soul to be analyzed intact across eternity.",
-            SubsystemName: "Crash Reporter & Crash Forensics",
-            SubsystemShortName: "Crash Forensics",
-            SubsystemRole: "Preserves Upuaut's own crash reports and inspects Windows user-mode dumps and WER reports with bounded local parsing, managed stack evidence, and careful interpretation.",
-            TechTags: new[] { "Windows Minidumps", "WER Reports", "Managed Stacks", "Local Evidence", "Crash Vault" },
+            SubsystemName: "Crash Reporter & Vault",
+            SubsystemShortName: "Crash Vault",
+            SubsystemRole: "Preserves Upuaut's internal unhandled exceptions and diagnostic telemetry into structured, persistent crash reports.",
+            TechTags: new[] { "Exception Interceptor", "Structured Reports", "Diagnostic Tracing", "Crash Vault" },
             ActionRoute: "crash-forensics"
         ),
 
@@ -215,16 +231,16 @@
             Name: "Seshat (Safkhet)",
             AlternateNames: "She Who Knots the Rope · Mistress of Builders",
             Hieroglyphs: "𓋴 𓈙 𓏏 𓏛",
-            Icon: "📖",
+            Icon: "📐",
             Domain: "Documentation & Architecture",
             Category: "chronicle",
             Epithet: "Mistress of the House of Books · Keeper of Sacred Records",
             Mythology: "Goddess of architecture, surveying, sacred geometry, and library archives. Crowned with a seven-pointed star-flower, Seshat stretched the golden measuring cord (pedj-shes) to lay foundations for sacred temples and inscribed the history of dynasties upon the leaves of the celestial Ished tree.",
-            SubsystemName: "Sacred Documentation & Developer Portal",
-            SubsystemShortName: "Documentation",
-            SubsystemRole: "Searchable in-app help and developer documentation for the current workspaces and project structure.",
-            TechTags: new[] { "Searchable Help", "User Guide", "Project Structure", "Troubleshooting" },
-            ActionRoute: "docs"
+            SubsystemName: "Seshat // Log Lab & Custom Parser Workbench",
+            SubsystemShortName: "Log Lab",
+            SubsystemRole: "Interactive log workbench for testing regex/grok expressions, viewing structured field extractions, and defining custom parser profiles.",
+            TechTags: new[] { "Regex Workbench", "Grok Patterns", "Field Extraction", "Custom Parsers" },
+            ActionRoute: "log-lab"
         ),
 
         new(

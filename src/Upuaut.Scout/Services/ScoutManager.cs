@@ -25,7 +25,7 @@ public record ScoutStatistics(
 /// Central manager for the Scout packet sniffing subsystem.
 /// Controls active capture engines, maintains the live frame buffer, and computes real-time telemetry.
 /// </summary>
-public class ScoutManager : ICaptureEngine, IDisposable
+public class ScoutManager : ICaptureEngine, IDisposable, IAsyncDisposable
 {
     private readonly RawSocketCaptureEngine _rawEngine;
     private readonly EthernetCaptureEngine _ethernetEngine;
@@ -218,5 +218,15 @@ public class ScoutManager : ICaptureEngine, IDisposable
         _ethernetEngine.PacketReceived -= OnPacketCaptured;
         _rawEngine.Dispose();
         _ethernetEngine.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _rawEngine.PacketReceived -= OnPacketCaptured;
+        _ethernetEngine.PacketReceived -= OnPacketCaptured;
+        await _rawEngine.DisposeAsync().ConfigureAwait(false);
+        await _ethernetEngine.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 }

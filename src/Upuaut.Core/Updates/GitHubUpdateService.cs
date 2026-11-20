@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Upuaut.Core.Diagnostics;
 
 namespace Upuaut.Core.Updates;
 
@@ -68,9 +70,70 @@ public sealed class GitHubUpdateService : IUpdateService
         if (!File.Exists(installer) || !Directory.Exists(Path.Combine(packageDirectory, "payload")))
             throw new InvalidDataException("The downloaded release bundle is incomplete; setup executable or payload is missing.");
 
+        VerifyInstallerIntegrity(installer, packageDirectory);
+
         Process.Start(new ProcessStartInfo(installer) { WorkingDirectory = packageDirectory, UseShellExecute = true });
         InstallerLaunched?.Invoke();
         return packageDirectory;
+    }
+
+    private static void VerifyInstallerIntegrity(string installerPath, string packageDirectory)
+    {
+        var fileInfo = new FileInfo(installerPath);
+        if (fileInfo.Length < 32_768)
+            throw new InvalidDataException("Installer executable is truncated or invalid (file size too small).");
+        if (fileInfo.Length > 500_000_000)
+            throw new InvalidDataException("Installer executable exceeds 500MB safety limit.");
+
+        // Verify PE Header structure (MZ header & PE signature)
+        using (var stream = File.OpenRead(installerPath))
+        using (var reader = new BinaryReader(stream))
+        {
+            var mz = reader.ReadUInt16();
+            if (mz != 0x5A4D) // 'MZ'
+                throw new InvalidDataException("Installer is not a valid Windows executable (missing MZ magic).");
+
+            if (stream.Length < 0x40)
+                throw new InvalidDataException("Installer executable header is corrupt.");
+
+            stream.Seek(0x3C, SeekOrigin.Begin);
+            var peOffset = reader.ReadInt32();
+            if (peOffset < 64 || peOffset > stream.Length - 4)
+                throw new InvalidDataException("Installer PE header offset is out of bounds.");
+
+            stream.Seek(peOffset, SeekOrigin.Begin);
+            var peSignature = reader.ReadUInt32();
+            if (peSignature != 0x00004550) // 'PE\0\0'
+                throw new InvalidDataException("Installer is missing valid PE signature.");
+        }
+
+        // Compute SHA-256 hash
+        using var sha256 = SHA256.Create();
+        using var fs = File.OpenRead(installerPath);
+        var hashBytes = sha256.ComputeHash(fs);
+        var computedHash = Convert.ToHexString(hashBytes);
+
+        // Check for bundled checksum files (e.g. SHA256SUMS or Upuaut.Setup.exe.sha256)
+        var checksumFiles = new[] { "SHA256SUMS", "checksums.txt", "Upuaut.Setup.exe.sha256" };
+        foreach (var checkFile in checksumFiles)
+        {
+            var checkPath = Path.Combine(packageDirectory, checkFile);
+            if (File.Exists(checkPath))
+            {
+                var content = File.ReadAllText(checkPath);
+                if (content.Contains(computedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    AppLogger.Info("UpdateService", $"Installer matched published checksum in {checkFile} (SHA-256: {computedHash})");
+                    return;
+                }
+                else
+                {
+                    throw new InvalidDataException($"Installer SHA-256 checksum ({computedHash}) did not match expected value in {checkFile}.");
+                }
+            }
+        }
+
+        AppLogger.Info("UpdateService", $"Installer PE headers and structure verified (SHA-256: {computedHash})");
     }
 
     private static void CleanupStaleUpdatePackages(string updateDirectory)

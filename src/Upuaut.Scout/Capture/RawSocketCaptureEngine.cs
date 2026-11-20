@@ -14,7 +14,7 @@ namespace Upuaut.Scout.Capture;
 /// Utilizes SIO_RCVALL to sniff all inbound/outbound IPv4 traffic on the bound network adapter
 /// without requiring third-party kernel drivers like Npcap or WinPcap.
 /// </summary>
-public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
+public class RawSocketCaptureEngine : ICaptureEngine, IDisposable, IAsyncDisposable
 {
     private Socket? _socket;
     private CancellationTokenSource? _cts;
@@ -256,7 +256,54 @@ public class RawSocketCaptureEngine : ICaptureEngine, IDisposable
 
     public void Dispose()
     {
-        StopCaptureAsync().GetAwaiter().GetResult();
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopCaptureAsync().ConfigureAwait(false);
         _cts?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            Task? receiveTask = null;
+            lock (_lock)
+            {
+                if (_isCapturing || _receiveTask != null)
+                {
+                    _isCapturing = false;
+                    _cancellationRegistration.Dispose();
+                    try
+                    {
+                        _cts?.Cancel();
+                        _socket?.Close();
+                        _socket?.Dispose();
+                        _socket = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Debug("RawSocketCapture", $"Error disposing socket: {ex.Message}");
+                    }
+                    receiveTask = _receiveTask;
+                    _receiveTask = null;
+                }
+            }
+
+            if (receiveTask != null)
+            {
+                try
+                {
+                    receiveTask.Wait(TimeSpan.FromMilliseconds(250));
+                }
+                catch { }
+            }
+
+            _cts?.Dispose();
+        }
     }
 }

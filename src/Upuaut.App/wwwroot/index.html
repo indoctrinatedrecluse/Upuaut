@@ -28,6 +28,10 @@
             getEnabled: () => localStorage.getItem("upuaut.motionBackground") !== "false",
             setEnabled: enabled => localStorage.setItem("upuaut.motionBackground", enabled ? "true" : "false")
         };
+        window.upuautSplash = {
+            getSkipSplash: () => localStorage.getItem("upuaut.skipSplash") === "true",
+            setSkipSplash: skip => localStorage.setItem("upuaut.skipSplash", skip ? "true" : "false")
+        };
         window.upuautPreferences = {
             get: key => JSON.parse(localStorage.getItem(key) || "[]"),
             set: (key, value) => localStorage.setItem(key, JSON.stringify(value))
@@ -39,6 +43,8 @@
                 const sync = () => { const highlight = editor.parentElement.querySelector(".log-editor-highlight"); if (highlight) highlight.style.transform = `translate(${-editor.scrollLeft}px, ${-editor.scrollTop}px)`; };
                 if (editor.dataset.highlightSyncAttached) { sync(); return; }
                 editor.addEventListener("scroll", sync, { passive: true });
+                editor.addEventListener("input", sync, { passive: true });
+                window.addEventListener("resize", sync, { passive: true });
                 editor.dataset.highlightSyncAttached = "true";
                 sync();
             },

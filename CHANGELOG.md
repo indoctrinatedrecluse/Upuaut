@@ -4,6 +4,47 @@ This project follows [Semantic Versioning](https://semver.org/). Releases use `v
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-20
+
+### Added
+
+- **The Scales of Ma'at (`Upuaut.Weigher`) Correlation Engine:** `IWeigherEngine` and `WeigherEngine` provide domain-layer cross-source correlation, sliding-window candidate ranking, sanitized CSV export (with Excel formula injection defense), and stripped-payload JSON incident case serialization, decoupling investigation logic from presentation.
+- **Dual-Stack IPv6 Socket Attribution:** Windows IP Helper P/Invoke table queries now support `AF_INET6 = 23`, `MIB_TCP6ROW_OWNER_PID`, and `MIB_UDP6ROW_OWNER_PID`, enabling real-time process ID and image name attribution for IPv6 traffic across both raw sockets and Ethernet link-layer captures.
+- **Classic Libpcap & PCAPNG Simple Packet Blocks:** `PcapNgFile` auto-detects and parses classic Libpcap captures (`0xA1B2C3D4` and `0xA1B23C4D`) in microsecond and nanosecond formats, as well as PCAPNG Simple Packet Blocks (type 3).
+- **Authoritative Windows Status Code Lookup:** Introduced `WindowsStatusLookup` with 60+ authoritative NTSTATUS, HRESULT, Win32 error, and BugCheck definitions. Integrated into `CrashArtifactAnalyzer`, `LogExplanationEngine`, and `CrashReporter` for instant plain-language error explanations.
+- **Native Kernel-Level XPath Multi-Provider Queries:** `WindowsEventLogService` compiles multiple provider selections directly into kernel-level XPath subscription queries (`*[System[(Provider[@Name='A'] or Provider[@Name='B'])]]`), dramatically reducing CPU and memory overhead when querying high-volume event channels.
+- **High-Density Virtualization Across All Data Workspaces:** Blazor `<Virtualize>` controls now drive high-throughput data tables across the Scout wire tape (retaining up to 2,500 frames), Chronicles event log stream, Log Lab parsed entry list, and The Scales correlation timeline, maintaining smooth 60fps scrolling with zero DOM freezing.
+- **The Celestial Pantheon & Sacred Lore Portal Expansion:** Added Osiris (Asar) (*Lord of the Fallen Vessel → Crash Forensics & Minidump Vault*) and updated Seshat (*Mistress of Builders → Log Lab & Custom Parser Workbench*) across the Pantheon portal and the global account menu.
+- **Startup Gateway Splash Bypass:** Added a persistent "Don't show this gateway on startup" toggle to the introductory splash screen, backed by localStorage persistence.
+- **Automated Regression Suite:** 25 new automated unit tests added across `WeigherEngine`, `WindowsEventLogService`, `IpHelper` IPv6 attribution, `WindowsStatusLookup`, and `AppUrlLauncher`, expanding test coverage to 130 passing tests.
+
+### Security & Hardening
+
+- **WebView2 Canvas Sandboxing:** Hooked `NavigationStarting` and `NewWindowRequested` lifecycle events on the core webview to prevent unmanaged navigation away from the local app canvas and route all external web links to the system browser.
+- **Strict URL Scheme Validation:** Created `AppUrlLauncher` to enforce strict `http`/`https` scheme allowlisting before invoking `Process.Start`, mitigating arbitrary process execution risks across all UI links.
+- **Cryptographic Auto-Updater Verification:** `GitHubUpdateService` verifies PE header structures (`MZ` magic, `PE\0\0` signature), bounds installer payloads to a 500MB safety ceiling, and compares SHA-256 hashes against published checksum files before execution.
+- **Thread-Safe Atomic `IpHelper` Table Snapshots:** Refactored endpoint cache with atomic volatile replacement (`Volatile.Write`), lock-free reads during scans, buffer reallocation loops for `ERROR_INSUFFICIENT_BUFFER` (122), and a bounded sliding-expiration cache for recycled Windows PIDs.
+
+### Fixed
+
+- **Eliminated Sync-Over-Async Thread Deadlocks:** Replaced blocking `.GetAwaiter().GetResult()` calls in `RawSocketCaptureEngine`, `EthernetCaptureEngine`, and `WindowsEventLogService` with `IAsyncDisposable` and non-blocking background teardown.
+- **IPv6 Process Attribution Connected in Dissectors:** Fixed an issue where `PacketParser.ParseIPv6Packet` did not invoke `IpHelper.ResolveProcess`, restoring full process attribution to IPv6 packets.
+- **Graceful Service Teardown on Window Close:** Attached safe `IDisposable` disposal for `blazorWebView.Services` on `MainWindow.Closed` to prevent background timer and capture thread leaks.
+- **Synchronized Editor Resiliency:** Hardened Log Lab's raw `<textarea>` and syntax `<pre>` layers with `input` and `resize` event listeners, preventing caret and highlight desynchronization across zoom levels.
+- **TCP Stream Reassembler Direction Strings:** Fixed an edge case where directions with no payload bytes displayed incomplete endpoint headers (`→ :`).
+
+### Changed
+
+- Reordered `NavMenu.razor` items to match keyboard shortcuts: Chronicles (`Ctrl+1`), Scout (`Ctrl+2`), The Scales (`Ctrl+3`), Log Lab (`Ctrl+4`), Crash Forensics (`Ctrl+5`).
+- Relocated `LocalLlmAssistantService` from `Upuaut.UI` to `Upuaut.Core/AI/`, decoupling AI capabilities from the presentation assembly.
+- Updated documentation and dashboard quick-actions to feature all 5 core analysis workspaces.
+- Advanced solution, installer, and workflow version metadata to `0.7.0`.
+
+### Verification
+
+- `dotnet build Upuaut.sln` completed with 0 warnings and 0 errors.
+- Automated suite passed: 130 tests across all 8 projects with 0 failures and 0 skipped.
+
 ## [0.6.2] - 2026-10-31
 
 ### Fixed

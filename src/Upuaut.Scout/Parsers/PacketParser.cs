@@ -349,9 +349,19 @@ public static class PacketParser
         }
         if (fragmented) summary += " [Fragmented]";
         if (truncatedCapture) { summary += " [Truncated]"; details.Add(new PacketDetail("IPv6", "Capture", $"Truncated: {length} of {40 + declaredPayloadLength} bytes captured")); }
+
+        int? processId = null;
+        string? processName = null;
+        if (sourcePort.HasValue && destinationPort.HasValue)
+        {
+            var proc = IpHelper.ResolveProcess(source, sourcePort.Value, destination, destinationPort.Value);
+            processId = proc.ProcessId;
+            processName = proc.ProcessName;
+        }
+
         return WithInterpretation(new PacketFrame { FrameNumber = frameIndex, Timestamp = DateTime.UtcNow, SourceIp = source, DestinationIp = destination, SourcePort = sourcePort,
             DestinationPort = destinationPort, Protocol = protocol == NetworkProtocol.Unknown ? NetworkProtocol.IPv6 : protocol, TransportProtocol = transport,
-            TotalLength = totalLength, Summary = summary, Payload = payload, InterfaceName = interfaceName, CaptureLayer = "IPv6", RawData = buffer.AsSpan(0, totalLength).ToArray(),
+            TotalLength = totalLength, Summary = summary, ProcessId = processId, ProcessName = processName, Payload = payload, InterfaceName = interfaceName, CaptureLayer = "IPv6", RawData = buffer.AsSpan(0, totalLength).ToArray(),
             IpTtl = hopLimit, IpProtocolNumber = baseNextHeader, IpFragmentOffset = fragmentOffset, IpHeaderLength = offset, TransportHeaderLength = transportHeaderLength,
             TransportPayloadOffset = payloadOffset, TcpSequenceNumber = sequence, TcpAcknowledgmentNumber = ack, TcpFlags = flags, TcpWindow = window,
             DnsQueryName = dns, HasErrorOrRetransmit = flags.HasValue && (flags.Value & 0x04) != 0, Details = details });
